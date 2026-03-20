@@ -40,6 +40,8 @@ RUN apk add --no-cache \
     libzip-dev \
     oniguruma-dev \
     mariadb-connector-c-dev \
+    openssl-dev \
+    pcre-dev \
     && docker-php-ext-install \
     pdo_mysql \
     mbstring \
@@ -47,7 +49,8 @@ RUN apk add --no-cache \
     zip \
     bcmath \
     opcache \
-    && pecl install redis swoole \
+    && pecl install redis \
+    && pecl install swoole \
     && docker-php-ext-enable redis swoole \
     && apk del .build-deps
 
