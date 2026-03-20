@@ -1,0 +1,990 @@
+﻿
+   FAIL  Tests\Feature\AdminSessionNoteRestrictionsTest
+  Ô¿» admin sees redacted notes when fetching session
+  Ô¿» admin cannot update confidential notes
+  Ô¿» admin cannot use note upsert endpoint
+
+   FAIL  Tests\Feature\CounselorTwoFactorLoginTest
+  Ô¿» counselor login reports two factor required when enabled
+  Ô¿» counselor login reports setup required when two factor not configured
+
+   FAIL  Tests\Feature\DiagnosticTest
+  Ô¿» can get active questionnaire
+  Ô¿» can submit diagnostic assessment
+  Ô¿» can submit anonymous assessment
+  Ô¿» scoring algorithm calculates correctly
+  Ô¿» low scores result in low risk
+  Ô¿» can get diagnostic history
+  Ô¿» can get latest diagnostic
+  Ô¿» can get diagnostic trends
+  Ô¿» counselor can view dashboard
+  Ô¿» student cannot view counselor dashboard
+  Ô¿» unauthenticated user cannot submit assessment
+  Ô¿» recommendations are generated for high risk
+  Ô¿» category scores are calculated
+
+   FAIL  Tests\Feature\HealthCheckTest
+  Ô¿» health endpoint returns ok
+  Ô¿» ready endpoint checks database and cache
+  Ô¿» web health alias returns readiness payload
+
+   FAIL  Tests\Feature\IntakeReferralEndpointsTest
+  Ô¿» student intake submission respects scope and anonymous mode
+  Ô¿» high risk intake alert can be acknowledged and resolved
+  Ô¿» referral endpoints enforce role scope and consent rules
+
+   FAIL  Tests\Feature\MessageDeletionTest
+  Ô¿» sender can delete own message
+  Ô¿» participant cannot delete someone elses message
+  Ô¿» non participant cannot delete message
+  Ô¿» message must belong to the selected session
+
+   FAIL  Tests\Feature\PaginationValidationTest
+  Ô¿» paginated endpoints return consistent metadata and filters
+
+   FAIL  Tests\Feature\SecurityHardeningTest
+  Ô¿» role escalation and idor attempts are blocked
+  Ô¿» anonymous identity is masked from counselor until reveal
+  Ô¿» voice note upload rejects invalid file types
+  Ô¿» token rotation prevents session fixation after relogin
+  Ô¿» session notes are encrypted at rest and decrypted on read
+  Ô¿» corrupted encrypted notes are not exposed
+  Ô¿» admin can request counselor scope for multi role account
+  Ô¿» api unhandled exceptions are sanitized even with debug enabled
+  Ô¿» api validation responses preserve error payload structure
+  Ô¿» production environment never exposes api error details even if toggles are enabled
+  Ô¿» api responses set no store cache headers to reduce data leakage
+
+   FAIL  Tests\Feature\StressEdgeCaseTest
+  Ô¿» rapid overlapping booking attempts do not create duplicates
+  Ô¿» appointment overlap window blocks partial overlap but allows boundary touch
+  Ô¿» booking is rejected when concurrent slot lock is already held
+  Ô¿» high risk intake flood creates alerts without data corruption
+  Ô¿» multiple anonymous sessions generate unique anonymous ids
+
+   FAIL  Tests\Feature\SystemExecutionFlowTest
+  Ô¿» core role based workflows execute successfully
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ  
+   FÔÇª  QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select table_name as `name`, (data_length + index_length) as `size`, table_comment as `comment`, engine as `engine`, table_collation as `collation` from information_schema.tables where table_schema = 'counseling_db' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED') order by table_name)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+    825Ôûò                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    826Ôûò                 );
+    827Ôûò             }
+    828Ôûò 
+  Ô×£ 829Ôûò             throw new QueryException(
+    830Ôûò                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    831Ôûò             );
+    832Ôûò         }
+    833Ôûò     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:829
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:65
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+
+  Tests:    46 failed (0 assertions)
+  Duration: 381.00s
+

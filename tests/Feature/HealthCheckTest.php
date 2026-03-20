@@ -1,0 +1,56 @@
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class HealthCheckTest extends TestCase
+{
+    use RefreshDatabase;
+
+    /** @test */
+    public function health_endpoint_returns_ok(): void
+    {
+        $response = $this->getJson('/api/health');
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('status', 'ok')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('X-Frame-Options', 'SAMEORIGIN')
+            ->assertJsonStructure([
+                'status',
+                'service',
+                'time',
+            ]);
+    }
+
+    /** @test */
+    public function ready_endpoint_checks_database_and_cache(): void
+    {
+        $response = $this->getJson('/api/ready');
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('components.database', true)
+            ->assertJsonPath('components.cache', true)
+            ->assertJsonPath('components.queue', true)
+            ->assertJsonPath('components.disk', true);
+    }
+
+    /** @test */
+    public function web_health_alias_returns_readiness_payload(): void
+    {
+        $response = $this->getJson('/health');
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('components.database', true)
+            ->assertJsonPath('components.cache', true)
+            ->assertJsonPath('components.queue', true)
+            ->assertJsonPath('components.disk', true);
+    }
+}
