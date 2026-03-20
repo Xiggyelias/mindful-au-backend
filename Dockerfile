@@ -72,5 +72,5 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-worker-en
 EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-# Default: app only. For single-container (app+worker+scheduler), set RUN_WORKER_AND_SCHEDULER=1
+# Default:  app only. For single-container (app+worker+scheduler), set RUN_WORKER_AND_SCHEDULER=1
 CMD ["php", "/var/www/html/artisan", "octane:start", "--server=swoole", "--host=0.0.0.0", "--port=8000"]
