@@ -36,6 +36,7 @@ class HealthController extends Controller
             'cache' => $this->checkCache(),
             'queue' => $this->checkQueue(),
             'disk' => $this->checkDisk(),
+            'ai' => $this->checkAi(),
         ];
 
         $components = [];
@@ -258,5 +259,39 @@ class HealthController extends Controller
         }
 
         return Str::limit($message, 160, '...');
+    }
+
+    private function checkAi(): array
+    {
+        $configuredProviders = [];
+
+        if (trim((string) config('services.kwaipilot.api_key', '')) !== '') {
+            $configuredProviders[] = 'kwaipilot';
+        }
+
+        if (trim((string) config('services.openrouter.api_key', '')) !== '') {
+            $configuredProviders[] = 'openrouter';
+        }
+
+        if (trim((string) config('services.gemini.api_key', '')) !== '') {
+            $configuredProviders[] = 'gemini';
+        }
+
+        if (trim((string) config('services.openai.api_key', '')) !== '') {
+            $configuredProviders[] = 'openai';
+        }
+
+        $externalConfigured = $configuredProviders !== [];
+
+        return [
+            'ok' => true,
+            'mode' => $externalConfigured ? 'external' : 'local_fallback',
+            'external_provider_configured' => $externalConfigured,
+            'configured_providers' => $configuredProviders,
+            'chat_endpoint' => '/api/ai/wellness-chat',
+            'warning' => $externalConfigured
+                ? null
+                : 'No external AI provider key is configured; AI chat will use local fallback mode.',
+        ];
     }
 }
