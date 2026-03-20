@@ -39,8 +39,8 @@ class AIWellnessChatFallbackTest extends TestCase
         $assistantText = (string) $response->json('response');
         $normalizedAssistantText = strtolower($assistantText);
 
-        $this->assertStringContainsString('hello', $normalizedAssistantText);
-        $this->assertStringContainsString('how you are feeling today', $normalizedAssistantText);
+        $this->assertStringContainsString('hi', $normalizedAssistantText);
+        $this->assertStringContainsString('how has your day been so far', $normalizedAssistantText);
         $this->assertStringNotContainsString('name the main pressure', $normalizedAssistantText);
         $this->assertDatabaseHas('chat_messages', [
             'role' => 'assistant',
@@ -85,6 +85,44 @@ class AIWellnessChatFallbackTest extends TestCase
         $this->assertStringContainsString('breathing', $assistantText);
         $this->assertStringContainsString('10 to 15 minute task', $assistantText);
         $this->assertStringNotContainsString('tell me a little more', $assistantText);
+    }
+
+    /** @test */
+    public function casual_check_in_replies_stay_conversational_instead_of_jump_to_old_advice(): void
+    {
+        SystemSetting::query()->updateOrCreate(
+            ['key' => 'two_factor_auth'],
+            ['value' => false]
+        );
+
+        config([
+            'services.kwaipilot.api_key' => null,
+            'services.openrouter.api_key' => null,
+            'services.gemini.api_key' => null,
+            'services.openai.api_key' => null,
+        ]);
+
+        $student = $this->createPortalUser('student', 'ai-social-student@test.com', 'AI Social Student');
+
+        $firstResponse = $this->actingAs($student)->postJson('/api/ai/wellness-chat', [
+            'message' => 'hi',
+        ]);
+
+        $firstResponse->assertOk();
+        $conversationId = (int) $firstResponse->json('conversation_id');
+
+        $secondResponse = $this->actingAs($student)->postJson('/api/ai/wellness-chat', [
+            'message' => 'am good u',
+            'conversation_id' => $conversationId,
+        ]);
+
+        $secondResponse->assertOk();
+
+        $assistantText = strtolower((string) $secondResponse->json('response'));
+
+        $this->assertStringContainsString('glad to hear you are doing okay', $assistantText);
+        $this->assertStringContainsString('what has been on your mind today', $assistantText);
+        $this->assertStringNotContainsString('academic pressure can feel intense', $assistantText);
     }
 
     /** @test */

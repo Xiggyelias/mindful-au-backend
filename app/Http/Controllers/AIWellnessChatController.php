@@ -99,6 +99,7 @@ class AIWellnessChatController extends Controller
 - Respond naturally to greetings, short replies, and follow-up questions
 - Track context across turns and answer the actual message the student just sent
 - Ask one focused follow-up question when that would help the student feel heard and understood
+- If the student is simply chatting, keep the conversation natural instead of forcing advice
 
 Important guidelines:
 - Never provide medical diagnoses or treatment advice
@@ -520,44 +521,9 @@ Important guidelines:
             return 'Your safety comes first. Please contact emergency services or a trusted counselor right now. If you are alone, move toward another person and tell them clearly that you need support now.';
         }
 
-        if ($this->matchesExactIntent($normalized, [
-            'hi',
-            'hello',
-            'hey',
-            'good morning',
-            'good afternoon',
-            'good evening',
-        ])) {
-            return 'Hello. I am here with you. Tell me how you are feeling today, and we can take it one step at a time.';
-        }
-
-        if ($this->matchesExactIntent($normalized, [
-            'can you help me',
-            'help me',
-            'are you there',
-            'i need help',
-            'i need support',
-            'talk to me',
-        ])) {
-            return 'Yes, I am here to help. Tell me what feels hardest right now, and I will help you work through one clear next step.';
-        }
-
-        if ($this->matchesExactIntent($normalized, [
-            'thank you',
-            'thanks',
-            'thank you so much',
-            'okay thanks',
-            'ok thanks',
-        ])) {
-            return 'You are welcome. If you want, tell me what is still weighing on you, and we can keep working through it together.';
-        }
-
-        if ($this->matchesExactIntent($normalized, [
-            'how are you',
-            'who are you',
-            'what can you do',
-        ])) {
-            return 'I am your AI wellness assistant. I can help you talk through stress, anxiety, study pressure, and practical coping steps. Tell me what is going on for you.';
+        $socialResponse = $this->buildSocialConversationResponse($normalized, $historyMessages);
+        if ($socialResponse !== null) {
+            return $socialResponse;
         }
 
         if ($this->isFollowUpPrompt($normalized)) {
@@ -607,6 +573,17 @@ Important guidelines:
     {
         $normalized = Str::lower($message);
         $normalized = preg_replace('/[^\pL\pN\s]/u', ' ', $normalized);
+        $normalized = is_string($normalized) ? trim(preg_replace('/\s+/u', ' ', $normalized) ?? '') : '';
+
+        if ($normalized === '') {
+            return '';
+        }
+
+        $normalized = preg_replace('/\bi m\b/u', 'i am', $normalized);
+        $normalized = preg_replace('/\bim\b/u', 'i am', $normalized);
+        $normalized = preg_replace('/\bu\b/u', 'you', $normalized);
+        $normalized = preg_replace('/\bur\b/u', 'your', $normalized);
+        $normalized = preg_replace('/\br\b/u', 'are', $normalized);
 
         return is_string($normalized) ? trim(preg_replace('/\s+/u', ' ', $normalized) ?? '') : '';
     }
@@ -624,7 +601,14 @@ Important guidelines:
         }
 
         for ($i = count($historyMessages) - 1; $i >= 0; $i--) {
+            if (($historyMessages[$i]['role'] ?? null) !== 'user') {
+                continue;
+            }
+
             $content = $this->normalizeIntentText((string) ($historyMessages[$i]['content'] ?? ''));
+            if ($this->isConversationResetCue($content)) {
+                return null;
+            }
             $topic = $this->detectTopicFromText($content);
             if ($topic !== null) {
                 return $topic;
@@ -747,6 +731,125 @@ Important guidelines:
             'safety' => 'Focus on getting safer first, not explaining everything. Move toward another person or safer place if you can, and tell me whether the risk is happening now or whether you are safe for the moment.',
             default => 'We can do this one step at a time. Tell me the hardest part in one sentence, and I will help you decide what to do first.',
         };
+    }
+
+    private function buildSocialConversationResponse(string $normalized, array $historyMessages): ?string
+    {
+        $latestAssistantMessage = $this->latestAssistantMessage($historyMessages);
+        $assistantAskedAboutUser = $latestAssistantMessage !== null
+            && Str::contains($latestAssistantMessage, [
+                'how are you feeling',
+                'how has your day',
+                'what has your day',
+                'what s been on your mind',
+                'what is on your mind',
+                'tell me how you are feeling',
+            ]);
+
+        if ($this->isConversationResetCue($normalized)) {
+            return 'Hi. I am here with you. How has your day been so far?';
+        }
+
+        if ($this->matchesExactIntent($normalized, [
+            'can you help me',
+            'help me',
+            'are you there',
+            'i need help',
+            'i need support',
+            'talk to me',
+            'i need someone to talk to',
+            'i want someone to talk to',
+            'i just want to talk',
+            'can we talk',
+            'lets talk',
+            'let s talk',
+        ])) {
+            return 'Yes, I am here with you. We can talk. You do not need to have the perfect words. What has your day felt like so far?';
+        }
+
+        if ($this->matchesExactIntent($normalized, [
+            'thank you',
+            'thanks',
+            'thank you so much',
+            'okay thanks',
+            'ok thanks',
+        ])) {
+            return 'You are welcome. I am still here if you want to keep talking. What is on your mind now?';
+        }
+
+        if ($this->matchesExactIntent($normalized, [
+            'how are you',
+            'who are you',
+            'what can you do',
+        ])) {
+            return 'I am your AI wellness assistant. I can talk with you, help you think through stress, and help you slow things down when life feels heavy. What has been on your mind today?';
+        }
+
+        if (preg_match('/\b(not good|not okay|not ok|bad|terrible|awful|rough|drained|exhausted|tired)\b/u', $normalized) === 1) {
+            return 'I am sorry it has been a rough moment. You do not have to carry it alone here. What has been feeling hardest for you today?';
+        }
+
+        if (preg_match('/\b(lonely|alone|bored)\b/u', $normalized) === 1) {
+            return 'I am here with you. We can just talk for a bit if that helps. What has the day been like for you?';
+        }
+
+        $soundsPositive = preg_match('/\b(good|fine|okay|ok|alright|great|better)\b/u', $normalized) === 1
+            && preg_match('/\bnot\b/u', $normalized) !== 1;
+
+        if ($soundsPositive) {
+            if (preg_match('/\byou\b/u', $normalized) === 1 || $assistantAskedAboutUser) {
+                return 'I am glad to hear you are doing okay. Thanks for asking. I am here with you. What has been on your mind today?';
+            }
+
+            return 'I am glad to hear that. What has been going well for you today?';
+        }
+
+        if (
+            $assistantAskedAboutUser
+            && (
+                preg_match('/\b(idk|i do not know|dont know|don t know|nothing much|same)\b/u', $normalized) === 1
+                || str_word_count($normalized) <= 3
+            )
+        ) {
+            return 'That is okay. We do not need to force it. We can just talk. Has today felt calm, heavy, boring, or stressful?';
+        }
+
+        return null;
+    }
+
+    private function latestAssistantMessage(array $historyMessages): ?string
+    {
+        for ($i = count($historyMessages) - 1; $i >= 0; $i--) {
+            if (($historyMessages[$i]['role'] ?? null) !== 'assistant') {
+                continue;
+            }
+
+            $content = $this->normalizeIntentText((string) ($historyMessages[$i]['content'] ?? ''));
+            if ($content !== '') {
+                return $content;
+            }
+        }
+
+        return null;
+    }
+
+    private function isConversationResetCue(string $normalized): bool
+    {
+        return $this->matchesExactIntent($normalized, [
+            'hi',
+            'hello',
+            'hey',
+            'hi there',
+            'hello there',
+            'good morning',
+            'good afternoon',
+            'good evening',
+            'new topic',
+            'start over',
+            'can we just talk',
+            'let s just talk',
+            'lets just talk',
+        ]);
     }
 
     private function buildCrisisResponse(string $normalizedMessage): string
