@@ -39,6 +39,11 @@ class AIWellnessChatFallbackTest extends TestCase
         $assistantText = (string) $response->json('response');
         $normalizedAssistantText = strtolower($assistantText);
 
+        $response
+            ->assertJsonPath('provider_mode', 'local_fallback')
+            ->assertJsonPath('provider_name', 'offline_companion')
+            ->assertJsonPath('external_ai_configured', false);
+
         $this->assertStringContainsString('hi', $normalizedAssistantText);
         $this->assertStringContainsString('how has your day been so far', $normalizedAssistantText);
         $this->assertStringNotContainsString('name the main pressure', $normalizedAssistantText);
@@ -126,6 +131,37 @@ class AIWellnessChatFallbackTest extends TestCase
     }
 
     /** @test */
+    public function physical_health_messages_receive_health_specific_support(): void
+    {
+        SystemSetting::query()->updateOrCreate(
+            ['key' => 'two_factor_auth'],
+            ['value' => false]
+        );
+
+        config([
+            'services.kwaipilot.api_key' => null,
+            'services.openrouter.api_key' => null,
+            'services.gemini.api_key' => null,
+            'services.openai.api_key' => null,
+        ]);
+
+        $student = $this->createPortalUser('student', 'ai-health-student@test.com', 'AI Health Student');
+
+        $response = $this->actingAs($student)->postJson('/api/ai/wellness-chat', [
+            'message' => 'am sick',
+        ]);
+
+        $response->assertOk();
+
+        $assistantText = strtolower((string) $response->json('response'));
+
+        $this->assertStringContainsString('feeling sick', $assistantText);
+        $this->assertStringContainsString('rest', $assistantText);
+        $this->assertStringContainsString('what symptoms are bothering you most', $assistantText);
+        $this->assertStringNotContainsString('i am listening', $assistantText);
+    }
+
+    /** @test */
     public function crisis_language_is_caught_before_any_provider_call_and_returns_immediate_help_guidance(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -158,6 +194,9 @@ class AIWellnessChatFallbackTest extends TestCase
                 'requires_immediate_help' => true,
                 'show_panic_button' => true,
                 'crisis_hotline' => '+263 000 000 000',
+                'provider_mode' => 'safety_guardrail',
+                'provider_name' => 'crisis_guardrail',
+                'external_ai_configured' => true,
             ]);
 
         $assistantText = strtolower((string) $response->json('response'));

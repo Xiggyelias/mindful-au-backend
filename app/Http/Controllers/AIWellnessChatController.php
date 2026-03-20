@@ -88,6 +88,8 @@ class AIWellnessChatController extends Controller
         $normalizedMessage = $this->normalizeIntentText($message);
         $conversationTopic = $this->resolveConversationTopic($normalizedMessage, $historyMessages);
         $requiresImmediateHelp = $conversationTopic === 'crisis';
+        $providerMode = 'local_fallback';
+        $providerName = 'offline_companion';
 
         // Build conversation context
         $systemPrompt = "You are a compassionate and supportive AI wellness assistant for university students. Your role is to:
@@ -112,6 +114,8 @@ Important guidelines:
             $response = $this->isFollowUpPrompt($normalizedMessage)
                 ? $this->buildFollowUpFallbackResponse('crisis')
                 : $this->buildCrisisResponse($normalizedMessage);
+            $providerMode = 'safety_guardrail';
+            $providerName = 'crisis_guardrail';
             Log::warning('AI wellness chat crisis signal detected.', [
                 'user_id' => (int) $user->id,
                 'conversation_id' => (int) $conversation->id,
@@ -124,12 +128,18 @@ Important guidelines:
             ];
 
             // Try providers in order, then fall back to local deterministic guidance.
-            $response = $this->tryKwaipilot($messages)
-                ?? $this->tryOpenRouter($messages)
-                ?? $this->tryGemini($messages)
-                ?? $this->tryOpenAI($messages);
+            $response = null;
+            foreach ($this->availableAiProviders() as $provider) {
+                $candidate = $this->{$provider['method']}($messages);
+                if (is_string($candidate) && trim($candidate) !== '') {
+                    $response = $candidate;
+                    $providerMode = 'external';
+                    $providerName = $provider['name'];
+                    break;
+                }
+            }
 
-            if (!$response) {
+            if (!is_string($response) || trim($response) === '') {
                 $response = $this->buildLocalWellnessFallbackResponse($message, $historyMessages);
                 Log::info('AI wellness chat provider fallback used.');
             }
@@ -151,6 +161,9 @@ Important guidelines:
             'requires_immediate_help' => $requiresImmediateHelp,
             'show_panic_button' => $requiresImmediateHelp,
             'crisis_hotline' => $requiresImmediateHelp ? $this->resolveCrisisHotline() : null,
+            'provider_mode' => $providerMode,
+            'provider_name' => $providerName,
+            'external_ai_configured' => $this->hasConfiguredExternalAiProvider(),
         ]);
     }
 
@@ -521,6 +534,10 @@ Important guidelines:
             return 'Your safety comes first. Please contact emergency services or a trusted counselor right now. If you are alone, move toward another person and tell them clearly that you need support now.';
         }
 
+        if ($conversationTopic === 'physical_health') {
+            return 'I am sorry you are feeling sick. Try to keep things simple for now: rest, sip water if you can, and avoid pushing yourself. If you have trouble breathing, severe pain, fainting, or symptoms that are getting worse, contact a clinic, campus health service, or emergency support as soon as possible. What symptoms are bothering you most right now?';
+        }
+
         $socialResponse = $this->buildSocialConversationResponse($normalized, $historyMessages);
         if ($socialResponse !== null) {
             return $socialResponse;
@@ -581,6 +598,7 @@ Important guidelines:
 
         $normalized = preg_replace('/\bi m\b/u', 'i am', $normalized);
         $normalized = preg_replace('/\bim\b/u', 'i am', $normalized);
+        $normalized = preg_replace('/^am\b/u', 'i am', $normalized);
         $normalized = preg_replace('/\bu\b/u', 'you', $normalized);
         $normalized = preg_replace('/\bur\b/u', 'your', $normalized);
         $normalized = preg_replace('/\br\b/u', 'are', $normalized);
@@ -656,6 +674,27 @@ Important guidelines:
             return 'sleep';
         }
 
+        if (Str::contains($normalized, [
+            'sick',
+            'ill',
+            'fever',
+            'flu',
+            'cough',
+            'cold',
+            'headache',
+            'migraine',
+            'nausea',
+            'vomit',
+            'vomiting',
+            'stomach ache',
+            'stomachache',
+            'diarrhea',
+            'body pain',
+            'body aches',
+        ])) {
+            return 'physical_health';
+        }
+
         if (Str::contains($normalized, ['sad', 'depressed', 'down', 'lonely', 'hopeless'])) {
             return 'sadness';
         }
@@ -724,6 +763,7 @@ Important guidelines:
             'anxiety' => 'Let us take it step by step. First, slow your breathing for one minute. Next, write the exact thought making this feel overwhelming. Then choose one 10 to 15 minute task that helps you regain control. If you want, tell me the thought and I will help you challenge it.',
             'study' => 'Start with the smallest academic action. Open the course material, pick one question or one subsection, and work on it for 15 minutes only. After that, pause and decide the next small task instead of thinking about the whole workload.',
             'sleep' => 'Start with tonight, not the whole week. Put screens aside for a while, dim the room if you can, and do one quiet routine such as breathing, stretching, or writing down tomorrow worries on paper so they are not circling in your head.',
+            'physical_health' => 'Focus on basic care first: rest, fluids if you can manage them, and reducing extra strain. Tell me the main symptom that is bothering you most right now, and I will help you think through the next sensible step. If symptoms are severe or suddenly worsening, contact a clinic or emergency support now.',
             'sadness' => 'Start with something grounding and human. Drink some water, move to a brighter or calmer place, and send one short message to someone safe. Then tell me whether the hardest part is loneliness, exhaustion, or heavy thoughts.',
             'relationships' => 'Start by slowing the situation down. Do not try to solve the whole relationship in one message or one argument. Tell me what happened most recently, and I will help you think through the next calm step.',
             'family' => 'Let us narrow it down. Tell me the exact family situation that is hurting most right now, and I will help you decide between setting a boundary, asking for support, or stepping away for a while.',
@@ -783,6 +823,10 @@ Important guidelines:
             'what can you do',
         ])) {
             return 'I am your AI wellness assistant. I can talk with you, help you think through stress, and help you slow things down when life feels heavy. What has been on your mind today?';
+        }
+
+        if (preg_match('/\b(sick|ill|fever|flu|headache|nausea|vomiting|cough)\b/u', $normalized) === 1) {
+            return 'I am sorry you are feeling unwell. What symptom is bothering you most right now? If anything feels severe or you are struggling to breathe, please contact a clinic or emergency support straight away.';
         }
 
         if (preg_match('/\b(not good|not okay|not ok|bad|terrible|awful|rough|drained|exhausted|tired)\b/u', $normalized) === 1) {
@@ -882,6 +926,44 @@ Important guidelines:
     {
         $hotline = trim(SystemSettings::getString('crisis_hotline', ''));
         return $hotline !== '' ? $hotline : null;
+    }
+
+    private function availableAiProviders(): array
+    {
+        return [
+            ['name' => 'kwaipilot', 'method' => 'tryKwaipilot'],
+            ['name' => 'openrouter', 'method' => 'tryOpenRouter'],
+            ['name' => 'gemini', 'method' => 'tryGemini'],
+            ['name' => 'openai', 'method' => 'tryOpenAI'],
+        ];
+    }
+
+    private function configuredAiProviders(): array
+    {
+        $providers = [];
+
+        if (trim((string) config('services.kwaipilot.api_key', '')) !== '') {
+            $providers[] = 'kwaipilot';
+        }
+
+        if (trim((string) config('services.openrouter.api_key', '')) !== '') {
+            $providers[] = 'openrouter';
+        }
+
+        if (trim((string) config('services.gemini.api_key', '')) !== '') {
+            $providers[] = 'gemini';
+        }
+
+        if (trim((string) config('services.openai.api_key', '')) !== '') {
+            $providers[] = 'openai';
+        }
+
+        return $providers;
+    }
+
+    private function hasConfiguredExternalAiProvider(): bool
+    {
+        return $this->configuredAiProviders() !== [];
     }
 
     private function sanitizeUserText(string $value): string

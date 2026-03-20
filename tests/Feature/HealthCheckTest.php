@@ -37,7 +37,10 @@ class HealthCheckTest extends TestCase
             ->assertJsonPath('components.database', true)
             ->assertJsonPath('components.cache', true)
             ->assertJsonPath('components.queue', true)
-            ->assertJsonPath('components.disk', true);
+            ->assertJsonPath('components.disk', true)
+            ->assertJsonPath('components.ai', true)
+            ->assertJsonPath('details.ai.mode', 'local_fallback')
+            ->assertJsonPath('details.ai.external_provider_configured', false);
     }
 
     /** @test */
@@ -51,6 +54,8 @@ class HealthCheckTest extends TestCase
             ->assertJsonPath('components.database', true)
             ->assertJsonPath('components.cache', true)
             ->assertJsonPath('components.queue', true)
-            ->assertJsonPath('components.disk', true);
+            ->assertJsonPath('components.disk', true)
+            ->assertJsonPath('components.ai', true)
+            ->assertJsonPath('details.ai.mode', 'local_fallback');
     }
 }
