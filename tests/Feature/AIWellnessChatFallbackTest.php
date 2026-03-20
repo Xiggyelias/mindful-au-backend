@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -84,6 +85,51 @@ class AIWellnessChatFallbackTest extends TestCase
         $this->assertStringContainsString('breathing', $assistantText);
         $this->assertStringContainsString('10 to 15 minute task', $assistantText);
         $this->assertStringNotContainsString('tell me a little more', $assistantText);
+    }
+
+    /** @test */
+    public function crisis_language_is_caught_before_any_provider_call_and_returns_immediate_help_guidance(): void
+    {
+        SystemSetting::query()->updateOrCreate(
+            ['key' => 'two_factor_auth'],
+            ['value' => false]
+        );
+        SystemSetting::query()->updateOrCreate(
+            ['key' => 'crisis_hotline'],
+            ['value' => '+263 000 000 000']
+        );
+
+        config([
+            'services.kwaipilot.api_key' => 'test-kwaipilot',
+            'services.openrouter.api_key' => 'test-openrouter',
+            'services.gemini.api_key' => 'test-gemini',
+            'services.openai.api_key' => 'test-openai',
+        ]);
+
+        Http::fake();
+
+        $student = $this->createPortalUser('student', 'ai-crisis-student@test.com', 'AI Crisis Student');
+
+        $response = $this->actingAs($student)->postJson('/api/ai/wellness-chat', [
+            'message' => 'I want to jump off a building',
+        ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'risk_level' => 'crisis',
+                'requires_immediate_help' => true,
+                'show_panic_button' => true,
+                'crisis_hotline' => '+263 000 000 000',
+            ]);
+
+        $assistantText = strtolower((string) $response->json('response'));
+
+        $this->assertStringContainsString('immediate danger', $assistantText);
+        $this->assertStringContainsString('move away from the edge', $assistantText);
+        $this->assertStringContainsString('crisis contact', $assistantText);
+        $this->assertStringNotContainsString('academic pressure can feel intense', $assistantText);
+
+        Http::assertNothingSent();
     }
 
     private function createPortalUser(string $role, string $email, string $fullName): User

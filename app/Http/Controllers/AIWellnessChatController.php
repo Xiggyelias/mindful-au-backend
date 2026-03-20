@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use App\Support\SystemSettings;
 
 class AIWellnessChatController extends Controller
 {
@@ -84,6 +85,10 @@ class AIWellnessChatController extends Controller
             })
             ->all();
 
+        $normalizedMessage = $this->normalizeIntentText($message);
+        $conversationTopic = $this->resolveConversationTopic($normalizedMessage, $historyMessages);
+        $requiresImmediateHelp = $conversationTopic === 'crisis';
+
         // Build conversation context
         $systemPrompt = "You are a compassionate and supportive AI wellness assistant for university students. Your role is to:
 - Provide emotional support and active listening
@@ -91,29 +96,42 @@ class AIWellnessChatController extends Controller
 - Offer study tips and stress management advice
 - Encourage seeking professional help when appropriate
 - Be empathetic, non-judgmental, and supportive
+- Respond naturally to greetings, short replies, and follow-up questions
+- Track context across turns and answer the actual message the student just sent
+- Ask one focused follow-up question when that would help the student feel heard and understood
 
 Important guidelines:
 - Never provide medical diagnoses or treatment advice
-- If someone expresses thoughts of self-harm, gently encourage them to speak with a counselor
+- If someone expresses thoughts of suicide or self-harm, stop normal coaching and give immediate safety guidance
 - Keep responses concise but warm and helpful
 - Use techniques from CBT and mindfulness when appropriate
 - Validate feelings before offering suggestions";
 
-        $messages = [
-            ['role' => 'system', 'content' => $systemPrompt],
-            ...$historyMessages,
-            ['role' => 'user', 'content' => $message]
-        ];
+        if ($requiresImmediateHelp) {
+            $response = $this->isFollowUpPrompt($normalizedMessage)
+                ? $this->buildFollowUpFallbackResponse('crisis')
+                : $this->buildCrisisResponse($normalizedMessage);
+            Log::warning('AI wellness chat crisis signal detected.', [
+                'user_id' => (int) $user->id,
+                'conversation_id' => (int) $conversation->id,
+            ]);
+        } else {
+            $messages = [
+                ['role' => 'system', 'content' => $systemPrompt],
+                ...$historyMessages,
+                ['role' => 'user', 'content' => $message]
+            ];
 
-        // Try providers in order, then fall back to local deterministic guidance.
-        $response = $this->tryKwaipilot($messages)
-            ?? $this->tryOpenRouter($messages)
-            ?? $this->tryGemini($messages)
-            ?? $this->tryOpenAI($messages);
+            // Try providers in order, then fall back to local deterministic guidance.
+            $response = $this->tryKwaipilot($messages)
+                ?? $this->tryOpenRouter($messages)
+                ?? $this->tryGemini($messages)
+                ?? $this->tryOpenAI($messages);
 
-        if (!$response) {
-            $response = $this->buildLocalWellnessFallbackResponse($message, $historyMessages);
-            Log::info('AI wellness chat provider fallback used.');
+            if (!$response) {
+                $response = $this->buildLocalWellnessFallbackResponse($message, $historyMessages);
+                Log::info('AI wellness chat provider fallback used.');
+            }
         }
 
         [$userMessageId, $assistantMessageId] = $this->persistMessages(
@@ -128,6 +146,10 @@ Important guidelines:
             'conversation_id' => (int) $conversation->id,
             'user_message_id' => $userMessageId,
             'assistant_message_id' => $assistantMessageId,
+            'risk_level' => $requiresImmediateHelp ? 'crisis' : 'normal',
+            'requires_immediate_help' => $requiresImmediateHelp,
+            'show_panic_button' => $requiresImmediateHelp,
+            'crisis_hotline' => $requiresImmediateHelp ? $this->resolveCrisisHotline() : null,
         ]);
     }
 
@@ -558,6 +580,22 @@ Important guidelines:
             return 'I am sorry this feels heavy. Be gentle with yourself for today. Start with one grounding action like drinking water, stepping into fresh air, or messaging one trusted person. If you want, tell me whether this feels more like sadness, loneliness, or exhaustion.';
         }
 
+        if ($conversationTopic === 'relationships') {
+            return 'Relationship strain can shake a lot at once. Start by naming the one part that hurts most right now: conflict, rejection, betrayal, or loneliness. Then choose one calm action today, like pausing before replying, writing what you want to say, or contacting one trusted person for perspective.';
+        }
+
+        if ($conversationTopic === 'family') {
+            return 'Family pressure can feel especially personal. Focus on one boundary or one support action for today rather than solving the whole relationship at once. If you want, tell me what happened and I will help you decide what to say or do next.';
+        }
+
+        if ($conversationTopic === 'financial') {
+            return 'Money pressure can make everything feel urgent. Start by separating what is immediate from what can wait. Make a short list of the top 2 financial pressures, then identify one person or office you can contact today for support, such as student services, finance, or a trusted staff member.';
+        }
+
+        if ($conversationTopic === 'safety') {
+            return 'I am sorry you are dealing with that. Your safety matters. Move toward a safer person or place if you can, avoid being alone with anyone who is threatening you, and contact a counselor, campus security, or another trusted adult as soon as possible.';
+        }
+
         if (str_word_count($normalized) <= 4) {
             return 'I am listening. Tell me a little more about what is happening for you right now, and I will respond as clearly as I can.';
         }
@@ -602,6 +640,14 @@ Important guidelines:
             return null;
         }
 
+        if (
+            preg_match('/\b(jump|throw|fall)\s+(off|from)\s+(?:a|the)?\s*(building|bridge|roof|window|balcony|cliff)\b/u', $normalized) === 1
+            || preg_match('/\b(overdose|hang myself|cut myself|stab myself|shoot myself|drink poison|take all (?:my )?pills)\b/u', $normalized) === 1
+            || preg_match('/\b(i want to die|i wanna die|wish i were dead|dont want to live|do not want to live|don t want to live|end it all|better off without me|no reason to live|cant go on|can t go on|want to disappear forever)\b/u', $normalized) === 1
+        ) {
+            return 'crisis';
+        }
+
         if (Str::contains($normalized, [
             'suicide',
             'kill myself',
@@ -609,6 +655,7 @@ Important guidelines:
             'self harm',
             'hurt myself',
             'do not feel safe',
+            'not safe',
         ])) {
             return 'crisis';
         }
@@ -627,6 +674,22 @@ Important guidelines:
 
         if (Str::contains($normalized, ['sad', 'depressed', 'down', 'lonely', 'hopeless'])) {
             return 'sadness';
+        }
+
+        if (Str::contains($normalized, ['breakup', 'relationship', 'boyfriend', 'girlfriend', 'partner', 'friendship', 'friend'])) {
+            return 'relationships';
+        }
+
+        if (Str::contains($normalized, ['family', 'mother', 'father', 'parents', 'home', 'sibling', 'guardian'])) {
+            return 'family';
+        }
+
+        if (Str::contains($normalized, ['money', 'fees', 'tuition', 'rent', 'broke', 'financial', 'debt', 'food'])) {
+            return 'financial';
+        }
+
+        if (Str::contains($normalized, ['abuse', 'abusive', 'assault', 'harassed', 'threatened', 'unsafe', 'forced'])) {
+            return 'safety';
         }
 
         return null;
@@ -678,8 +741,44 @@ Important guidelines:
             'study' => 'Start with the smallest academic action. Open the course material, pick one question or one subsection, and work on it for 15 minutes only. After that, pause and decide the next small task instead of thinking about the whole workload.',
             'sleep' => 'Start with tonight, not the whole week. Put screens aside for a while, dim the room if you can, and do one quiet routine such as breathing, stretching, or writing down tomorrow worries on paper so they are not circling in your head.',
             'sadness' => 'Start with something grounding and human. Drink some water, move to a brighter or calmer place, and send one short message to someone safe. Then tell me whether the hardest part is loneliness, exhaustion, or heavy thoughts.',
+            'relationships' => 'Start by slowing the situation down. Do not try to solve the whole relationship in one message or one argument. Tell me what happened most recently, and I will help you think through the next calm step.',
+            'family' => 'Let us narrow it down. Tell me the exact family situation that is hurting most right now, and I will help you decide between setting a boundary, asking for support, or stepping away for a while.',
+            'financial' => 'Start with the most urgent practical point first. Tell me what feels most immediate right now, such as fees, food, transport, or rent, and I will help you think through the next contact or action.',
+            'safety' => 'Focus on getting safer first, not explaining everything. Move toward another person or safer place if you can, and tell me whether the risk is happening now or whether you are safe for the moment.',
             default => 'We can do this one step at a time. Tell me the hardest part in one sentence, and I will help you decide what to do first.',
         };
+    }
+
+    private function buildCrisisResponse(string $normalizedMessage): string
+    {
+        $firstStep = 'Move away from anything you could use to hurt yourself right now and get closer to another person if you can.';
+
+        if (preg_match('/\b(jump|throw|fall)\s+(off|from)\s+(?:a|the)?\s*(building|bridge|roof|window|balcony|cliff)\b/u', $normalizedMessage) === 1) {
+            $firstStep = 'Move away from the edge, roof, balcony, bridge, window, or any high place right now and get closer to another person if you can.';
+        }
+
+        $parts = [
+            'I am really glad you said this.',
+            'I am concerned you may be in immediate danger.',
+            $firstStep,
+            'Contact emergency services, campus security, a counselor, or a trusted person right now and tell them clearly that you need immediate support.',
+            'If you can use the emergency help button in the student dashboard, do that now.',
+        ];
+
+        $hotline = $this->resolveCrisisHotline();
+        if ($hotline !== null) {
+            $parts[] = "Crisis contact: {$hotline}.";
+        }
+
+        $parts[] = 'Reply with SAFE if you are with someone now, or ALONE if you are by yourself.';
+
+        return implode(' ', $parts);
+    }
+
+    private function resolveCrisisHotline(): ?string
+    {
+        $hotline = trim(SystemSettings::getString('crisis_hotline', ''));
+        return $hotline !== '' ? $hotline : null;
     }
 
     private function sanitizeUserText(string $value): string
