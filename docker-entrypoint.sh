@@ -12,12 +12,12 @@ chmod -R 775 storage bootstrap/cache
 chmod 664 storage/logs/laravel.log 2>/dev/null || true
 
 # Run migrations (skip if DB unreachable at startup; run manually if needed)
-php artisan migrate --force 2>/dev/null || true
+php /var/www/html/artisan migrate --force 2>/dev/null || true
 
 # Cache config and routes for production
-php artisan config:cache
-php artisan route:cache
-php artisan view:clear
+php /var/www/html/artisan config:cache
+php /var/www/html/artisan route:cache
+php /var/www/html/artisan view:clear
 
 # Single-container mode: run app + queue worker + scheduler via supervisord
 # Set RUN_WORKER_AND_SCHEDULER=1 when deploying as one container (e.g. docker run without compose)

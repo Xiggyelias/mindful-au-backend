@@ -55,7 +55,7 @@ services:
     build: *backend-build
     image: aucms-backend:latest
     entrypoint: ["/usr/local/bin/docker-worker-entrypoint.sh"]
-    command: php artisan queue:work --sleep=3 --tries=3 --timeout=90
+    command: php /var/www/html/artisan queue:work --sleep=3 --tries=3 --timeout=90
     restart: unless-stopped
     stop_signal: SIGTERM
     stop_grace_period: 60
@@ -79,7 +79,7 @@ services:
     build: *backend-build
     image: aucms-backend:latest
     entrypoint: ["/usr/local/bin/docker-worker-entrypoint.sh"]
-    command: php artisan schedule:work
+    command: php /var/www/html/artisan schedule:work
     restart: unless-stopped
     stop_signal: SIGTERM
     env_file:
