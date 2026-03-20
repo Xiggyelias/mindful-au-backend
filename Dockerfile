@@ -59,6 +59,8 @@ COPY docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
 ENV APACHE_DOCUMENT_ROOT /app/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+COPY docker/apache/laravel.conf /etc/apache2/conf-available/laravel.conf
+RUN a2enconf laravel
 
 # Entrypoint scripts (IRV-style: storage setup, migrations, cache, all-in-one supervisord)
 COPY docker-entrypoint.sh /usr/local/bin/

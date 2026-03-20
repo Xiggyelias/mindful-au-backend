@@ -4,7 +4,7 @@
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
-SET time_zone = "+00:00";
+SET time_zone = "+02:00";
 
 -- Create database (uncomment if needed)
 -- CREATE DATABASE IF NOT EXISTS `counseling_db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
