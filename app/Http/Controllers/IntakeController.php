@@ -18,6 +18,10 @@ class IntakeController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        if (!$this->canAccessIntakePortal($user)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $validated = $request->validate([
             'status' => 'sometimes|string|max:20',
             'risk_level' => 'sometimes|string|max:20',
@@ -34,8 +38,6 @@ class IntakeController extends Controller
             // no scope filter
         } elseif ($user->hasRole('counselor') || $user->hasRole('peer_counselor')) {
             $query->where('assigned_to', $user->id);
-        } else {
-            $query->where('user_id', $user->id);
         }
 
         if (!empty($validated['status'])) {
@@ -64,6 +66,10 @@ class IntakeController extends Controller
 
     public function show(Request $request, string $id): JsonResponse
     {
+        if (!$this->canAccessIntakePortal($request->user())) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $intake = IntakeSubmission::query()
             ->with(['user.profile', 'assignedTo.profile', 'riskAlerts'])
             ->findOrFail($id);
@@ -78,6 +84,10 @@ class IntakeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
+        if (!$this->canAccessIntakePortal($user)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $validated = $request->validate([
             'submitter_type' => 'sometimes|in:student,staff',
             'is_anonymous' => 'sometimes|boolean',
@@ -89,7 +99,7 @@ class IntakeController extends Controller
         ]);
 
         $submitterType = $validated['submitter_type']
-            ?? ($user->hasRole('student') ? 'student' : 'staff');
+            ?? 'staff';
         $riskAnswers = is_array($validated['risk_answers'] ?? null) ? $validated['risk_answers'] : [];
         [$riskLevel, $urgencyScore] = $this->evaluateRisk($riskAnswers);
         $assignedCounselorId = $this->resolveCounselorAssignment($riskLevel);
@@ -164,11 +174,14 @@ class IntakeController extends Controller
             return true;
         }
 
-        if ((int) $intake->user_id === (int) $user->id) {
-            return true;
-        }
-
         return (int) $intake->assigned_to === (int) $user->id;
+    }
+
+    private function canAccessIntakePortal(User $user): bool
+    {
+        return $user->hasRole('admin')
+            || $user->hasRole('counselor')
+            || $user->hasRole('peer_counselor');
     }
 
     private function evaluateRisk(array $answers): array

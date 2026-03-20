@@ -76,8 +76,9 @@ class SystemExecutionFlowTest extends TestCase
             'title' => 'Appointment Confirmed',
         ]);
 
-        // High-risk case alert
-        $highRiskResponse = $this->actingAs($student)->postJson('/api/intake-submissions', [
+        // Staff-created high-risk case alert
+        $highRiskResponse = $this->actingAs($counselor)->postJson('/api/intake-submissions', [
+            'submitter_type' => 'staff',
             'presenting_concerns' => ['panic attacks', 'academic decline'],
             'risk_answers' => [
                 'immediate_danger' => true,
@@ -157,4 +158,3 @@ class SystemExecutionFlowTest extends TestCase
         return $user;
     }
 }
-

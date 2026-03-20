@@ -119,10 +119,9 @@ class StressEdgeCaseTest extends TestCase
 
         $admin = $this->createPortalUser('admin', 'admin-flood@test.com', 'Admin Flood');
         $counselor = $this->createPortalUser('counselor', 'counselor-flood@test.com', 'Counselor Flood');
-        $student = $this->createPortalUser('student', 'student-flood@test.com', 'Student Flood');
-
         for ($i = 0; $i < 40; $i++) {
-            $response = $this->actingAs($student)->postJson('/api/intake-submissions', [
+            $response = $this->actingAs($counselor)->postJson('/api/intake-submissions', [
+                'submitter_type' => 'staff',
                 'presenting_concerns' => ['panic'],
                 'risk_answers' => [
                     'immediate_danger' => true,

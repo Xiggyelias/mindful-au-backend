@@ -14,7 +14,7 @@ class IntakeReferralEndpointsTest extends TestCase
     use RefreshDatabase;
 
     /** @test */
-    public function student_intake_submission_respects_scope_and_anonymous_mode(): void
+    public function students_cannot_access_intake_endpoints(): void
     {
         SystemSetting::query()->updateOrCreate(
             ['key' => 'two_factor_auth'],
@@ -22,11 +22,11 @@ class IntakeReferralEndpointsTest extends TestCase
         );
 
         $studentA = $this->createPortalUser('student', 'student-intake-a@test.com', 'Student Intake A');
-        $studentB = $this->createPortalUser('student', 'student-intake-b@test.com', 'Student Intake B');
         $counselor = $this->createPortalUser('counselor', 'counselor-intake@test.com', 'Counselor Intake');
 
-        $createResponse = $this->actingAs($studentA)->postJson('/api/intake-submissions', [
-            'submitter_type' => 'student',
+        $this->actingAs($studentA)->getJson('/api/intake-submissions')->assertStatus(403);
+
+        $this->actingAs($studentA)->postJson('/api/intake-submissions', [
             'is_anonymous' => true,
             'presenting_concerns' => ['stress', 'sleep issues'],
             'risk_answers' => [
@@ -34,27 +34,30 @@ class IntakeReferralEndpointsTest extends TestCase
             ],
             'consent_acknowledged' => true,
             'summary' => 'Need support with stress management.',
+        ])->assertStatus(403);
+
+        $createResponse = $this->actingAs($counselor)->postJson('/api/intake-submissions', [
+            'submitter_type' => 'staff',
+            'is_anonymous' => false,
+            'presenting_concerns' => ['stress', 'sleep issues'],
+            'risk_answers' => [
+                'sleep_disruption' => true,
+                'academic_decline' => true,
+            ],
+            'consent_acknowledged' => true,
+            'summary' => 'Need support with stress management.',
         ]);
 
         $createResponse
-            ->assertStatus(201)
-            ->assertJsonPath('is_anonymous', true)
-            ->assertJsonPath('risk_level', 'low');
+            ->assertStatus(201);
 
-        $this->assertNotEmpty($createResponse->json('anonymous_id'));
         $intakeId = (int) $createResponse->json('id');
 
         $this->actingAs($studentA)
             ->getJson("/api/intake-submissions/{$intakeId}")
-            ->assertStatus(200);
-
-        $this->actingAs($studentB)
-            ->getJson("/api/intake-submissions/{$intakeId}")
             ->assertStatus(403);
 
-        $this->actingAs($counselor)
-            ->getJson("/api/intake-submissions/{$intakeId}")
-            ->assertStatus(403);
+        $this->actingAs($counselor)->getJson("/api/intake-submissions/{$intakeId}")->assertStatus(200);
     }
 
     /** @test */
@@ -67,9 +70,10 @@ class IntakeReferralEndpointsTest extends TestCase
 
         $admin = $this->createPortalUser('admin', 'admin-intake-alert@test.com', 'Admin Intake Alert');
         $counselor = $this->createPortalUser('counselor', 'counselor-intake-alert@test.com', 'Counselor Intake Alert');
-        $student = $this->createPortalUser('student', 'student-intake-alert@test.com', 'Student Intake Alert');
+        $staff = $this->createPortalUser('counselor', 'staff-intake-alert@test.com', 'Staff Intake Alert');
 
-        $createResponse = $this->actingAs($student)->postJson('/api/intake-submissions', [
+        $createResponse = $this->actingAs($staff)->postJson('/api/intake-submissions', [
+            'submitter_type' => 'staff',
             'presenting_concerns' => ['panic attacks', 'self harm concerns'],
             'risk_answers' => [
                 'immediate_danger' => true,
