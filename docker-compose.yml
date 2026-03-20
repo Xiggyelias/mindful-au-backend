@@ -1,8 +1,19 @@
+# Mindful AU Backend – App + Worker + Scheduler (external DB, Redis)
+#
+# Multi-container (default): docker compose up -d
+#   Starts: app (Octane API), queue (queue:work), scheduler (schedule:work)
+#
+# Single-container: docker compose --profile all-in-one up -d all-in-one
+#   Runs app + worker + scheduler in one container via supervisord
+#
+# Set DB_*, REDIS_* and other env vars in .env or pass via -e
+
 name: aucms
 
 x-backend-env: &backend-env
   APP_ENV: production
   APP_DEBUG: false
+  TZ: Africa/Harare
   LOG_CHANNEL: errorlog
   LOG_LEVEL: info
   CACHE_STORE: redis
@@ -30,51 +41,83 @@ services:
       - .env
     environment:
       <<: *backend-env
-    command: ["php", "artisan", "octane:start", "--server=swoole", "--host=0.0.0.0", "--port=8000"]
-    depends_on:
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_started
     volumes:
       - backend_storage:/var/www/html/storage
       - backend_cache:/var/www/html/bootstrap/cache
+      - backend_uploads:/var/www/html/storage/app/public
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - aucms
 
   queue:
+    build: *backend-build
     image: aucms-backend:latest
+    entrypoint: ["/usr/local/bin/docker-worker-entrypoint.sh"]
+    command: php artisan queue:work --sleep=3 --tries=3 --timeout=90
     restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 60
     env_file:
       - .env
     environment:
       <<: *backend-env
-    command: ["php", "artisan", "queue:work", "--tries=3", "--timeout=90"]
+    volumes:
+      - backend_storage:/var/www/html/storage
+      - backend_cache:/var/www/html/bootstrap/cache
+      - backend_uploads:/var/www/html/storage/app/public
     depends_on:
       app:
         condition: service_started
       redis:
         condition: service_healthy
-    volumes:
-      - backend_storage:/var/www/html/storage
-      - backend_cache:/var/www/html/bootstrap/cache
     networks:
       - aucms
 
   scheduler:
+    build: *backend-build
     image: aucms-backend:latest
+    entrypoint: ["/usr/local/bin/docker-worker-entrypoint.sh"]
+    command: php artisan schedule:work
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    env_file:
+      - .env
+    environment:
+      <<: *backend-env
+    volumes:
+      - backend_storage:/var/www/html/storage
+      - backend_cache:/var/www/html/bootstrap/cache
+      - backend_uploads:/var/www/html/storage/app/public
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - aucms
+
+  # Single container: app + worker + scheduler (use when deploying as one container)
+  # Run: docker compose --profile all-in-one up -d all-in-one
+  all-in-one:
+    profiles:
+      - all-in-one
+    build: *backend-build
+    image: aucms-backend:latest
+    ports:
+      - "8000:8000"
     restart: unless-stopped
     env_file:
       - .env
     environment:
       <<: *backend-env
-    command: ["php", "artisan", "schedule:work"]
-    depends_on:
-      app:
-        condition: service_started
+      RUN_WORKER_AND_SCHEDULER: "1"
     volumes:
       - backend_storage:/var/www/html/storage
       - backend_cache:/var/www/html/bootstrap/cache
+      - backend_uploads:/var/www/html/storage/app/public
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - aucms
 
@@ -92,22 +135,23 @@ services:
       timeout: 3s
       retries: 5
 
-  # db:
-  #   image: mysql:8.0
-  #   restart: unless-stopped
-  #   environment:
-  #     MYSQL_DATABASE: aucms
-  #     MYSQL_ROOT_PASSWORD: root
-  #     MYSQL_USER: aucms_user
-  #     MYSQL_PASSWORD: secret
-  #   volumes:
-  #     - db_data:/var/lib/mysql
-  #   networks:
-  #     - aucms
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: aucms
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: aucms_user
+      MYSQL_PASSWORD: secret
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - aucms
 
 volumes:
   backend_storage:
   backend_cache:
+  backend_uploads:
   redis_data:
   db_data:
 

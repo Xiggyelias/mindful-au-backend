@@ -60,6 +60,13 @@ RUN mkdir -p storage bootstrap/cache \
 # PHP config
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
 
+# Entrypoint scripts (IRV-style: storage setup, migrations, cache, all-in-one supervisord)
+COPY docker-entrypoint.sh /usr/local/bin/
+COPY docker-worker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-worker-entrypoint.sh
+
 EXPOSE 8000
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# Default: app only. For single-container (app+worker+scheduler), set RUN_WORKER_AND_SCHEDULER=1
 CMD ["php", "artisan", "octane:start", "--server=swoole", "--host=0.0.0.0", "--port=8000"]
