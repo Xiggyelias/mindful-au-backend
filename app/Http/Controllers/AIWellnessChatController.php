@@ -112,7 +112,7 @@ Important guidelines:
             ?? $this->tryOpenAI($messages);
 
         if (!$response) {
-            $response = $this->buildLocalWellnessFallbackResponse($message);
+            $response = $this->buildLocalWellnessFallbackResponse($message, $historyMessages);
             Log::info('AI wellness chat provider fallback used.');
         }
 
@@ -489,36 +489,197 @@ Important guidelines:
         return null;
     }
 
-    private function buildLocalWellnessFallbackResponse(string $message): string
+    private function buildLocalWellnessFallbackResponse(string $message, array $historyMessages = []): string
+    {
+        $normalized = $this->normalizeIntentText($message);
+        $conversationTopic = $this->resolveConversationTopic($normalized, $historyMessages);
+
+        if ($conversationTopic === 'crisis') {
+            return 'Your safety comes first. Please contact emergency services or a trusted counselor right now. If you are alone, move toward another person and tell them clearly that you need support now.';
+        }
+
+        if ($this->matchesExactIntent($normalized, [
+            'hi',
+            'hello',
+            'hey',
+            'good morning',
+            'good afternoon',
+            'good evening',
+        ])) {
+            return 'Hello. I am here with you. Tell me how you are feeling today, and we can take it one step at a time.';
+        }
+
+        if ($this->matchesExactIntent($normalized, [
+            'can you help me',
+            'help me',
+            'are you there',
+            'i need help',
+            'i need support',
+            'talk to me',
+        ])) {
+            return 'Yes, I am here to help. Tell me what feels hardest right now, and I will help you work through one clear next step.';
+        }
+
+        if ($this->matchesExactIntent($normalized, [
+            'thank you',
+            'thanks',
+            'thank you so much',
+            'okay thanks',
+            'ok thanks',
+        ])) {
+            return 'You are welcome. If you want, tell me what is still weighing on you, and we can keep working through it together.';
+        }
+
+        if ($this->matchesExactIntent($normalized, [
+            'how are you',
+            'who are you',
+            'what can you do',
+        ])) {
+            return 'I am your AI wellness assistant. I can help you talk through stress, anxiety, study pressure, and practical coping steps. Tell me what is going on for you.';
+        }
+
+        if ($this->isFollowUpPrompt($normalized)) {
+            return $this->buildFollowUpFallbackResponse($conversationTopic);
+        }
+
+        if ($conversationTopic === 'anxiety') {
+            return 'That sounds heavy, and your reaction makes sense. Start with your body first: breathe in for 4 and out for 6 for one minute, then write the main thought making this feel threatening. After that, choose one 10 to 15 minute task that gives you a sense of control.';
+        }
+
+        if ($conversationTopic === 'study') {
+            return 'Academic pressure can feel intense. Start with the smallest concrete task first, not the whole workload. Use one short cycle: 25 minutes focus, 5 minutes break, and then review what is still unclear. If you want, tell me the subject or assignment and I will help you break it down.';
+        }
+
+        if ($conversationTopic === 'sleep') {
+            return 'Sleep strain can increase stress quickly. Focus on tonight rather than solving everything at once: reduce screens, avoid caffeine late, and do one calm wind-down activity before bed. If this continues for several days, discuss it with your counselor so you can create a recovery plan.';
+        }
+
+        if ($conversationTopic === 'sadness') {
+            return 'I am sorry this feels heavy. Be gentle with yourself for today. Start with one grounding action like drinking water, stepping into fresh air, or messaging one trusted person. If you want, tell me whether this feels more like sadness, loneliness, or exhaustion.';
+        }
+
+        if (str_word_count($normalized) <= 4) {
+            return 'I am listening. Tell me a little more about what is happening for you right now, and I will respond as clearly as I can.';
+        }
+
+        return 'I am here with you. Tell me what feels most difficult right now, and we will break it into one manageable next step together.';
+    }
+
+    private function normalizeIntentText(string $message): string
     {
         $normalized = Str::lower($message);
+        $normalized = preg_replace('/[^\pL\pN\s]/u', ' ', $normalized);
 
-        $crisisTerms = [
+        return is_string($normalized) ? trim(preg_replace('/\s+/u', ' ', $normalized) ?? '') : '';
+    }
+
+    private function matchesExactIntent(string $normalized, array $phrases): bool
+    {
+        return in_array($normalized, $phrases, true);
+    }
+
+    private function resolveConversationTopic(string $normalizedMessage, array $historyMessages): ?string
+    {
+        $currentTopic = $this->detectTopicFromText($normalizedMessage);
+        if ($currentTopic !== null) {
+            return $currentTopic;
+        }
+
+        for ($i = count($historyMessages) - 1; $i >= 0; $i--) {
+            $content = $this->normalizeIntentText((string) ($historyMessages[$i]['content'] ?? ''));
+            $topic = $this->detectTopicFromText($content);
+            if ($topic !== null) {
+                return $topic;
+            }
+        }
+
+        return null;
+    }
+
+    private function detectTopicFromText(string $normalized): ?string
+    {
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (Str::contains($normalized, [
             'suicide',
             'kill myself',
             'end my life',
             'self harm',
             'hurt myself',
-        ];
-        foreach ($crisisTerms as $term) {
-            if (Str::contains($normalized, $term)) {
-                return 'Thank you for reaching out. If you might harm yourself, contact emergency services now and message your counselor immediately. If possible, stay with someone you trust while support is arranged.';
-            }
+            'do not feel safe',
+        ])) {
+            return 'crisis';
         }
 
-        if (Str::contains($normalized, ['anxiety', 'anxious', 'panic', 'overwhelmed', 'stress'])) {
-            return 'That sounds heavy, and your reaction makes sense. Try this quick reset now: breathe in for 4 and out for 6 for one minute, write the top 3 tasks only, then do the smallest one for 10 minutes. If this pattern continues, book a counselor check-in.';
+        if (Str::contains($normalized, ['anxiety', 'anxious', 'panic', 'overwhelmed', 'stress', 'stressed'])) {
+            return 'anxiety';
         }
 
-        if (Str::contains($normalized, ['exam', 'deadline', 'assignment', 'study'])) {
-            return 'Academic pressure can feel intense. Use a short cycle: 25 minutes focus, 5 minutes break, repeat 3 times. Start with the most concrete task first. If workload still feels unmanageable, reach out to your counselor for a support plan.';
+        if (Str::contains($normalized, ['exam', 'deadline', 'assignment', 'study', 'focus', 'concentrate'])) {
+            return 'study';
         }
 
-        if (Str::contains($normalized, ['sleep', 'insomnia', 'tired', 'exhausted'])) {
-            return 'Sleep strain can increase stress quickly. For tonight: avoid caffeine late, dim screens before bed, and do a brief wind-down routine. If this continues for several days, discuss it with your counselor so you can create a recovery plan.';
+        if (Str::contains($normalized, ['sleep', 'insomnia', 'tired', 'exhausted', 'cannot sleep', 'cant sleep'])) {
+            return 'sleep';
         }
 
-        return 'I hear you. Let us break this into one manageable next step: name the main pressure, choose one person you can contact today, and complete one 15-minute action now. I can help you structure that if you want.';
+        if (Str::contains($normalized, ['sad', 'depressed', 'down', 'lonely', 'hopeless'])) {
+            return 'sadness';
+        }
+
+        return null;
+    }
+
+    private function isFollowUpPrompt(string $normalized): bool
+    {
+        if ($normalized === '') {
+            return false;
+        }
+
+        if ($this->matchesExactIntent($normalized, [
+            'yes',
+            'yeah',
+            'yep',
+            'ok',
+            'okay',
+            'sure',
+            'please',
+            'continue',
+            'go on',
+            'and then',
+            'what next',
+            'tell me more',
+            'what should i do',
+            'what should i do first',
+            'how do i do that',
+            'can you explain',
+            'why',
+        ])) {
+            return true;
+        }
+
+        return Str::contains($normalized, [
+            'tell me more',
+            'what should i do',
+            'what next',
+            'how do i do that',
+            'can you explain',
+            'what do i do first',
+        ]);
+    }
+
+    private function buildFollowUpFallbackResponse(?string $topic): string
+    {
+        return match ($topic) {
+            'crisis' => 'Stay focused on safety right now. Reach out to emergency services, a counselor, or a trusted person immediately. If you can, send one direct message now saying you do not feel safe and need someone with you.',
+            'anxiety' => 'Let us take it step by step. First, slow your breathing for one minute. Next, write the exact thought making this feel overwhelming. Then choose one 10 to 15 minute task that helps you regain control. If you want, tell me the thought and I will help you challenge it.',
+            'study' => 'Start with the smallest academic action. Open the course material, pick one question or one subsection, and work on it for 15 minutes only. After that, pause and decide the next small task instead of thinking about the whole workload.',
+            'sleep' => 'Start with tonight, not the whole week. Put screens aside for a while, dim the room if you can, and do one quiet routine such as breathing, stretching, or writing down tomorrow worries on paper so they are not circling in your head.',
+            'sadness' => 'Start with something grounding and human. Drink some water, move to a brighter or calmer place, and send one short message to someone safe. Then tell me whether the hardest part is loneliness, exhaustion, or heavy thoughts.',
+            default => 'We can do this one step at a time. Tell me the hardest part in one sentence, and I will help you decide what to do first.',
+        };
     }
 
     private function sanitizeUserText(string $value): string
