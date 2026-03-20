@@ -18,7 +18,7 @@ return [
     'connections' => [
         'mysql' => [
             'driver' => 'mysql',
-            'url' => env('DATABASE_URL'),
+            'url' => env('DATABASE_URL', null),
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '3306'),
             'database' => env('DB_DATABASE', 'forge'),
@@ -32,9 +32,9 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-                PDO::MYSQL_ATTR_SSL_CERT => env('MYSQL_ATTR_SSL_CERT'),
-                PDO::MYSQL_ATTR_SSL_KEY => env('MYSQL_ATTR_SSL_KEY'),
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA', null),
+                PDO::MYSQL_ATTR_SSL_CERT => env('MYSQL_ATTR_SSL_CERT', null),
+                PDO::MYSQL_ATTR_SSL_KEY => env('MYSQL_ATTR_SSL_KEY', null),
                 PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => filter_var(
                     env('MYSQL_ATTR_SSL_VERIFY_SERVER_CERT', true),
                     FILTER_VALIDATE_BOOL
@@ -43,7 +43,7 @@ return [
         ],
         'pgsql' => [
             'driver' => 'pgsql',
-            'url' => env('DATABASE_URL'),
+            'url' => env('DATABASE_URL', null),
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '5432'),
             'database' => env('DB_DATABASE', 'forge'),
@@ -57,7 +57,7 @@ return [
         ],
         'sqlite' => [
             'driver' => 'sqlite',
-            'url' => env('DATABASE_URL'),
+            'url' => env('DATABASE_URL', null),
             'database' => $sqliteDatabase,
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
@@ -72,18 +72,18 @@ return [
             'prefix' => env('REDIS_PREFIX', Str::slug(env('APP_NAME', 'laravel'), '_').'_database_'),
         ],
         'default' => [
-            'url' => env('REDIS_URL'),
+            'url' => env('REDIS_URL', null),
             'host' => env('REDIS_HOST', '127.0.0.1'),
-            'username' => env('REDIS_USERNAME'),
-            'password' => env('REDIS_PASSWORD'),
+            'username' => env('REDIS_USERNAME', null),
+            'password' => env('REDIS_PASSWORD', null),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_DB', '0'),
         ],
         'cache' => [
-            'url' => env('REDIS_URL'),
+            'url' => env('REDIS_URL', null),
             'host' => env('REDIS_HOST', '127.0.0.1'),
-            'username' => env('REDIS_USERNAME'),
-            'password' => env('REDIS_PASSWORD'),
+            'username' => env('REDIS_USERNAME', null),
+            'password' => env('REDIS_PASSWORD', null),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_CACHE_DB', '1'),
         ],

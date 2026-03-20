@@ -30,8 +30,8 @@ return [
         'database' => [
             'driver' => 'database',
             'table' => env('CACHE_TABLE', 'cache'),
-            'connection' => env('CACHE_DB_CONNECTION'),
-            'lock_connection' => env('CACHE_DB_LOCK_CONNECTION'),
+            'connection' => env('CACHE_DB_CONNECTION', null),
+            'lock_connection' => env('CACHE_DB_LOCK_CONNECTION', null),
             'lock_table' => env('CACHE_LOCK_TABLE', 'cache_locks'),
         ],
 

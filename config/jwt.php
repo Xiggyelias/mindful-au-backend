@@ -1,11 +1,11 @@
 <?php
 
 return [
-    'secret' => env('JWT_SECRET'),
+    'secret' => env('JWT_SECRET', null),
     'keys' => [
-        'public' => env('JWT_PUBLIC_KEY'),
-        'private' => env('JWT_PRIVATE_KEY'),
-        'passphrase' => env('JWT_PASSPHRASE'),
+        'public' => env('JWT_PUBLIC_KEY', null),
+        'private' => env('JWT_PRIVATE_KEY', null),
+        'passphrase' => env('JWT_PASSPHRASE', null),
     ],
     'ttl' => env('JWT_TTL', 60),
     'refresh_ttl' => env('JWT_REFRESH_TTL', 20160),
