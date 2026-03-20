@@ -22,19 +22,28 @@ class OpenRouterService
 
     public function __construct()
     {
-        $this->apiKey = (string) env('OPENROUTER_API_KEY', '');
-        $this->baseUrl = (string) env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1');
+        $this->apiKey = (string) config('services.openrouter.api_key', '');
+        $this->baseUrl = $this->normalizeBaseUrl(
+            (string) config('services.openrouter.base_url', 'https://openrouter.ai/api/v1')
+        );
 
         $this->client = new Client([
             'base_uri' => $this->baseUrl,
             'headers' => [
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type' => 'application/json',
-                'HTTP-Referer' => env('OPENROUTER_SITE_URL', 'http://localhost'),
-                'X-Title' => env('OPENROUTER_SITE_NAME', 'AI Chat'),
+                'HTTP-Referer' => (string) config('services.openrouter.site_url', 'http://localhost'),
+                'X-Title' => (string) config('services.openrouter.site_name', 'AI Chat'),
             ],
             'timeout' => 60,
         ]);
+    }
+
+    private function normalizeBaseUrl(string $baseUrl): string
+    {
+        $normalized = rtrim(trim($baseUrl), '/');
+
+        return $normalized === '' ? 'https://openrouter.ai/api/v1/' : $normalized . '/';
     }
 
     /**

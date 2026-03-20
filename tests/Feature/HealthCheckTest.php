@@ -9,6 +9,18 @@ class HealthCheckTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'services.kwaipilot.api_key' => null,
+            'services.openrouter.api_key' => null,
+            'services.gemini.api_key' => null,
+            'services.openai.api_key' => null,
+        ]);
+    }
+
     /** @test */
     public function health_endpoint_returns_ok(): void
     {
@@ -57,5 +69,23 @@ class HealthCheckTest extends TestCase
             ->assertJsonPath('components.disk', true)
             ->assertJsonPath('components.ai', true)
             ->assertJsonPath('details.ai.mode', 'local_fallback');
+    }
+
+    /** @test */
+    public function ready_endpoint_reports_external_ai_when_a_provider_is_configured(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'test-openrouter',
+        ]);
+
+        $response = $this->getJson('/api/ready');
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('components.ai', true)
+            ->assertJsonPath('details.ai.mode', 'external')
+            ->assertJsonPath('details.ai.external_provider_configured', true)
+            ->assertJsonPath('details.ai.configured_providers.0', 'openrouter');
     }
 }
