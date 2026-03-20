@@ -12,7 +12,7 @@ return new class extends Migration
         Schema::create('user_roles', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->enum('role', ['admin', 'counselor', 'student']);
+            $table->enum('role', ['admin', 'counselor', 'peer_counselor', 'student']);
             $table->boolean('approved')->default(false);
             $table->timestamps();
 
@@ -25,4 +25,3 @@ return new class extends Migration
         Schema::dropIfExists('user_roles');
     }
 };
-

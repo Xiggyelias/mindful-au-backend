@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('institution_accounts', function (Blueprint $table) {
             $table->id();
             $table->string('email')->unique();
-            $table->enum('role', ['student', 'staff', 'counselor', 'admin']);
+            $table->enum('role', ['student', 'staff', 'counselor', 'peer_counselor', 'admin']);
             $table->boolean('approved')->default(true);
             $table->boolean('is_active')->default(true);
             $table->string('full_name')->nullable();
@@ -27,4 +27,3 @@ return new class extends Migration
         Schema::dropIfExists('institution_accounts');
     }
 };
-
