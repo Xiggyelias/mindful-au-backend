@@ -36,7 +36,7 @@ services:
     image: aucms-backend:latest
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8000:80"
     env_file:
       - .env
     environment:
@@ -104,7 +104,7 @@ services:
     build: *backend-build
     image: aucms-backend:latest
     ports:
-      - "8000:8000"
+      - "8000:80"
     restart: unless-stopped
     env_file:
       - .env
