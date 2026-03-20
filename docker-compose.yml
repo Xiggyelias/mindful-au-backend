@@ -42,9 +42,9 @@ services:
     environment:
       <<: *backend-env
     volumes:
-      - backend_storage:/var/www/html/storage
-      - backend_cache:/var/www/html/bootstrap/cache
-      - backend_uploads:/var/www/html/storage/app/public
+      - backend_storage:/app/storage
+      - backend_cache:/app/bootstrap/cache
+      - backend_uploads:/app/storage/app/public
     depends_on:
       redis:
         condition: service_healthy
@@ -55,7 +55,7 @@ services:
     build: *backend-build
     image: aucms-backend:latest
     entrypoint: ["/usr/local/bin/docker-worker-entrypoint.sh"]
-    command: php /var/www/html/artisan queue:work --sleep=3 --tries=3 --timeout=90
+    command: php /app/artisan queue:work --sleep=3 --tries=3 --timeout=90
     restart: unless-stopped
     stop_signal: SIGTERM
     stop_grace_period: 60
@@ -64,9 +64,9 @@ services:
     environment:
       <<: *backend-env
     volumes:
-      - backend_storage:/var/www/html/storage
-      - backend_cache:/var/www/html/bootstrap/cache
-      - backend_uploads:/var/www/html/storage/app/public
+      - backend_storage:/app/storage
+      - backend_cache:/app/bootstrap/cache
+      - backend_uploads:/app/storage/app/public
     depends_on:
       app:
         condition: service_started
@@ -79,7 +79,7 @@ services:
     build: *backend-build
     image: aucms-backend:latest
     entrypoint: ["/usr/local/bin/docker-worker-entrypoint.sh"]
-    command: php /var/www/html/artisan schedule:work
+    command: php /app/artisan schedule:work
     restart: unless-stopped
     stop_signal: SIGTERM
     env_file:
@@ -87,9 +87,9 @@ services:
     environment:
       <<: *backend-env
     volumes:
-      - backend_storage:/var/www/html/storage
-      - backend_cache:/var/www/html/bootstrap/cache
-      - backend_uploads:/var/www/html/storage/app/public
+      - backend_storage:/app/storage
+      - backend_cache:/app/bootstrap/cache
+      - backend_uploads:/app/storage/app/public
     depends_on:
       app:
         condition: service_started
@@ -112,9 +112,9 @@ services:
       <<: *backend-env
       RUN_WORKER_AND_SCHEDULER: "1"
     volumes:
-      - backend_storage:/var/www/html/storage
-      - backend_cache:/var/www/html/bootstrap/cache
-      - backend_uploads:/var/www/html/storage/app/public
+      - backend_storage:/app/storage
+      - backend_cache:/app/bootstrap/cache
+      - backend_uploads:/app/storage/app/public
     depends_on:
       redis:
         condition: service_healthy

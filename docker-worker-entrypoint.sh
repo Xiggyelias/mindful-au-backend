@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-cd /var/www/html
+cd /app
 
 # Create storage structure (volumes may mount over and leave it empty)
 mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs storage/app/public
@@ -10,6 +10,6 @@ chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
 chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 
 # Cache config (non-fatal - worker will load config at runtime if this fails)
-php /var/www/html/artisan config:cache 2>/dev/null || true
+php /app/artisan config:cache 2>/dev/null || true
 
 exec "$@"

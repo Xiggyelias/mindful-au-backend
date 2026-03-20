@@ -1,7 +1,7 @@
 # ----------- Composer Stage -----------
 FROM composer:2.8 AS vendor
 
-WORKDIR /var/www/html
+WORKDIR /app
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
 COPY composer.json composer.lock ./
@@ -19,7 +19,7 @@ RUN composer dump-autoload --optimize
 # ----------- App Stage -----------
 FROM php:8.3-fpm-alpine
 
-WORKDIR /var/www/html
+WORKDIR /app
 
 # Install dependencies
 RUN apk add --no-cache \
@@ -55,7 +55,7 @@ RUN apk add --no-cache \
     && apk del .build-deps
 
 # Copy app
-COPY --from=vendor /var/www/html /var/www/html
+COPY --from=vendor /app /app
 
 # Permissions
 RUN mkdir -p storage bootstrap/cache \
@@ -73,4 +73,4 @@ EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # Default:  app only. For single-container (app+worker+scheduler), set RUN_WORKER_AND_SCHEDULER=1
-CMD ["php", "/var/www/html/artisan", "octane:start", "--server=swoole", "--host=0.0.0.0", "--port=8000"]
+CMD ["php", "/app/artisan", "octane:start", "--server=swoole", "--host=0.0.0.0", "--port=8000"]
