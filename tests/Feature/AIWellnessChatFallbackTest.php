@@ -162,6 +162,48 @@ class AIWellnessChatFallbackTest extends TestCase
     }
 
     /** @test */
+    public function configured_external_ai_that_fails_still_returns_local_fallback_guidance(): void
+    {
+        SystemSetting::query()->updateOrCreate(
+            ['key' => 'two_factor_auth'],
+            ['value' => false]
+        );
+
+        config([
+            'services.kwaipilot.api_key' => null,
+            'services.openrouter.api_key' => 'test-openrouter',
+            'services.gemini.api_key' => null,
+            'services.openai.api_key' => null,
+        ]);
+
+        Http::fake([
+            'openrouter.ai/*' => Http::response([
+                'error' => [
+                    'message' => 'provider unavailable',
+                ],
+            ], 503),
+        ]);
+
+        $student = $this->createPortalUser('student', 'ai-external-fallback@test.com', 'AI External Fallback Student');
+
+        $response = $this->actingAs($student)->postJson('/api/ai/wellness-chat', [
+            'message' => 'I am stressed about everything',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('provider_mode', 'local_fallback')
+            ->assertJsonPath('provider_name', 'offline_companion')
+            ->assertJsonPath('external_ai_configured', true)
+            ->assertJsonPath('external_ai_live', false)
+            ->assertJsonPath('configured_providers.0', 'openrouter');
+
+        $assistantText = strtolower((string) $response->json('response'));
+
+        $this->assertStringContainsString('stress is high', $assistantText);
+        $this->assertStringContainsString('3-step reset', $assistantText);
+    }
+
+    /** @test */
     public function crisis_language_is_caught_before_any_provider_call_and_returns_immediate_help_guidance(): void
     {
         SystemSetting::query()->updateOrCreate(

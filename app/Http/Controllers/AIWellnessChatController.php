@@ -164,6 +164,8 @@ Important guidelines:
             'provider_mode' => $providerMode,
             'provider_name' => $providerName,
             'external_ai_configured' => $this->hasConfiguredExternalAiProvider(),
+            'external_ai_live' => $providerMode === 'external',
+            'configured_providers' => $this->configuredAiProviders(),
         ]);
     }
 

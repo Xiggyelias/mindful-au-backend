@@ -6,7 +6,7 @@ Laravel REST API for student, staff, peer counselor, and admin workflows.
 
 - PHP 8.1+
 - Composer
-- Database: SQLite (default), MySQL/MariaDB, or PostgreSQL
+- Database: MySQL/MariaDB
 
 ## Setup
 
@@ -18,7 +18,12 @@ php artisan migrate
 php artisan serve
 ```
 
-If you use the default local SQLite settings from `backend/.env.example`, create `backend/database/database.sqlite` before running migrations.
+Create the local MySQL databases before running migrations:
+
+```sql
+CREATE DATABASE counseling_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE counseling_db_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
 
 API default: `http://127.0.0.1:8000`
 
@@ -37,6 +42,10 @@ INSTITUTION_EMAIL_DOMAINS=africau.edu
 
 AUTH_REQUIRE_GOOGLE_FOR_STUDENTS=true
 AUTH_AUTO_PROVISION_STUDENTS=true
+ADMIN_BOOTSTRAP_EMAIL=admin@example.com
+ADMIN_BOOTSTRAP_PASSWORD=password123
+ADMIN_BOOTSTRAP_NAME="Mindful AU Admin"
+ADMIN_BOOTSTRAP_ID_NUMBER=ADM001
 ```
 
 Security header defaults are configurable via:
@@ -88,6 +97,8 @@ Canonical schema snapshot: `backend/database/schema.sql`
 php artisan test
 ```
 
+The test suite is configured for MySQL and uses `counseling_db_test` by default.
+
 ## Production Bootstrap
 
 For production, run under PHP-FPM and Nginx (or equivalent), then warm caches:
@@ -98,6 +109,12 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 php artisan event:cache
+```
+
+Create or update the admin account details from `backend/.env`:
+
+```bash
+php artisan admin:create
 ```
 
 ## Docker / Dokploy Deployment

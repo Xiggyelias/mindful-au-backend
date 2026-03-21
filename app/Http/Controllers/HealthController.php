@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class HealthController extends Controller
@@ -38,6 +40,7 @@ class HealthController extends Controller
             'disk' => $this->checkDisk(),
             'ai' => $this->checkAi(),
         ];
+        $integrations = $this->checkIntegrations();
 
         $components = [];
         foreach ($checks as $key => $check) {
@@ -51,7 +54,10 @@ class HealthController extends Controller
             'service' => config('app.name', 'backend'),
             'time' => now()->toIso8601String(),
             'components' => $components,
-            'details' => $checks,
+            'details' => [
+                ...$checks,
+                'integrations' => $integrations,
+            ],
         ], $isReady ? 200 : 503);
     }
 
@@ -263,35 +269,311 @@ class HealthController extends Controller
 
     private function checkAi(): array
     {
+        $probeEnabled = $this->shouldProbeExternalAiProviders();
         $configuredProviders = [];
+        $providerStatuses = [];
+        $activeProvider = null;
+        $externalReady = false;
+        $validation = 'not_configured';
 
-        if (trim((string) config('services.kwaipilot.api_key', '')) !== '') {
-            $configuredProviders[] = 'kwaipilot';
-        }
+        foreach ($this->aiProviderDefinitions() as $providerName => $definition) {
+            $configured = trim((string) config($definition['config_key'], '')) !== '';
+            $providerStatuses[$providerName] = [
+                'configured' => $configured,
+                'status' => $configured ? 'configured' : 'not_configured',
+                'reachable' => $configured ? null : false,
+                'probe_supported' => (bool) ($definition['probe_supported'] ?? false),
+            ];
 
-        if (trim((string) config('services.openrouter.api_key', '')) !== '') {
-            $configuredProviders[] = 'openrouter';
-        }
+            if (!$configured) {
+                continue;
+            }
 
-        if (trim((string) config('services.gemini.api_key', '')) !== '') {
-            $configuredProviders[] = 'gemini';
-        }
+            $configuredProviders[] = $providerName;
 
-        if (trim((string) config('services.openai.api_key', '')) !== '') {
-            $configuredProviders[] = 'openai';
+            if (!$probeEnabled || !(bool) ($definition['probe_supported'] ?? false)) {
+                if ($activeProvider === null) {
+                    $activeProvider = $providerName;
+                }
+                $externalReady = true;
+                if ($validation === 'not_configured') {
+                    $validation = 'configuration_only';
+                }
+                continue;
+            }
+
+            $probe = $this->probeAiProvider($providerName, $definition);
+            $providerStatuses[$providerName] = array_merge($providerStatuses[$providerName], $probe);
+
+            if (($probe['status'] ?? null) === 'ready') {
+                $externalReady = true;
+                $validation = 'verified';
+                if ($activeProvider === null) {
+                    $activeProvider = $providerName;
+                }
+            }
         }
 
         $externalConfigured = $configuredProviders !== [];
+        $mode = $externalConfigured && $externalReady ? 'external' : 'local_fallback';
+        $warning = null;
+
+        if (!$externalConfigured) {
+            $warning = 'No external AI provider key is configured; AI chat will use local fallback mode.';
+        } elseif (!$externalReady) {
+            $warning = 'External AI providers are configured but not currently reachable; AI chat will use local fallback mode.';
+        } elseif ($validation === 'configuration_only') {
+            $warning = 'External AI provider readiness is based on configuration only.';
+        }
 
         return [
             'ok' => true,
-            'mode' => $externalConfigured ? 'external' : 'local_fallback',
+            'mode' => $mode,
+            'validation' => $validation,
             'external_provider_configured' => $externalConfigured,
+            'external_provider_ready' => $externalReady,
             'configured_providers' => $configuredProviders,
+            'active_provider' => $activeProvider,
+            'providers' => $providerStatuses,
+            'local_fallback_available' => true,
             'chat_endpoint' => '/api/ai/wellness-chat',
-            'warning' => $externalConfigured
-                ? null
-                : 'No external AI provider key is configured; AI chat will use local fallback mode.',
+            'warning' => $warning,
         ];
+    }
+
+    private function checkIntegrations(): array
+    {
+        return [
+            'google_oauth' => $this->checkGoogleOAuthIntegration(),
+            'academic_risk_webhook' => $this->checkAcademicRiskIntegration(),
+        ];
+    }
+
+    /**
+     * @return array<string, array{config_key: string, probe_supported: bool}>
+     */
+    private function aiProviderDefinitions(): array
+    {
+        return [
+            'kwaipilot' => [
+                'config_key' => 'services.kwaipilot.api_key',
+                'probe_supported' => false,
+            ],
+            'openrouter' => [
+                'config_key' => 'services.openrouter.api_key',
+                'probe_supported' => true,
+            ],
+            'gemini' => [
+                'config_key' => 'services.gemini.api_key',
+                'probe_supported' => true,
+            ],
+            'openai' => [
+                'config_key' => 'services.openai.api_key',
+                'probe_supported' => true,
+            ],
+        ];
+    }
+
+    /**
+     * @param array{config_key: string, probe_supported: bool} $definition
+     * @return array{status: string, reachable: bool|null, checked_at?: string, http_status?: int, error?: string}
+     */
+    private function probeAiProvider(string $providerName, array $definition): array
+    {
+        $cacheSeconds = $this->externalAiProbeCacheSeconds();
+        $cacheSeed = trim((string) config($definition['config_key'], ''));
+        $cacheKey = 'health:ai-provider:' . $providerName . ':' . md5($cacheSeed);
+
+        if ($cacheSeconds > 0) {
+            return Cache::remember(
+                $cacheKey,
+                now()->addSeconds($cacheSeconds),
+                fn () => $this->executeAiProviderProbe($providerName)
+            );
+        }
+
+        return $this->executeAiProviderProbe($providerName);
+    }
+
+    /**
+     * @return array{status: string, reachable: bool|null, checked_at?: string, http_status?: int, error?: string}
+     */
+    private function executeAiProviderProbe(string $providerName): array
+    {
+        try {
+            return match ($providerName) {
+                'openrouter' => $this->probeOpenRouter(),
+                'gemini' => $this->probeGemini(),
+                'openai' => $this->probeOpenAi(),
+                default => [
+                    'status' => 'configured',
+                    'reachable' => null,
+                    'checked_at' => now()->toIso8601String(),
+                ],
+            };
+        } catch (\Throwable $exception) {
+            return [
+                'status' => 'degraded',
+                'reachable' => false,
+                'checked_at' => now()->toIso8601String(),
+                'error' => $this->sanitizeError($exception),
+            ];
+        }
+    }
+
+    /**
+     * @return array{status: string, reachable: bool, checked_at: string, http_status?: int, error?: string}
+     */
+    private function probeOpenRouter(): array
+    {
+        $response = Http::timeout($this->externalAiProbeTimeoutSeconds())
+            ->withHeaders([
+                'Authorization' => 'Bearer ' . (string) config('services.openrouter.api_key', ''),
+                'HTTP-Referer' => (string) config('services.openrouter.site_url', 'https://mindful-au.local'),
+                'X-Title' => (string) config('services.openrouter.site_name', 'Mindful AU'),
+            ])
+            ->get(rtrim((string) config('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/') . '/models');
+
+        return $this->probeResultFromResponse($response);
+    }
+
+    /**
+     * @return array{status: string, reachable: bool, checked_at: string, http_status?: int, error?: string}
+     */
+    private function probeGemini(): array
+    {
+        $response = Http::timeout($this->externalAiProbeTimeoutSeconds())
+            ->get('https://generativelanguage.googleapis.com/v1beta/models', [
+                'key' => (string) config('services.gemini.api_key', ''),
+            ]);
+
+        return $this->probeResultFromResponse($response);
+    }
+
+    /**
+     * @return array{status: string, reachable: bool, checked_at: string, http_status?: int, error?: string}
+     */
+    private function probeOpenAi(): array
+    {
+        $response = Http::timeout($this->externalAiProbeTimeoutSeconds())
+            ->withToken((string) config('services.openai.api_key', ''))
+            ->get('https://api.openai.com/v1/models');
+
+        return $this->probeResultFromResponse($response);
+    }
+
+    /**
+     * @return array{status: string, reachable: bool, checked_at: string, http_status?: int, error?: string}
+     */
+    private function probeResultFromResponse(\Illuminate\Http\Client\Response $response): array
+    {
+        if ($response->successful()) {
+            return [
+                'status' => 'ready',
+                'reachable' => true,
+                'checked_at' => now()->toIso8601String(),
+            ];
+        }
+
+        return [
+            'status' => 'degraded',
+            'reachable' => false,
+            'checked_at' => now()->toIso8601String(),
+            'http_status' => $response->status(),
+            'error' => $this->summarizeProbeResponse($response),
+        ];
+    }
+
+    private function shouldProbeExternalAiProviders(): bool
+    {
+        $configured = env('HEALTH_PROBE_EXTERNAL_AI');
+        if ($configured === null) {
+            return !app()->environment('testing');
+        }
+
+        return filter_var($configured, FILTER_VALIDATE_BOOL);
+    }
+
+    private function externalAiProbeTimeoutSeconds(): int
+    {
+        return max(2, min(10, (int) env('HEALTH_EXTERNAL_AI_TIMEOUT_SECONDS', 5)));
+    }
+
+    private function externalAiProbeCacheSeconds(): int
+    {
+        if (app()->environment('testing')) {
+            return 0;
+        }
+
+        return max(0, (int) env('HEALTH_EXTERNAL_AI_CACHE_SECONDS', 60));
+    }
+
+    private function summarizeProbeResponse(\Illuminate\Http\Client\Response $response): string
+    {
+        $body = trim((string) $response->body());
+        if ($body === '') {
+            return 'provider_probe_failed';
+        }
+
+        return Str::limit(preg_replace('/\s+/', ' ', $body) ?: $body, 160, '...');
+    }
+
+    private function checkGoogleOAuthIntegration(): array
+    {
+        $clientIdConfigured = trim((string) config('services.google.client_id', '')) !== '';
+        $clientSecretConfigured = trim((string) config('services.google.client_secret', '')) !== '';
+        $redirectConfigured = trim((string) config('services.google.redirect', '')) !== '';
+        $configured = $clientIdConfigured && $clientSecretConfigured && $redirectConfigured;
+
+        return [
+            'configured' => $configured,
+            'status' => $configured ? 'ready' : 'not_configured',
+            'client_id_configured' => $clientIdConfigured,
+            'client_secret_configured' => $clientSecretConfigured,
+            'redirect_configured' => $redirectConfigured,
+            'warning' => $configured
+                ? null
+                : 'Google OAuth requires GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URL.',
+        ];
+    }
+
+    private function checkAcademicRiskIntegration(): array
+    {
+        $configured = trim((string) config('services.academic_risk.webhook_secret', '')) !== '';
+        $details = [
+            'configured' => $configured,
+            'status' => $configured ? 'secured' : 'not_configured',
+            'signature_header' => 'X-AUCMS-Signature',
+            'warning' => $configured
+                ? null
+                : 'Academic risk webhook signing secret is not configured.',
+        ];
+
+        try {
+            if (!Schema::hasTable('sync_runs')) {
+                return $details;
+            }
+
+            $latestRun = DB::table('sync_runs')
+                ->where('source', 'academic_risk_webhook')
+                ->orderByDesc('created_at')
+                ->first(['status', 'started_at', 'finished_at']);
+
+            if (!$latestRun) {
+                return $details;
+            }
+
+            return [
+                ...$details,
+                'latest_run_status' => $latestRun->status,
+                'latest_run_started_at' => $latestRun->started_at,
+                'latest_run_finished_at' => $latestRun->finished_at,
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                ...$details,
+                'latest_run_error' => $this->sanitizeError($exception),
+            ];
+        }
     }
 }

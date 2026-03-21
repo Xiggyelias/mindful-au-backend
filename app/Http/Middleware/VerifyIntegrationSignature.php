@@ -10,7 +10,7 @@ class VerifyIntegrationSignature
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $secret = trim((string) env('ACADEMIC_RISK_WEBHOOK_SECRET', ''));
+        $secret = trim((string) config('services.academic_risk.webhook_secret', ''));
         if ($secret === '') {
             return response()->json([
                 'message' => 'Integration signature verification is not configured.',

@@ -24,6 +24,10 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URL', null),
     ],
 
+    'academic_risk' => [
+        'webhook_secret' => env('ACADEMIC_RISK_WEBHOOK_SECRET', null),
+    ],
+
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY', null),
         'model' => env('GEMINI_MODEL', 'gemini-1.5-flash'),
