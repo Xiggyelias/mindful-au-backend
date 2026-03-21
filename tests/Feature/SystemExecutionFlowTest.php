@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Notification;
-use App\Models\RiskAlert;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -76,32 +75,6 @@ class SystemExecutionFlowTest extends TestCase
             'title' => 'Appointment Confirmed',
         ]);
 
-        // Staff-created high-risk case alert
-        $highRiskResponse = $this->actingAs($counselor)->postJson('/api/intake-submissions', [
-            'submitter_type' => 'staff',
-            'presenting_concerns' => ['panic attacks', 'academic decline'],
-            'risk_answers' => [
-                'immediate_danger' => true,
-                'self_harm_thoughts' => true,
-            ],
-            'consent_acknowledged' => true,
-            'summary' => 'Need urgent support.',
-        ]);
-
-        $highRiskResponse->assertStatus(201)->assertJson([
-            'risk_level' => 'high',
-        ]);
-
-        $this->assertSame(1, RiskAlert::query()->count());
-
-        $highRiskNotificationRecipients = Notification::query()
-            ->where('title', 'High-Risk Intake Alert')
-            ->pluck('user_id')
-            ->all();
-
-        $this->assertContains($admin->id, $highRiskNotificationRecipients);
-        $this->assertContains($counselor->id, $highRiskNotificationRecipients);
-
         // Admin generating reports
         $reportResponse = $this->actingAs($admin)
             ->get('/api/analytics/export?report=overview&format=csv');
@@ -121,19 +94,6 @@ class SystemExecutionFlowTest extends TestCase
                 'appointments',
             ]);
 
-        // Referral creation
-        $referralResponse = $this->actingAs($counselor)->postJson('/api/referrals', [
-            'student_id' => $student->id,
-            'direction' => 'internal',
-            'target_service' => 'medical',
-            'destination_details' => 'Campus clinic referral',
-            'consent_granted' => true,
-            'notes' => 'Follow-up required.',
-        ]);
-        $referralResponse->assertStatus(201)->assertJson([
-            'direction' => 'internal',
-            'status' => 'pending',
-        ]);
     }
 
     private function createPortalUser(string $role, string $email, string $fullName): User

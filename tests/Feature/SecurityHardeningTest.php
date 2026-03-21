@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\CounselingSession;
-use App\Models\Referral;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,22 +26,20 @@ class SecurityHardeningTest extends TestCase
 
         $this->actingAs($studentA)->getJson('/api/users')->assertStatus(403);
 
-        $referral = Referral::query()->create([
+        $session = CounselingSession::query()->create([
             'student_id' => $studentA->id,
-            'referred_by' => $counselor->id,
-            'direction' => 'internal',
-            'target_service' => 'medical',
-            'consent_granted' => true,
-            'status' => 'pending',
-            'referred_at' => now(),
+            'counselor_id' => $counselor->id,
+            'status' => 'active',
+            'session_type' => 'chat',
+            'is_anonymous' => false,
         ]);
 
         $this->actingAs($studentB)
-            ->getJson("/api/referrals/{$referral->id}")
+            ->getJson("/api/sessions/{$session->id}")
             ->assertStatus(403);
 
         $this->actingAs($admin)
-            ->getJson("/api/referrals/{$referral->id}")
+            ->getJson("/api/sessions/{$session->id}")
             ->assertStatus(200);
     }
 

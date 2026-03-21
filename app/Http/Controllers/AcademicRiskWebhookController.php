@@ -209,7 +209,7 @@ class AcademicRiskWebhookController extends Controller
         Notification::query()->create([
             'user_id' => $student->id,
             'title' => 'Academic Wellness Support Available',
-            'message' => 'A gentle support referral was generated based on academic wellbeing indicators. You can book a counseling session anytime.',
+            'message' => 'A gentle support follow-up was generated based on academic wellbeing indicators. You can book a counseling session anytime.',
             'type' => 'info',
         ]);
 

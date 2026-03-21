@@ -13,8 +13,6 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\VoiceNotesController;
 use App\Http\Controllers\VideoCallController;
 use App\Http\Controllers\OpenRouterChatController;
-use App\Http\Controllers\IntakeController;
-use App\Http\Controllers\ReferralController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\ReportExportController;
 use App\Http\Controllers\AcademicRiskWebhookController;
@@ -66,19 +64,6 @@ Route::middleware(['auth:sanctum', 'session.timeout', 'audit.admin', 'audit.acce
 
     // Appointments
     Route::apiResource('appointments', AppointmentController::class);
-
-    // Intake & Triage
-    Route::get('/intake-submissions', [IntakeController::class, 'index']);
-    Route::post('/intake-submissions', [IntakeController::class, 'store']);
-    Route::get('/intake-submissions/{id}', [IntakeController::class, 'show']);
-    Route::patch('/risk-alerts/{id}/acknowledge', [IntakeController::class, 'acknowledgeAlert'])->middleware('throttle:60,1');
-
-    // Referrals
-    Route::get('/referrals', [ReferralController::class, 'index']);
-    Route::post('/referrals', [ReferralController::class, 'store']);
-    Route::get('/referrals/{id}', [ReferralController::class, 'show']);
-    Route::patch('/referrals/{id}', [ReferralController::class, 'update']);
-    Route::post('/referrals/{id}/events', [ReferralController::class, 'addEvent']);
 
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'index']);

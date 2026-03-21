@@ -7,8 +7,6 @@ use App\Models\AiDiagnostic;
 use App\Models\AiReport;
 use App\Models\Appointment;
 use App\Models\DataAccessLog;
-use App\Models\IntakeSubmission;
-use App\Models\Referral;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,33 +44,6 @@ class PaginationValidationTest extends TestCase
                 'scheduled_at' => now()->addDays($i + 1)->setHour(9),
                 'duration_minutes' => 30,
                 'status' => $i % 2 === 0 ? 'scheduled' : 'confirmed',
-            ]);
-        }
-
-        for ($i = 0; $i < 18; $i++) {
-            Referral::query()->create([
-                'student_id' => $student->id,
-                'referred_by' => $counselor->id,
-                'direction' => $i % 2 === 0 ? 'internal' : 'external',
-                'target_service' => 'medical',
-                'consent_granted' => true,
-                'status' => 'pending',
-                'referred_at' => now()->subDays($i),
-            ]);
-        }
-
-        for ($i = 0; $i < 16; $i++) {
-            IntakeSubmission::query()->create([
-                'user_id' => $student->id,
-                'submitter_type' => 'student',
-                'is_anonymous' => false,
-                'presenting_concerns' => ['stress'],
-                'risk_answers' => ['sleep_disruption' => true],
-                'consent_acknowledged' => true,
-                'risk_level' => 'low',
-                'urgency_score' => 10,
-                'status' => 'new',
-                'assigned_to' => $counselor->id,
             ]);
         }
 
@@ -149,16 +120,6 @@ class PaginationValidationTest extends TestCase
             $appointmentLink
         );
 
-        $referralsResponse = $this->actingAs($admin)
-            ->getJson('/api/referrals?direction=internal&page=2&per_page=4');
-        $referralsResponse->assertStatus(200)
-            ->assertJsonPath('meta.filters.direction', 'internal');
-
-        $intakeResponse = $this->actingAs($admin)
-            ->getJson('/api/intake-submissions?risk_level=low&page=2&per_page=5');
-        $intakeResponse->assertStatus(200)
-            ->assertJsonPath('meta.filters.risk_level', 'low');
-
         $activityLogsResponse = $this->actingAs($admin)
             ->getJson('/api/activity-logs?type=system&page=2&per_page=5');
         $activityLogsResponse->assertStatus(200)
@@ -192,7 +153,7 @@ class PaginationValidationTest extends TestCase
             ->assertJsonPath('meta.filters.student_id', (string) $student->id);
 
         $emptyResponse = $this->actingAs($admin)
-            ->getJson('/api/referrals?status=completed&page=99&per_page=10');
+            ->getJson('/api/ai-reports?page=99&per_page=10');
         $emptyResponse->assertStatus(200);
         $this->assertIsArray($emptyResponse->json('data'));
         $this->assertCount(0, $emptyResponse->json('data'));
