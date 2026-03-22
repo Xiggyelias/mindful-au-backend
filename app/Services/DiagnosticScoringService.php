@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\ZimbabweSupportResources;
+
 class DiagnosticScoringService
 {
     private const QUESTION_WEIGHTS = [
@@ -152,17 +154,21 @@ class DiagnosticScoringService
             'critical' => [
                 'primary' => 'Please contact the counseling center or crisis hotline immediately.',
                 'actions' => [
-                    'Call the crisis hotline: 988 (US) or your local emergency number',
+                    'Call Zimbabwe emergency services on 112, use 999 from a fixed line, or contact Childline Zimbabwe on 116',
                     'Contact the counseling center immediately',
                     'Reach out to a trusted person for support',
                     'Do not isolate yourself',
-                    'Consider emergency mental health services if needed',
+                    'Use Friendship Bench Zimbabwe for additional talk support at friendshipbenchzimbabwe.org/need-help',
                 ],
             ],
         ];
 
         $recommendations['primary'] = $baseRecommendations[$riskLevel]['primary'] ?? '';
         $recommendations['actions'] = $baseRecommendations[$riskLevel]['actions'] ?? [];
+
+        if ($riskLevel === 'critical') {
+            $recommendations['primary'] .= ' ' . ZimbabweSupportResources::crisisSummaryText();
+        }
 
         // Add category-specific recommendations
         foreach ($categoryScores as $category => $score) {

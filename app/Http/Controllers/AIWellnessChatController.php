@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use App\Support\SystemSettings;
+use App\Support\ZimbabweSupportResources;
 
 class AIWellnessChatController extends Controller
 {
@@ -108,7 +108,10 @@ Important guidelines:
 - If someone expresses thoughts of suicide or self-harm, stop normal coaching and give immediate safety guidance
 - Keep responses concise but warm and helpful
 - Use techniques from CBT and mindfulness when appropriate
-- Validate feelings before offering suggestions";
+- Validate feelings before offering suggestions
+
+Local context:
+" . ZimbabweSupportResources::crisisPromptContext();
 
         if ($requiresImmediateHelp) {
             $response = $this->isFollowUpPrompt($normalizedMessage)
@@ -161,6 +164,7 @@ Important guidelines:
             'requires_immediate_help' => $requiresImmediateHelp,
             'show_panic_button' => $requiresImmediateHelp,
             'crisis_hotline' => $requiresImmediateHelp ? $this->resolveCrisisHotline() : null,
+            'crisis_resources' => $requiresImmediateHelp ? ZimbabweSupportResources::crisisResources() : [],
             'provider_mode' => $providerMode,
             'provider_name' => $providerName,
             'external_ai_configured' => $this->hasConfiguredExternalAiProvider(),
@@ -533,7 +537,7 @@ Important guidelines:
         $conversationTopic = $this->resolveConversationTopic($normalized, $historyMessages);
 
         if ($conversationTopic === 'crisis') {
-            return 'Your safety comes first. Please contact emergency services or a trusted counselor right now. If you are alone, move toward another person and tell them clearly that you need support now.';
+            return 'Your safety comes first. Please contact emergency services or a trusted counselor right now. If you are alone, move toward another person and tell them clearly that you need support now. ' . ZimbabweSupportResources::crisisSummaryText();
         }
 
         if ($conversationTopic === 'physical_health') {
@@ -645,7 +649,7 @@ Important guidelines:
         }
 
         if (
-            preg_match('/\b(jump|throw|fall)\s+(off|from)\s+(?:a|the)?\s*(building|bridge|roof|window|balcony|cliff)\b/u', $normalized) === 1
+            preg_match('/\b(jump|throw|fall)\s+(off|from)\s+(?:a|the)?\s*(building|bridge|roof|window|balcony|cliff|hill|ledge|mountain)\b/u', $normalized) === 1
             || preg_match('/\b(overdose|hang myself|cut myself|stab myself|shoot myself|drink poison|take all (?:my )?pills)\b/u', $normalized) === 1
             || preg_match('/\b(i want to die|i wanna die|wish i were dead|dont want to live|do not want to live|don t want to live|end it all|better off without me|no reason to live|cant go on|can t go on|want to disappear forever)\b/u', $normalized) === 1
         ) {
@@ -761,7 +765,7 @@ Important guidelines:
     private function buildFollowUpFallbackResponse(?string $topic): string
     {
         return match ($topic) {
-            'crisis' => 'Stay focused on safety right now. Reach out to emergency services, a counselor, or a trusted person immediately. If you can, send one direct message now saying you do not feel safe and need someone with you.',
+            'crisis' => 'Stay focused on safety right now. Reach out to emergency services, a counselor, or a trusted person immediately. If you can, send one direct message now saying you do not feel safe and need someone with you. ' . ZimbabweSupportResources::crisisSummaryText(),
             'anxiety' => 'Let us take it step by step. First, slow your breathing for one minute. Next, write the exact thought making this feel overwhelming. Then choose one 10 to 15 minute task that helps you regain control. If you want, tell me the thought and I will help you challenge it.',
             'study' => 'Start with the smallest academic action. Open the course material, pick one question or one subsection, and work on it for 15 minutes only. After that, pause and decide the next small task instead of thinking about the whole workload.',
             'sleep' => 'Start with tonight, not the whole week. Put screens aside for a while, dim the room if you can, and do one quiet routine such as breathing, stretching, or writing down tomorrow worries on paper so they are not circling in your head.',
@@ -902,8 +906,8 @@ Important guidelines:
     {
         $firstStep = 'Move away from anything you could use to hurt yourself right now and get closer to another person if you can.';
 
-        if (preg_match('/\b(jump|throw|fall)\s+(off|from)\s+(?:a|the)?\s*(building|bridge|roof|window|balcony|cliff)\b/u', $normalizedMessage) === 1) {
-            $firstStep = 'Move away from the edge, roof, balcony, bridge, window, or any high place right now and get closer to another person if you can.';
+        if (preg_match('/\b(jump|throw|fall)\s+(off|from)\s+(?:a|the)?\s*(building|bridge|roof|window|balcony|cliff|hill|ledge|mountain)\b/u', $normalizedMessage) === 1) {
+            $firstStep = 'Move away from the edge, hill, roof, balcony, bridge, window, or any other high place right now and get closer to another person if you can.';
         }
 
         $parts = [
@@ -912,6 +916,7 @@ Important guidelines:
             $firstStep,
             'Contact emergency services, campus security, a counselor, or a trusted person right now and tell them clearly that you need immediate support.',
             'If you can use the emergency help button in the student dashboard, do that now.',
+            ZimbabweSupportResources::crisisSummaryText(),
         ];
 
         $hotline = $this->resolveCrisisHotline();
@@ -926,8 +931,7 @@ Important guidelines:
 
     private function resolveCrisisHotline(): ?string
     {
-        $hotline = trim(SystemSettings::getString('crisis_hotline', ''));
-        return $hotline !== '' ? $hotline : null;
+        return ZimbabweSupportResources::primaryCrisisContact();
     }
 
     private function availableAiProviders(): array

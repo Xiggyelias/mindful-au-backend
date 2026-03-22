@@ -241,6 +241,12 @@ class AIWellnessChatFallbackTest extends TestCase
                 'external_ai_configured' => true,
             ]);
 
+        $resources = $response->json('crisis_resources');
+        $this->assertIsArray($resources);
+        $this->assertNotEmpty($resources);
+        $this->assertTrue(collect($resources)->contains(fn (array $resource): bool => ($resource['contact'] ?? null) === '116'));
+        $this->assertTrue(collect($resources)->contains(fn (array $resource): bool => str_contains((string) ($resource['name'] ?? ''), 'Friendship Bench')));
+
         $assistantText = strtolower((string) $response->json('response'));
 
         $this->assertStringContainsString('immediate danger', $assistantText);
@@ -249,6 +255,31 @@ class AIWellnessChatFallbackTest extends TestCase
         $this->assertStringNotContainsString('academic pressure can feel intense', $assistantText);
 
         Http::assertNothingSent();
+    }
+
+    /** @test */
+    public function jumping_off_a_hill_is_also_classified_as_a_crisis_signal(): void
+    {
+        SystemSetting::query()->updateOrCreate(
+            ['key' => 'two_factor_auth'],
+            ['value' => false]
+        );
+
+        $student = $this->createPortalUser('student', 'ai-crisis-hill@test.com', 'AI Crisis Hill Student');
+
+        $response = $this->actingAs($student)->postJson('/api/ai/wellness-chat', [
+            'message' => 'I want to jump off a hill',
+        ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'risk_level' => 'crisis',
+                'requires_immediate_help' => true,
+                'provider_mode' => 'safety_guardrail',
+            ]);
+
+        $assistantText = strtolower((string) $response->json('response'));
+        $this->assertStringContainsString('high place', $assistantText);
     }
 
     private function createPortalUser(string $role, string $email, string $fullName): User

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AiModel;
 use App\Models\ChatConversation;
 use App\Models\ChatMessage;
+use App\Support\ZimbabweSupportResources;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Auth;
@@ -495,9 +496,14 @@ class OpenRouterService
             'self harm',
             'hurt myself',
         ];
+
+        if (preg_match('/\b(jump|throw|fall)\s+(off|from)\s+(?:a|the)?\s*(building|bridge|roof|window|balcony|cliff|hill|ledge|mountain)\b/u', $normalized) === 1) {
+            return 'I am really glad you reached out. If you might harm yourself, please contact emergency services right now and message your counselor immediately. If possible, stay with someone you trust while support is on the way. ' . ZimbabweSupportResources::crisisSummaryText();
+        }
+
         foreach ($crisisTerms as $term) {
             if (Str::contains($normalized, $term)) {
-                return 'I am really glad you reached out. If you might harm yourself, please contact emergency services right now and message your counselor immediately. If possible, stay with someone you trust while support is on the way.';
+                return 'I am really glad you reached out. If you might harm yourself, please contact emergency services right now and message your counselor immediately. If possible, stay with someone you trust while support is on the way. ' . ZimbabweSupportResources::crisisSummaryText();
             }
         }
 
