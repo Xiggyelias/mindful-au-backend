@@ -176,6 +176,14 @@ Validate against a 2k-4k active-user scale target:
 SCALE_TARGET_USERS=4000 node backend/scripts/validate-production-env.mjs
 ```
 
+Full deployment runbook and VM templates:
+
+- Runbook: [docs/PRODUCTION_2K_4K_RUNBOOK.md](/C:/Users/emmanuel/Desktop/mindful-au-main/backend/docs/PRODUCTION_2K_4K_RUNBOOK.md)
+- Nginx API template: [deploy/nginx/mindful-au-api.conf](/C:/Users/emmanuel/Desktop/mindful-au-main/backend/deploy/nginx/mindful-au-api.conf)
+- Apache API template: [deploy/apache/mindful-au-api-vhost.conf](/C:/Users/emmanuel/Desktop/mindful-au-main/backend/deploy/apache/mindful-au-api-vhost.conf)
+- systemd queue worker: [deploy/systemd/laravel-queue@.service](/C:/Users/emmanuel/Desktop/mindful-au-main/backend/deploy/systemd/laravel-queue@.service)
+- systemd scheduler: [deploy/systemd/laravel-scheduler.service](/C:/Users/emmanuel/Desktop/mindful-au-main/backend/deploy/systemd/laravel-scheduler.service)
+
 ## Load Speed Benchmark
 
 Run the reusable benchmark script from the workspace root:
@@ -222,13 +230,13 @@ LOAD_TEST_STUDENTS=2000 LOAD_TEST_COUNSELORS=100 php artisan db:seed --class=Loa
 Run the chat/video load scenario with staged ramp-up:
 
 ```bash
-LOAD_TEST_STUDENTS=2000 LOAD_TEST_COUNSELORS=100 LOAD_TEST_DURATION_SECONDS=120 LOAD_TEST_POLL_INTERVAL_MS=12000 LOAD_TEST_PREP_BATCH_SIZE=50 LOAD_TEST_PREP_BATCH_DELAY_MS=250 LOAD_TEST_CALL_BATCH_SIZE=200 node backend/scripts/load-test-chat-video.mjs
+LOAD_TEST_STUDENTS=2000 LOAD_TEST_COUNSELORS=100 LOAD_TEST_DURATION_SECONDS=120 LOAD_TEST_POLL_INTERVAL_MS=12000 LOAD_TEST_PREP_BATCH_SIZE=50 LOAD_TEST_PREP_BATCH_DELAY_MS=250 LOAD_TEST_CALL_BATCH_SIZE=200 LOAD_TEST_APPOINTMENT_SLOT_MINUTES=15 node backend/scripts/load-test-chat-video.mjs
 ```
 
 For the upper bound:
 
 ```bash
-LOAD_TEST_STUDENTS=4000 LOAD_TEST_COUNSELORS=200 LOAD_TEST_DURATION_SECONDS=180 LOAD_TEST_POLL_INTERVAL_MS=12000 LOAD_TEST_PREP_BATCH_SIZE=50 LOAD_TEST_PREP_BATCH_DELAY_MS=250 LOAD_TEST_CALL_BATCH_SIZE=250 node backend/scripts/load-test-chat-video.mjs
+LOAD_TEST_STUDENTS=4000 LOAD_TEST_COUNSELORS=200 LOAD_TEST_DURATION_SECONDS=180 LOAD_TEST_POLL_INTERVAL_MS=12000 LOAD_TEST_PREP_BATCH_SIZE=50 LOAD_TEST_PREP_BATCH_DELAY_MS=250 LOAD_TEST_CALL_BATCH_SIZE=250 LOAD_TEST_APPOINTMENT_SLOT_MINUTES=15 node backend/scripts/load-test-chat-video.mjs
 ```
 
 Production note: do not treat the system as 2k-4k ready unless Redis-backed cache/session/queue are active and queue workers are running.

@@ -12,9 +12,13 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Carbon;
 
 class AnalyticsController extends Controller
 {
+    private const SNAPSHOT_CACHE_KEY = 'analytics:dashboard:snapshot:v1';
+    private const SNAPSHOT_LOCK_KEY = 'analytics:dashboard:snapshot:refresh';
+
     public function dashboard(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -23,21 +27,104 @@ class AnalyticsController extends Controller
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
-        $cacheKey = 'analytics:dashboard:v2';
-        $stats = Cache::remember($cacheKey, now()->addSeconds(20), function () {
-            return [
-                'overview' => $this->getOverviewStats(),
-                'users' => $this->getUserStats(),
-                'sessions' => $this->getSessionStats(),
-                'appointments' => $this->getAppointmentStats(),
-                'ai_diagnostics' => $this->getAIDiagnosticStats(),
-                'recent_activity' => $this->getRecentActivity(),
-                'risk_levels' => $this->getRiskLevelDistribution(),
-                'counselor_performance' => $this->getCounselorPerformance(),
-            ];
-        });
+        $freshSeconds = max(15, (int) env('ANALYTICS_CACHE_SECONDS', 60));
+        $staleSeconds = max($freshSeconds, (int) env('ANALYTICS_CACHE_STALE_SECONDS', 180));
 
-        return response()->json($stats);
+        $snapshot = Cache::get(self::SNAPSHOT_CACHE_KEY);
+        $generatedAt = $this->snapshotGeneratedAt($snapshot);
+
+        if ($this->isFreshSnapshot($generatedAt, $freshSeconds) && is_array($snapshot['data'] ?? null)) {
+            return response()
+                ->json($snapshot['data'])
+                ->header('X-Analytics-Cache', 'hit');
+        }
+
+        if ($this->isFreshSnapshot($generatedAt, $staleSeconds) && is_array($snapshot['data'] ?? null)) {
+            $this->refreshSnapshotInBackground($freshSeconds);
+
+            return response()
+                ->json($snapshot['data'])
+                ->header('X-Analytics-Cache', 'stale');
+        }
+
+        $stats = $this->refreshSnapshotSync($freshSeconds);
+
+        return response()
+            ->json($stats)
+            ->header('X-Analytics-Cache', 'miss');
+    }
+
+    private function buildDashboardStats(): array
+    {
+        return [
+            'overview' => $this->getOverviewStats(),
+            'users' => $this->getUserStats(),
+            'sessions' => $this->getSessionStats(),
+            'appointments' => $this->getAppointmentStats(),
+            'ai_diagnostics' => $this->getAIDiagnosticStats(),
+            'recent_activity' => $this->getRecentActivity(),
+            'risk_levels' => $this->getRiskLevelDistribution(),
+            'counselor_performance' => $this->getCounselorPerformance(),
+        ];
+    }
+
+    private function refreshSnapshotSync(int $freshSeconds): array
+    {
+        $lock = Cache::lock(self::SNAPSHOT_LOCK_KEY, 30);
+
+        return $lock->block(5, function () use ($freshSeconds) {
+            $stats = $this->buildDashboardStats();
+
+            Cache::put(self::SNAPSHOT_CACHE_KEY, [
+                'generated_at' => now()->toIso8601String(),
+                'data' => $stats,
+            ], now()->addSeconds(max($freshSeconds * 3, 180)));
+
+            return $stats;
+        });
+    }
+
+    private function refreshSnapshotInBackground(int $freshSeconds): void
+    {
+        $lock = Cache::lock(self::SNAPSHOT_LOCK_KEY, 30);
+        if (!$lock->get()) {
+            return;
+        }
+
+        try {
+            $stats = $this->buildDashboardStats();
+
+            Cache::put(self::SNAPSHOT_CACHE_KEY, [
+                'generated_at' => now()->toIso8601String(),
+                'data' => $stats,
+            ], now()->addSeconds(max($freshSeconds * 3, 180)));
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function snapshotGeneratedAt(mixed $snapshot): ?Carbon
+    {
+        if (!is_array($snapshot)) {
+            return null;
+        }
+
+        $generatedAt = $snapshot['generated_at'] ?? null;
+        if (!is_string($generatedAt) || trim($generatedAt) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($generatedAt);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function isFreshSnapshot(?Carbon $generatedAt, int $seconds): bool
+    {
+        return $generatedAt !== null
+            && $generatedAt->greaterThan(now()->subSeconds($seconds));
     }
 
     private function getOverviewStats(): array
@@ -237,5 +324,4 @@ class AnalyticsController extends Controller
             ->toArray();
     }
 }
-
 

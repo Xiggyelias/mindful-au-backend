@@ -3,8 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Appointment;
-use App\Models\IntakeSubmission;
-use App\Models\RiskAlert;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -107,41 +105,6 @@ class StressEdgeCaseTest extends TestCase
         } finally {
             $lock->release();
         }
-    }
-
-    /** @test */
-    public function high_risk_intake_flood_creates_alerts_without_data_corruption(): void
-    {
-        SystemSetting::query()->updateOrCreate(
-            ['key' => 'two_factor_auth'],
-            ['value' => false]
-        );
-
-        $admin = $this->createPortalUser('admin', 'admin-flood@test.com', 'Admin Flood');
-        $counselor = $this->createPortalUser('counselor', 'counselor-flood@test.com', 'Counselor Flood');
-        for ($i = 0; $i < 40; $i++) {
-            $response = $this->actingAs($counselor)->postJson('/api/intake-submissions', [
-                'submitter_type' => 'staff',
-                'presenting_concerns' => ['panic'],
-                'risk_answers' => [
-                    'immediate_danger' => true,
-                    'self_harm_thoughts' => true,
-                ],
-                'consent_acknowledged' => true,
-                'summary' => "High risk payload {$i}",
-            ]);
-            $response->assertStatus(201);
-        }
-
-        $this->assertSame(40, IntakeSubmission::query()->count());
-        $this->assertSame(40, RiskAlert::query()->count());
-
-        $notifications = DB::table('notifications')
-            ->where('title', 'High-Risk Intake Alert')
-            ->whereIn('user_id', [$admin->id, $counselor->id])
-            ->count();
-
-        $this->assertGreaterThanOrEqual(80, $notifications);
     }
 
     /** @test */

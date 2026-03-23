@@ -15,9 +15,9 @@ class PeerCounselorRoleConstraintTest extends TestCase
     use RefreshDatabase;
 
     /** @test */
-    public function sqlite_user_roles_accept_peer_counselor(): void
+    public function mysql_user_roles_accept_peer_counselor(): void
     {
-        $this->assertSame('sqlite', DB::getDriverName());
+        $this->assertSame('mysql', DB::getDriverName());
 
         $user = User::factory()->create();
 
@@ -35,9 +35,9 @@ class PeerCounselorRoleConstraintTest extends TestCase
     }
 
     /** @test */
-    public function sqlite_institution_accounts_accept_peer_counselor(): void
+    public function mysql_institution_accounts_accept_peer_counselor(): void
     {
-        $this->assertSame('sqlite', DB::getDriverName());
+        $this->assertSame('mysql', DB::getDriverName());
 
         try {
             $account = InstitutionAccount::query()->create([

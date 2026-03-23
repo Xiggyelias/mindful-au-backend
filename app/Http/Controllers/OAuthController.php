@@ -22,14 +22,19 @@ class OAuthController extends Controller
 {
     private const OAUTH_TICKET_CACHE_PREFIX = 'oauth:ticket:';
     private const OAUTH_FRONTEND_URL_SESSION_KEY = 'oauth:frontend:url';
+    private const OAUTH_PORTAL_SESSION_KEY = 'oauth:portal';
 
     public function redirectToGoogle(Request $request): RedirectResponse
     {
         $this->rememberFrontendUrl($request);
+        $this->rememberRequestedPortal($request);
+
+        $requestedPortal = $this->requestedPortal($request);
 
         if (!$this->isGoogleOAuthConfigured()) {
             return $this->redirectToFrontendWithError(
-                'Google sign-in is not configured yet. Please contact support.'
+                'Google sign-in is not configured yet. Please contact support.',
+                $requestedPortal
             );
         }
 
@@ -52,16 +57,20 @@ class OAuthController extends Controller
             ]);
 
             return $this->redirectToFrontendWithError(
-                'Google sign-in is temporarily unavailable. Please try again.'
+                'Google sign-in is temporarily unavailable. Please try again.',
+                $requestedPortal
             );
         }
     }
 
     public function handleGoogleCallback(Request $request): RedirectResponse
     {
+        $requestedPortal = $this->requestedPortal($request, true);
+
         if (!$this->isGoogleOAuthConfigured()) {
             return $this->redirectToFrontendWithError(
-                'Google sign-in is not configured yet. Please contact support.'
+                'Google sign-in is not configured yet. Please contact support.',
+                $requestedPortal
             );
         }
 
@@ -78,14 +87,16 @@ class OAuthController extends Controller
                 );
 
                 return $this->redirectToFrontendWithError(
-                    $this->mapProviderCallbackError($providerError, $providerDescription)
+                    $this->mapProviderCallbackError($providerError, $providerDescription),
+                    $requestedPortal
                 );
             }
 
             if (!$request->filled('code')) {
                 $this->recordGoogleLogin($request, null, null, false, 'missing_authorization_code');
                 return $this->redirectToFrontendWithError(
-                    'Google sign-in did not return a valid authorization code. Please try again.'
+                    'Google sign-in did not return a valid authorization code. Please try again.',
+                    $requestedPortal
                 );
             }
 
@@ -94,13 +105,17 @@ class OAuthController extends Controller
             $email = Str::lower(trim((string) ($googleUser->getEmail() ?? '')));
             if ($email === '') {
                 $this->recordGoogleLogin($request, null, null, false, 'missing_email');
-                return $this->redirectToFrontendWithError('Google account did not provide an email address.');
+                return $this->redirectToFrontendWithError(
+                    'Google account did not provide an email address.',
+                    $requestedPortal
+                );
             }
 
             if (!$this->isAllowedInstitutionEmail($email)) {
                 $this->recordGoogleLogin($request, null, $email, false, 'non_institution_email');
                 return $this->redirectToFrontendWithError(
-                    'Only official institutional accounts are allowed.'
+                    'Only official institutional accounts are allowed.',
+                    $requestedPortal
                 );
             }
 
@@ -108,7 +123,8 @@ class OAuthController extends Controller
             if (!$emailVerified) {
                 $this->recordGoogleLogin($request, null, $email, false, 'email_not_verified');
                 return $this->redirectToFrontendWithError(
-                    'Your Google account email is not verified.'
+                    'Your Google account email is not verified.',
+                    $requestedPortal
                 );
             }
 
@@ -116,21 +132,39 @@ class OAuthController extends Controller
             if (!$resolved['role']) {
                 $this->recordGoogleLogin($request, null, $email, false, 'role_not_authorized');
                 return $this->redirectToFrontendWithError(
-                    'Your account is not authorized for this platform. Contact the system administrator.'
+                    'Your account is not authorized for this platform. Contact the system administrator.',
+                    $requestedPortal
                 );
             }
 
             if ($resolved['role'] === 'admin') {
                 $this->recordGoogleLogin($request, null, $email, false, 'admin_must_use_password_portal');
                 return $this->redirectToFrontendWithError(
-                    'Administrators must sign in from the Admin portal using email and password.'
+                    'Administrators must sign in from the Admin portal using email and password.',
+                    $requestedPortal
+                );
+            }
+
+            if (!$this->isRoleAllowedForPortal($resolved['role'], $requestedPortal)) {
+                $this->recordGoogleLogin(
+                    request: $request,
+                    user: null,
+                    email: $email,
+                    success: false,
+                    failureReason: 'portal_mismatch:' . ($requestedPortal ?? 'unknown') . ':' . $resolved['role']
+                );
+
+                return $this->redirectToFrontendWithError(
+                    $this->portalMismatchMessage($requestedPortal, $resolved['role']),
+                    $requestedPortal
                 );
             }
 
             if (!$resolved['approved']) {
                 $this->recordGoogleLogin($request, null, $email, false, 'account_pending_approval');
                 return $this->redirectToFrontendWithError(
-                    'Your account exists but is pending approval.'
+                    'Your account exists but is pending approval.',
+                    $requestedPortal
                 );
             }
 
@@ -180,7 +214,7 @@ class OAuthController extends Controller
 
             $this->recordGoogleLogin($request, $user, $email, true, null);
 
-            return $this->redirectToFrontendWithLoginTicket($loginTicket);
+            return $this->redirectToFrontendWithLoginTicket($loginTicket, $requestedPortal);
         } catch (Throwable $e) {
             Log::error('OAuth authentication failed', [
                 'error' => $e->getMessage(),
@@ -191,7 +225,8 @@ class OAuthController extends Controller
             $this->recordGoogleLogin($request, null, null, false, 'oauth_exception');
 
             return $this->redirectToFrontendWithError(
-                $this->resolveOAuthExceptionMessage($e)
+                $this->resolveOAuthExceptionMessage($e),
+                $requestedPortal
             );
         }
     }
@@ -391,6 +426,39 @@ class OAuthController extends Controller
         return 'http://127.0.0.1:5173';
     }
 
+    private function rememberRequestedPortal(Request $request): void
+    {
+        if (!$request->hasSession()) {
+            return;
+        }
+
+        $portal = $this->normalizePortal((string) $request->query('portal', ''));
+        if ($portal === null) {
+            $request->session()->forget(self::OAUTH_PORTAL_SESSION_KEY);
+            return;
+        }
+
+        $request->session()->put(self::OAUTH_PORTAL_SESSION_KEY, $portal);
+    }
+
+    private function requestedPortal(Request $request, bool $forgetFromSession = false): ?string
+    {
+        $queryPortal = $this->normalizePortal((string) $request->query('portal', ''));
+        if ($queryPortal !== null) {
+            return $queryPortal;
+        }
+
+        if (!$request->hasSession()) {
+            return null;
+        }
+
+        $storedPortal = $forgetFromSession
+            ? $request->session()->pull(self::OAUTH_PORTAL_SESSION_KEY, '')
+            : $request->session()->get(self::OAUTH_PORTAL_SESSION_KEY, '');
+
+        return $this->normalizePortal((string) $storedPortal);
+    }
+
     private function rememberFrontendUrl(Request $request): void
     {
         if (! $request->hasSession()) {
@@ -504,6 +572,51 @@ class OAuthController extends Controller
         return $origin;
     }
 
+    private function normalizePortal(string $portal): ?string
+    {
+        $normalized = Str::lower(trim($portal));
+
+        return match ($normalized) {
+            'student' => 'student',
+            'counselor', 'counsellor' => 'counselor',
+            'admin' => 'admin',
+            default => null,
+        };
+    }
+
+    private function isRoleAllowedForPortal(string $resolvedRole, ?string $requestedPortal): bool
+    {
+        if ($requestedPortal === null) {
+            return true;
+        }
+
+        return match ($requestedPortal) {
+            'student' => $resolvedRole === 'student',
+            'counselor' => in_array($resolvedRole, ['counselor', 'peer_counselor'], true),
+            'admin' => $resolvedRole === 'admin',
+            default => true,
+        };
+    }
+
+    private function portalMismatchMessage(?string $requestedPortal, string $resolvedRole): string
+    {
+        $requestedPortalLabel = match ($requestedPortal) {
+            'student' => 'Student portal',
+            'counselor' => 'Counselor portal',
+            'admin' => 'Admin portal',
+            default => 'selected portal',
+        };
+
+        $resolvedPortalLabel = match ($resolvedRole) {
+            'student' => 'Student portal',
+            'counselor', 'peer_counselor' => 'Counselor portal',
+            'admin' => 'Admin portal',
+            default => 'correct portal',
+        };
+
+        return "This Google account is not authorized for the {$requestedPortalLabel}. Use the {$resolvedPortalLabel} instead.";
+    }
+
     private function isGoogleOAuthConfigured(): bool
     {
         return $this->googleConfigValue('client_id') !== ''
@@ -583,21 +696,27 @@ class OAuthController extends Controller
         return 'Google sign-in failed. Please try again.';
     }
 
-    private function redirectToFrontendWithLoginTicket(string $ticket): RedirectResponse
+    private function redirectToFrontendWithLoginTicket(string $ticket, ?string $portal = null): RedirectResponse
     {
         $payload = [
             'ticket' => $ticket,
         ];
+        if ($portal !== null) {
+            $payload['portal'] = $portal;
+        }
         $query = http_build_query($payload);
 
         return redirect()->away($this->oauthCallbackUrl() . '?' . $query);
     }
 
-    private function redirectToFrontendWithError(string $errorMessage): RedirectResponse
+    private function redirectToFrontendWithError(string $errorMessage, ?string $portal = null): RedirectResponse
     {
         $payload = [
             'error' => $errorMessage,
         ];
+        if ($portal !== null) {
+            $payload['portal'] = $portal;
+        }
         $query = http_build_query($payload);
 
         return redirect()->away($this->oauthCallbackUrl() . '?' . $query);

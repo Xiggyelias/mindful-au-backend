@@ -2,18 +2,8 @@
 
 use Illuminate\Support\Str;
 
-$sqliteDatabase = env('DB_DATABASE', database_path('database.sqlite'));
-
-if (
-    $sqliteDatabase !== ':memory:'
-    && ! preg_match('/^(\/|\\\\|[A-Za-z]:[\\\\\\/])/', (string) $sqliteDatabase)
-) {
-    // Resolve relative sqlite paths from the project root for consistent behavior.
-    $sqliteDatabase = base_path((string) $sqliteDatabase);
-}
-
 return [
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'mysql'),
 
     'connections' => [
         'mysql' => [
@@ -40,27 +30,6 @@ return [
                     FILTER_VALIDATE_BOOL
                 ),
             ]) : [],
-        ],
-        'pgsql' => [
-            'driver' => 'pgsql',
-            'url' => env('DATABASE_URL', null),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '5432'),
-            'database' => env('DB_DATABASE', 'forge'),
-            'username' => env('DB_USERNAME', 'forge'),
-            'password' => env('DB_PASSWORD', ''),
-            'charset' => 'utf8',
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'search_path' => 'public',
-            'sslmode' => env('DB_SSLMODE', 'prefer'),
-        ],
-        'sqlite' => [
-            'driver' => 'sqlite',
-            'url' => env('DATABASE_URL', null),
-            'database' => $sqliteDatabase,
-            'prefix' => '',
-            'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
         ],
     ],
 

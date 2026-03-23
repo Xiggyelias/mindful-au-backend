@@ -55,6 +55,11 @@ const errors = [];
 const warnings = [];
 const scaleTargetUsers = Math.max(0, getInt('SCALE_TARGET_USERS', 0));
 const validateHighScaleProfile = scaleTargetUsers >= 2000;
+const usesRedis =
+  get('CACHE_STORE') === 'redis'
+  || get('QUEUE_CONNECTION') === 'redis'
+  || get('QUEUE_DRIVER') === 'redis'
+  || get('SESSION_DRIVER') === 'redis';
 
 const requireNonEmpty = (key) => {
   if (get(key) === '') {
@@ -105,6 +110,16 @@ for (const key of ['APP_URL', 'FRONTEND_URL']) {
   }
 }
 
+const sanctumStatefulDomains = get('SANCTUM_STATEFUL_DOMAINS');
+if (
+  appEnv === 'production'
+  && /\b(localhost|127\.0\.0\.1)\b/i.test(sanctumStatefulDomains)
+) {
+  warnings.push(
+    `SANCTUM_STATEFUL_DOMAINS still includes localhost values: ${sanctumStatefulDomains}`
+  );
+}
+
 if (get('SECURITY_FORCE_HSTS').toLowerCase() !== 'true') {
   warnings.push('SECURITY_FORCE_HSTS is not true.');
 }
@@ -141,6 +156,16 @@ if (get('SESSION_DRIVER') !== '' && get('SESSION_DRIVER') !== 'redis') {
   warnings.push(`SESSION_DRIVER is "${get('SESSION_DRIVER')}". Redis is recommended for stateless scaling.`);
 }
 
+if (usesRedis) {
+  if (get('REDIS_HOST') === '') {
+    errors.push('REDIS_HOST is required when Redis-backed cache/session/queue is enabled.');
+  }
+
+  if (get('REDIS_PORT') === '') {
+    warnings.push('REDIS_PORT is empty. Expected 6379 unless your provider uses a custom port.');
+  }
+}
+
 if (validateHighScaleProfile) {
   const cacheStore = get('CACHE_STORE') || 'file';
   const queueConnection = get('QUEUE_CONNECTION') || get('QUEUE_DRIVER') || 'sync';
@@ -149,6 +174,14 @@ if (validateHighScaleProfile) {
   const presenceTouchIntervalSeconds = getInt('PRESENCE_TOUCH_INTERVAL_SECONDS', 60);
   const notificationsCacheSeconds = getInt('NOTIFICATIONS_CACHE_SECONDS', 10);
   const chatListCacheSeconds = getInt('CHAT_LIST_CACHE_SECONDS', 8);
+  const sessionsLightweightCacheSeconds = getInt('SESSIONS_LIGHTWEIGHT_CACHE_SECONDS', 5);
+  const queueWorkerProcesses = getInt('QUEUE_WORKER_PROCESSES', 0);
+  const loginRateLimit = getInt('AUTH_LOGIN_RATE_LIMIT_PER_MINUTE', 10);
+  const guestRateLimit = getInt('API_RATE_LIMIT_GUEST_PER_MINUTE', 60);
+  const authRateLimit = getInt('API_RATE_LIMIT_AUTH_PER_MINUTE', 240);
+  const messagesReadRateLimit = getInt('MESSAGES_READ_RATE_LIMIT_PER_MINUTE', 120);
+  const messagesWriteRateLimit = getInt('MESSAGES_WRITE_RATE_LIMIT_PER_MINUTE', 60);
+  const minimumQueueWorkers = scaleTargetUsers >= 4000 ? 8 : 4;
 
   if (cacheStore !== 'redis') {
     errors.push(
@@ -172,6 +205,12 @@ if (validateHighScaleProfile) {
     errors.push(`SCALE_TARGET_USERS=${scaleTargetUsers} requires REDIS_HOST to be configured.`);
   }
 
+  if (queueWorkerProcesses < minimumQueueWorkers) {
+    errors.push(
+      `SCALE_TARGET_USERS=${scaleTargetUsers} requires QUEUE_WORKER_PROCESSES>=${minimumQueueWorkers}. Current value: "${queueWorkerProcesses || '(empty)'}".`
+    );
+  }
+
   if (presenceTouchIntervalSeconds < 45) {
     warnings.push(
       `PRESENCE_TOUCH_INTERVAL_SECONDS is ${presenceTouchIntervalSeconds}. Use 45-60 seconds to reduce write amplification at scale.`
@@ -187,6 +226,42 @@ if (validateHighScaleProfile) {
   if (chatListCacheSeconds < 5) {
     warnings.push(
       `CHAT_LIST_CACHE_SECONDS is ${chatListCacheSeconds}. Use at least 5 seconds to reduce repeated chat list queries at scale.`
+    );
+  }
+
+  if (sessionsLightweightCacheSeconds < 5) {
+    warnings.push(
+      `SESSIONS_LIGHTWEIGHT_CACHE_SECONDS is ${sessionsLightweightCacheSeconds}. Use at least 5 seconds to reduce repeated lightweight session queries at scale.`
+    );
+  }
+
+  if (loginRateLimit < 60) {
+    warnings.push(
+      `AUTH_LOGIN_RATE_LIMIT_PER_MINUTE is ${loginRateLimit}. Shared campus IPs often need at least 60 per-minute login attempts at 2k+ scale.`
+    );
+  }
+
+  if (guestRateLimit < 300) {
+    warnings.push(
+      `API_RATE_LIMIT_GUEST_PER_MINUTE is ${guestRateLimit}. Shared NATs and OAuth handshakes often need at least 300 guest requests per minute at 2k+ scale.`
+    );
+  }
+
+  if (authRateLimit < 300) {
+    warnings.push(
+      `API_RATE_LIMIT_AUTH_PER_MINUTE is ${authRateLimit}. Authenticated dashboard traffic usually needs at least 300 requests per minute per user class at 2k+ scale.`
+    );
+  }
+
+  if (messagesReadRateLimit < 180) {
+    warnings.push(
+      `MESSAGES_READ_RATE_LIMIT_PER_MINUTE is ${messagesReadRateLimit}. Chat polling/SSE fallback usually needs at least 180 reads per minute at 2k+ scale.`
+    );
+  }
+
+  if (messagesWriteRateLimit < 90) {
+    warnings.push(
+      `MESSAGES_WRITE_RATE_LIMIT_PER_MINUTE is ${messagesWriteRateLimit}. Active counseling sessions usually need at least 90 writes per minute per user at 2k+ scale.`
     );
   }
 }

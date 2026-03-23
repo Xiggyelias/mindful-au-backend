@@ -21,6 +21,13 @@ FROM php:8.2-apache
 
 WORKDIR /app
 
+ENV QUEUE_WORKER_PROCESSES=2 \
+    QUEUE_WORKER_SLEEP_SECONDS=1 \
+    QUEUE_WORKER_TRIES=3 \
+    QUEUE_WORKER_TIMEOUT_SECONDS=120 \
+    QUEUE_WORKER_MAX_TIME_SECONDS=3600 \
+    QUEUE_WORKER_MEMORY_MB=256
+
 # Apache: enable mod_rewrite, headers
 RUN a2enmod rewrite headers
 

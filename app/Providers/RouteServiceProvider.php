@@ -16,7 +16,19 @@ class RouteServiceProvider extends ServiceProvider
     {
         $apiAuthPerMinute = max(60, (int) env('API_RATE_LIMIT_AUTH_PER_MINUTE', 240));
         $apiGuestPerMinute = max(10, (int) env('API_RATE_LIMIT_GUEST_PER_MINUTE', 60));
+        $apiGuestAuthRoutesPerMinute = max(
+            $apiGuestPerMinute,
+            (int) env('API_RATE_LIMIT_GUEST_AUTH_ROUTES_PER_MINUTE', 300)
+        );
+        $apiGuestHealthPerMinute = max(
+            30,
+            (int) env('API_RATE_LIMIT_GUEST_HEALTH_PER_MINUTE', 180)
+        );
         $authLoginPerMinute = max(3, (int) env('AUTH_LOGIN_RATE_LIMIT_PER_MINUTE', 10));
+        $authLoginIpPerMinute = max(
+            $authLoginPerMinute,
+            (int) env('AUTH_LOGIN_IP_RATE_LIMIT_PER_MINUTE', 300)
+        );
         $authRegisterPerMinute = max(1, (int) env('AUTH_REGISTER_RATE_LIMIT_PER_MINUTE', 5));
         $oauthTicketExchangePerMinute = max(5, (int) env('OAUTH_TICKET_EXCHANGE_RATE_LIMIT_PER_MINUTE', 30));
         $messagesReadPerMinute = max(30, (int) env('MESSAGES_READ_RATE_LIMIT_PER_MINUTE', 120));
@@ -26,18 +38,37 @@ class RouteServiceProvider extends ServiceProvider
         $aiReadPerMinute = max(10, (int) env('AI_READ_RATE_LIMIT_PER_MINUTE', 60));
         $diagnosticsSubmitPerMinute = max(5, (int) env('DIAGNOSTICS_SUBMIT_RATE_LIMIT_PER_MINUTE', 20));
 
-        RateLimiter::for('api', function (Request $request) use ($apiAuthPerMinute, $apiGuestPerMinute) {
+        RateLimiter::for('api', function (Request $request) use (
+            $apiAuthPerMinute,
+            $apiGuestPerMinute,
+            $apiGuestAuthRoutesPerMinute,
+            $apiGuestHealthPerMinute
+        ) {
             $userId = $request->user()?->id;
             if ($userId) {
                 return Limit::perMinute($apiAuthPerMinute)->by('auth:' . $userId);
             }
 
+            $path = trim($request->path(), '/');
+            if (in_array($path, ['api/login', 'api/register', 'api/auth/google/exchange-ticket'], true)) {
+                return Limit::perMinute($apiGuestAuthRoutesPerMinute)->by('guest-auth:' . $request->ip());
+            }
+
+            if (in_array($path, ['api/health', 'api/ready'], true)) {
+                return Limit::perMinute($apiGuestHealthPerMinute)->by('guest-health:' . $request->ip());
+            }
+
             return Limit::perMinute($apiGuestPerMinute)->by('guest:' . $request->ip());
         });
 
-        RateLimiter::for('auth-login', function (Request $request) use ($authLoginPerMinute) {
+        RateLimiter::for('auth-login', function (Request $request) use ($authLoginPerMinute, $authLoginIpPerMinute) {
             $email = strtolower((string) $request->input('email', ''));
-            return Limit::perMinute($authLoginPerMinute)->by($request->ip() . '|' . $email);
+            $ip = $request->ip();
+
+            return [
+                Limit::perMinute($authLoginPerMinute)->by('login:email:' . $email),
+                Limit::perMinute($authLoginIpPerMinute)->by('login:ip:' . $ip),
+            ];
         });
 
         RateLimiter::for('auth-register', function (Request $request) use ($authRegisterPerMinute) {

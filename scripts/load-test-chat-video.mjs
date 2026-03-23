@@ -19,6 +19,10 @@ const CALL_BATCH_SIZE = Math.max(
   1,
   Number.parseInt(process.env.LOAD_TEST_CALL_BATCH_SIZE ?? '200', 10)
 );
+const APPOINTMENT_SLOT_MINUTES = Math.max(
+  5,
+  Number.parseInt(process.env.LOAD_TEST_APPOINTMENT_SLOT_MINUTES ?? '15', 10)
+);
 const CHAT_POLL_LIMIT = Math.min(
   30,
   Math.max(1, Number.parseInt(process.env.LOAD_TEST_CHAT_POLL_LIMIT ?? '30', 10))
@@ -198,8 +202,10 @@ const ensureSession = async (studentToken, counselorId) => {
   return Number(createResult.data.id);
 };
 
-const createAppointment = async (studentToken, counselorId) => {
-  const scheduledAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+const createAppointment = async (studentToken, counselorId, slotIndex) => {
+  const scheduledAt = new Date(
+    Date.now() + (5 + APPOINTMENT_SLOT_MINUTES * slotIndex) * 60 * 1000
+  ).toISOString();
   const result = await timedRequest('appointments_create', {
     method: 'POST',
     path: '/appointments',
@@ -244,6 +250,7 @@ const run = async () => {
   console.log(
     `Preparation: batch=${PREP_BATCH_SIZE}, delay=${PREP_BATCH_DELAY_MS}ms | Call bursts: batch=${CALL_BATCH_SIZE}`
   );
+  console.log(`Appointment spacing: ${APPOINTMENT_SLOT_MINUTES} minutes per counselor slot`);
 
   const counselorLoginResults = await mapInBatches(
     counselors,
@@ -277,9 +284,10 @@ const run = async () => {
       const studentToken = studentTokens.get(studentEmail);
       const counselorToken = counselorTokens.get(counselorEmail);
       const counselorId = counselorIds.get(counselorEmail);
+      const slotIndex = Math.floor(i / counselors.length);
 
       const sessionId = await ensureSession(studentToken, counselorId);
-      const appointmentId = await createAppointment(studentToken, counselorId);
+      const appointmentId = await createAppointment(studentToken, counselorId, slotIndex);
 
       await timedRequest('messages_send', {
         method: 'POST',

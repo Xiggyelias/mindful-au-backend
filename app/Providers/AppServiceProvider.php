@@ -16,6 +16,7 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->enforceMysqlDatabaseDriver();
         $this->enforceProductionSecurityDefaults();
 
         $shouldPreventLazyLoading = filter_var(
@@ -34,6 +35,20 @@ class AppServiceProvider extends ServiceProvider
                 'relation' => $relation,
             ]);
         });
+    }
+
+    private function enforceMysqlDatabaseDriver(): void
+    {
+        $driver = Str::lower((string) config('database.default', env('DB_CONNECTION', 'mysql')));
+
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
+        throw new \RuntimeException(sprintf(
+            'Unsupported DB_CONNECTION "%s". Mindful AU backend supports MySQL/MariaDB only.',
+            $driver !== '' ? $driver : '(empty)'
+        ));
     }
 
     private function enforceProductionSecurityDefaults(): void

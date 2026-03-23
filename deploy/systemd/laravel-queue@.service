@@ -1,0 +1,19 @@
+[Unit]
+Description=Mindful AU Laravel Queue Worker %i
+After=network.target redis-server.service mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+Restart=always
+RestartSec=5
+WorkingDirectory=/var/www/mindful-au-main/backend
+ExecStart=/usr/bin/php artisan queue:work redis --queue=default --sleep=1 --tries=3 --timeout=120 --max-time=3600 --memory=256
+KillSignal=SIGTERM
+TimeoutStopSec=3600
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

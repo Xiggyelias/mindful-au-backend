@@ -301,32 +301,17 @@ class AppointmentController extends Controller
         $driver = DB::connection()->getDriverName();
         $startValue = $proposedStart->toDateTimeString();
 
-        if (in_array($driver, ['mysql', 'mariadb'], true)) {
-            $query->whereRaw(
-                'DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?',
-                [$startValue]
-            );
-            return;
+        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
+            throw new \RuntimeException(sprintf(
+                'Unsupported database driver "%s" for appointment overlap checks. MySQL/MariaDB is required.',
+                $driver
+            ));
         }
 
-        if ($driver === 'pgsql') {
-            $query->whereRaw(
-                "(scheduled_at + make_interval(mins => duration_minutes)) > ?::timestamp",
-                [$startValue]
-            );
-            return;
-        }
-
-        if ($driver === 'sqlite') {
-            $query->whereRaw(
-                "datetime(scheduled_at, '+' || duration_minutes || ' minutes') > datetime(?)",
-                [$startValue]
-            );
-            return;
-        }
-
-        // Portable fallback when interval arithmetic support differs.
-        $query->where('scheduled_at', '>=', (clone $proposedStart)->subDay());
+        $query->whereRaw(
+            'DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?',
+            [$startValue]
+        );
     }
 
     private function notifyCounselorOnAppointmentCreated(Appointment $appointment): void

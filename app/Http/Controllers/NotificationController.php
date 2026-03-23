@@ -27,6 +27,15 @@ class NotificationController extends Controller
         $perPage = max(1, min(200, (int) ($validated['per_page'] ?? $limit)));
         $userId = (int) $request->user()->id;
         $cacheTtlSeconds = max(0, (int) env('NOTIFICATIONS_CACHE_SECONDS', 10));
+        $version = $this->notificationVersion($userId);
+        $etag = $this->notificationEtag($userId, $version);
+
+        if (trim((string) $request->header('If-None-Match')) === $etag) {
+            return response()
+                ->json(null, 304)
+                ->header('ETag', $etag)
+                ->header('X-Notification-Version', (string) $version);
+        }
 
         $payloadBuilder = function () use ($limit, $page, $perPage, $request, $unreadOnly, $usePagination) {
             $baseQuery = $request->user()->notifications();
@@ -72,7 +81,10 @@ class NotificationController extends Controller
             )
             : $payloadBuilder();
 
-        return response()->json($payload);
+        return response()
+            ->json($payload)
+            ->header('ETag', $etag)
+            ->header('X-Notification-Version', (string) $version);
     }
 
     public function markAsRead(Request $request, string $id): JsonResponse
@@ -146,7 +158,7 @@ class NotificationController extends Controller
         int $perPage,
         bool $usePagination
     ): string {
-        $version = (int) Cache::get($this->notificationVersionKey($userId), 1);
+        $version = $this->notificationVersion($userId);
 
         return implode(':', [
             'notifications',
@@ -164,6 +176,17 @@ class NotificationController extends Controller
     private function notificationVersionKey(int $userId): string
     {
         return "notifications:version:user:{$userId}";
+    }
+
+    private function notificationVersion(int $userId): int
+    {
+        $version = (int) Cache::get($this->notificationVersionKey($userId), 1);
+        return max(1, $version);
+    }
+
+    private function notificationEtag(int $userId, int $version): string
+    {
+        return sprintf('W/"notifications-%d-%d"', $userId, $version);
     }
 
     private function bumpNotificationCacheVersion(int $userId): void
