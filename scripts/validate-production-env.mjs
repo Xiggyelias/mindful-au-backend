@@ -41,9 +41,20 @@ if (!fs.existsSync(envPath)) {
 
 const env = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
 const get = (key) => String(env.get(key) ?? '').trim();
+const getInt = (key, fallback) => {
+  const raw = get(key);
+  if (raw === '') {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 const errors = [];
 const warnings = [];
+const scaleTargetUsers = Math.max(0, getInt('SCALE_TARGET_USERS', 0));
+const validateHighScaleProfile = scaleTargetUsers >= 2000;
 
 const requireNonEmpty = (key) => {
   if (get(key) === '') {
@@ -114,6 +125,14 @@ if (get('SESSION_SECURE_COOKIE').toLowerCase() !== 'true') {
   warnings.push('SESSION_SECURE_COOKIE should be true in production.');
 }
 
+if (get('API_EXPOSE_ERROR_DETAILS').toLowerCase() === 'true') {
+  warnings.push('API_EXPOSE_ERROR_DETAILS is true. Keep it false outside local debugging.');
+}
+
+if (get('HEALTH_EXPOSE_DETAILS').toLowerCase() === 'true') {
+  warnings.push('HEALTH_EXPOSE_DETAILS is true. This exposes detailed readiness diagnostics to unauthenticated requests unless you restrict access elsewhere.');
+}
+
 if (get('CACHE_STORE') !== '' && get('CACHE_STORE') !== 'redis') {
   warnings.push(`CACHE_STORE is "${get('CACHE_STORE')}". Redis is recommended for horizontal scaling.`);
 }
@@ -122,7 +141,60 @@ if (get('SESSION_DRIVER') !== '' && get('SESSION_DRIVER') !== 'redis') {
   warnings.push(`SESSION_DRIVER is "${get('SESSION_DRIVER')}". Redis is recommended for stateless scaling.`);
 }
 
+if (validateHighScaleProfile) {
+  const cacheStore = get('CACHE_STORE') || 'file';
+  const queueConnection = get('QUEUE_CONNECTION') || get('QUEUE_DRIVER') || 'sync';
+  const sessionDriver = get('SESSION_DRIVER') || 'file';
+  const redisHost = get('REDIS_HOST');
+  const presenceTouchIntervalSeconds = getInt('PRESENCE_TOUCH_INTERVAL_SECONDS', 60);
+  const notificationsCacheSeconds = getInt('NOTIFICATIONS_CACHE_SECONDS', 10);
+  const chatListCacheSeconds = getInt('CHAT_LIST_CACHE_SECONDS', 8);
+
+  if (cacheStore !== 'redis') {
+    errors.push(
+      `SCALE_TARGET_USERS=${scaleTargetUsers} requires CACHE_STORE=redis. Current value: "${cacheStore}".`
+    );
+  }
+
+  if (queueConnection !== 'redis') {
+    errors.push(
+      `SCALE_TARGET_USERS=${scaleTargetUsers} requires QUEUE_CONNECTION=redis. Current value: "${queueConnection}".`
+    );
+  }
+
+  if (sessionDriver !== 'redis') {
+    errors.push(
+      `SCALE_TARGET_USERS=${scaleTargetUsers} requires SESSION_DRIVER=redis. Current value: "${sessionDriver}".`
+    );
+  }
+
+  if (redisHost === '') {
+    errors.push(`SCALE_TARGET_USERS=${scaleTargetUsers} requires REDIS_HOST to be configured.`);
+  }
+
+  if (presenceTouchIntervalSeconds < 45) {
+    warnings.push(
+      `PRESENCE_TOUCH_INTERVAL_SECONDS is ${presenceTouchIntervalSeconds}. Use 45-60 seconds to reduce write amplification at scale.`
+    );
+  }
+
+  if (notificationsCacheSeconds < 5) {
+    warnings.push(
+      `NOTIFICATIONS_CACHE_SECONDS is ${notificationsCacheSeconds}. Use at least 5 seconds to reduce repeated notification queries at scale.`
+    );
+  }
+
+  if (chatListCacheSeconds < 5) {
+    warnings.push(
+      `CHAT_LIST_CACHE_SECONDS is ${chatListCacheSeconds}. Use at least 5 seconds to reduce repeated chat list queries at scale.`
+    );
+  }
+}
+
 console.log(`Validated env file: ${envPath}`);
+if (scaleTargetUsers > 0) {
+  console.log(`Scale target users: ${scaleTargetUsers}`);
+}
 
 if (warnings.length > 0) {
   console.log('\nWarnings:');

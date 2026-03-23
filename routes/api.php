@@ -108,6 +108,7 @@ Route::middleware(['auth:sanctum', 'session.timeout', 'audit.admin', 'audit.acce
     Route::put('/profile', [\App\Http\Controllers\ProfileController::class, 'update']);
 
     // AI Wellness Chat
+    Route::get('/ai/wellness-chat/status', [\App\Http\Controllers\AIWellnessChatController::class, 'status'])->middleware('throttle:ai-read');
     Route::get('/ai/wellness-chat/history', [\App\Http\Controllers\AIWellnessChatController::class, 'history'])->middleware('throttle:ai-read');
     Route::post('/ai/wellness-chat', [\App\Http\Controllers\AIWellnessChatController::class, 'chat'])->middleware('throttle:ai-chat');
 

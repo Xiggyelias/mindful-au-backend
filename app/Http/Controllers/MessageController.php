@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 class MessageController extends Controller
 {
     private const TYPING_STATE_TTL_SECONDS = 5;
-    private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
+    private const DEFAULT_PRESENCE_TOUCH_INTERVAL_SECONDS = 60;
 
     public function index(Request $request, string $sessionId): JsonResponse
     {
@@ -676,6 +676,7 @@ class MessageController extends Controller
 
     private function touchPresenceIfStale(User $user): void
     {
+        $presenceTouchIntervalSeconds = $this->presenceTouchIntervalSeconds();
         $lastSeenAt = null;
         $rawLastSeenAt = $user->last_seen_at;
 
@@ -691,12 +692,26 @@ class MessageController extends Controller
 
         if (
             $lastSeenAt instanceof Carbon
-            && $lastSeenAt->greaterThanOrEqualTo(now()->subSeconds(self::PRESENCE_TOUCH_INTERVAL_SECONDS))
+            && $lastSeenAt->greaterThanOrEqualTo(now()->subSeconds($presenceTouchIntervalSeconds))
         ) {
             return;
         }
 
+        if (!Cache::add($this->presenceTouchCacheKey((int) $user->id), 1, now()->addSeconds($presenceTouchIntervalSeconds))) {
+            return;
+        }
+
         $user->forceFill(['last_seen_at' => now()])->saveQuietly();
+    }
+
+    private function presenceTouchIntervalSeconds(): int
+    {
+        return max(15, (int) env('PRESENCE_TOUCH_INTERVAL_SECONDS', self::DEFAULT_PRESENCE_TOUCH_INTERVAL_SECONDS));
+    }
+
+    private function presenceTouchCacheKey(int $userId): string
+    {
+        return "presence:touch:user:{$userId}";
     }
 
 }

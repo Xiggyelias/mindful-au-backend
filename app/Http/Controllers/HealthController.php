@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -31,7 +33,7 @@ class HealthController extends Controller
         ]);
     }
 
-    public function ready(): JsonResponse
+    public function ready(Request $request): JsonResponse
     {
         $checks = [
             'database' => $this->checkDatabase(),
@@ -49,16 +51,22 @@ class HealthController extends Controller
 
         $isReady = !in_array(false, $components, true);
 
-        return response()->json([
+        $payload = [
             'status' => $isReady ? 'ok' : 'degraded',
             'service' => config('app.name', 'backend'),
             'time' => now()->toIso8601String(),
             'components' => $components,
-            'details' => [
+        ];
+
+        if ($this->shouldExposeReadyDetails($request)) {
+            $payload['details'] = [
                 ...$checks,
                 'integrations' => $integrations,
-            ],
-        ], $isReady ? 200 : 503);
+                'scaling' => $this->checkScalingProfile(),
+            ];
+        }
+
+        return response()->json($payload, $isReady ? 200 : 503);
     }
 
     private function checkDatabase(): array
@@ -575,5 +583,52 @@ class HealthController extends Controller
                 'latest_run_error' => $this->sanitizeError($exception),
             ];
         }
+    }
+
+    private function checkScalingProfile(): array
+    {
+        $cacheDriver = (string) config('cache.default', 'unknown');
+        $queueDriver = (string) config('queue.default', 'unknown');
+        $sessionDriver = (string) config('session.driver', 'unknown');
+
+        $warnings = [];
+        if (in_array($cacheDriver, ['file', 'array', 'null'], true)) {
+            $warnings[] = 'cache_driver_not_recommended_for_multi_instance_scale';
+        }
+        if ($queueDriver === '' || $queueDriver === 'sync') {
+            $warnings[] = 'queue_driver_sync_will_block_request_latency_under_load';
+        }
+        if (in_array($sessionDriver, ['file', 'array'], true)) {
+            $warnings[] = 'session_driver_not_recommended_for_multi_instance_scale';
+        }
+
+        return [
+            'recommended_for_2k_plus' => $warnings === [],
+            'cache_driver' => $cacheDriver,
+            'queue_driver' => $queueDriver !== '' ? $queueDriver : 'sync',
+            'session_driver' => $sessionDriver,
+            'warnings' => $warnings,
+            'recommendation' => 'Use Redis-backed cache and sessions, plus database or Redis queues with dedicated workers for 2,000 to 4,000 active users.',
+        ];
+    }
+
+    private function shouldExposeReadyDetails(Request $request): bool
+    {
+        if (filter_var(env('HEALTH_EXPOSE_DETAILS', false), FILTER_VALIDATE_BOOL)) {
+            return true;
+        }
+
+        $user = $request->user();
+        if (!$user) {
+            try {
+                $user = Auth::guard('sanctum')->user();
+            } catch (\Throwable) {
+                $user = null;
+            }
+        }
+
+        return $user !== null
+            && method_exists($user, 'hasRole')
+            && $user->hasRole('admin');
     }
 }

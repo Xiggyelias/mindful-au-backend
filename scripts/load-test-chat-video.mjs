@@ -7,6 +7,18 @@ const STUDENT_COUNT = Number.parseInt(process.env.LOAD_TEST_STUDENTS ?? '20', 10
 const COUNSELOR_COUNT = Number.parseInt(process.env.LOAD_TEST_COUNSELORS ?? '5', 10);
 const TEST_DURATION_SECONDS = Number.parseInt(process.env.LOAD_TEST_DURATION_SECONDS ?? '45', 10);
 const POLL_INTERVAL_MS = Number.parseInt(process.env.LOAD_TEST_POLL_INTERVAL_MS ?? '3000', 10);
+const PREP_BATCH_SIZE = Math.max(
+  1,
+  Number.parseInt(process.env.LOAD_TEST_PREP_BATCH_SIZE ?? process.env.LOAD_TEST_RAMP_BATCH_SIZE ?? '50', 10)
+);
+const PREP_BATCH_DELAY_MS = Math.max(
+  0,
+  Number.parseInt(process.env.LOAD_TEST_PREP_BATCH_DELAY_MS ?? process.env.LOAD_TEST_RAMP_DELAY_MS ?? '250', 10)
+);
+const CALL_BATCH_SIZE = Math.max(
+  1,
+  Number.parseInt(process.env.LOAD_TEST_CALL_BATCH_SIZE ?? '200', 10)
+);
 const CHAT_POLL_LIMIT = Math.min(
   30,
   Math.max(1, Number.parseInt(process.env.LOAD_TEST_CHAT_POLL_LIMIT ?? '30', 10))
@@ -17,6 +29,35 @@ const CALL_AUTH_BURST_PER_PAIR = Number.parseInt(
 );
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const chunk = (items, size) => {
+  const batches = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+  return batches;
+};
+
+const mapInBatches = async (items, batchSize, mapper, delayMs = 0) => {
+  const results = [];
+  let globalIndex = 0;
+
+  for (const batch of chunk(items, batchSize)) {
+    const batchResults = await Promise.all(
+      batch.map((item) => {
+        const currentIndex = globalIndex;
+        globalIndex += 1;
+        return mapper(item, currentIndex);
+      })
+    );
+    results.push(...batchResults);
+
+    if (delayMs > 0) {
+      await sleep(delayMs);
+    }
+  }
+
+  return results;
+};
 
 const metrics = new Map();
 
@@ -200,24 +241,38 @@ const run = async () => {
   console.log(
     `Scenario: ${STUDENT_COUNT} students, ${COUNSELOR_COUNT} counselors, ${TEST_DURATION_SECONDS}s duration, ${POLL_INTERVAL_MS}ms polling`
   );
+  console.log(
+    `Preparation: batch=${PREP_BATCH_SIZE}, delay=${PREP_BATCH_DELAY_MS}ms | Call bursts: batch=${CALL_BATCH_SIZE}`
+  );
 
-  const counselorLoginResults = await Promise.all(
-    counselors.map(async (email) => [email, await login(email)])
+  const counselorLoginResults = await mapInBatches(
+    counselors,
+    PREP_BATCH_SIZE,
+    async (email) => [email, await login(email)],
+    PREP_BATCH_DELAY_MS
   );
   const counselorTokens = new Map(counselorLoginResults);
 
-  const counselorIdentityResults = await Promise.all(
-    counselors.map(async (email) => [email, await getUserId(counselorTokens.get(email))])
+  const counselorIdentityResults = await mapInBatches(
+    counselors,
+    PREP_BATCH_SIZE,
+    async (email) => [email, await getUserId(counselorTokens.get(email))],
+    PREP_BATCH_DELAY_MS
   );
   const counselorIds = new Map(counselorIdentityResults);
 
-  const studentLoginResults = await Promise.all(
-    students.map(async (email) => [email, await login(email)])
+  const studentLoginResults = await mapInBatches(
+    students,
+    PREP_BATCH_SIZE,
+    async (email) => [email, await login(email)],
+    PREP_BATCH_DELAY_MS
   );
   const studentTokens = new Map(studentLoginResults);
 
-  const pairs = await Promise.all(
-    students.map(async (studentEmail, i) => {
+  const pairs = await mapInBatches(
+    students,
+    PREP_BATCH_SIZE,
+    async (studentEmail, i) => {
       const counselorEmail = counselors[i % counselors.length];
       const studentToken = studentTokens.get(studentEmail);
       const counselorToken = counselorTokens.get(counselorEmail);
@@ -245,7 +300,8 @@ const run = async () => {
         sessionId,
         appointmentId,
       };
-    })
+    },
+    PREP_BATCH_DELAY_MS
   );
 
   console.log(`Prepared ${pairs.length} student/counselor pairs.`);
@@ -282,7 +338,9 @@ const run = async () => {
     }
   }
 
-  await Promise.all(callTasks);
+  for (const batch of chunk(callTasks, CALL_BATCH_SIZE)) {
+    await Promise.all(batch);
+  }
   await Promise.all(pollTasks);
 
   console.log('\nResults:');
@@ -307,11 +365,13 @@ const run = async () => {
   const recommendedReadLimit = Math.max(120, pollRpmPerUser * 4);
   const recommendedWriteLimit = 60;
   const recommendedCallLimit = 20;
+  const estimatedPollRps = Number((pairs.length / Math.max(1, POLL_INTERVAL_MS / 1000)).toFixed(2));
 
   console.log('\nRecommended per-user throttles (based on this scenario):');
   console.log(`- messages-read: ${recommendedReadLimit}/min`);
   console.log(`- messages-write: ${recommendedWriteLimit}/min`);
   console.log(`- video-calls authorize/end: ${recommendedCallLimit}/min`);
+  console.log(`\nEstimated steady-state chat poll volume: ~${estimatedPollRps} requests/sec`);
 };
 
 run().catch((error) => {

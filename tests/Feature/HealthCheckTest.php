@@ -2,8 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Hash;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class HealthCheckTest extends TestCase
@@ -26,6 +29,7 @@ class HealthCheckTest extends TestCase
         ]);
 
         putenv('HEALTH_PROBE_EXTERNAL_AI');
+        putenv('HEALTH_EXPOSE_DETAILS');
     }
 
     /** @test */
@@ -58,11 +62,7 @@ class HealthCheckTest extends TestCase
             ->assertJsonPath('components.queue', true)
             ->assertJsonPath('components.disk', true)
             ->assertJsonPath('components.ai', true)
-            ->assertJsonPath('details.ai.mode', 'local_fallback')
-            ->assertJsonPath('details.ai.external_provider_configured', false)
-            ->assertJsonPath('details.ai.local_fallback_available', true)
-            ->assertJsonPath('details.integrations.google_oauth.status', 'not_configured')
-            ->assertJsonPath('details.integrations.academic_risk_webhook.status', 'not_configured');
+            ->assertJsonMissingPath('details');
     }
 
     /** @test */
@@ -78,13 +78,38 @@ class HealthCheckTest extends TestCase
             ->assertJsonPath('components.queue', true)
             ->assertJsonPath('components.disk', true)
             ->assertJsonPath('components.ai', true)
+            ->assertJsonMissingPath('details')
+            ->assertHeader('Pragma', 'no-cache')
+            ->assertHeader('Expires', '0');
+
+        $this->assertStringContainsString(
+            'no-store',
+            (string) $response->headers->get('Cache-Control', '')
+        );
+    }
+
+    /** @test */
+    public function ready_endpoint_exposes_details_for_authenticated_admin_requests(): void
+    {
+        $admin = $this->createPortalUser('admin', 'ready-admin@test.com', 'Ready Admin');
+        Sanctum::actingAs($admin);
+
+        $response = $this->getJson('/api/ready');
+
+        $response
+            ->assertStatus(200)
             ->assertJsonPath('details.ai.mode', 'local_fallback')
-            ->assertJsonPath('details.integrations.google_oauth.status', 'not_configured');
+            ->assertJsonPath('details.ai.external_provider_configured', false)
+            ->assertJsonPath('details.ai.local_fallback_available', true)
+            ->assertJsonPath('details.integrations.google_oauth.status', 'not_configured')
+            ->assertJsonPath('details.integrations.academic_risk_webhook.status', 'not_configured');
     }
 
     /** @test */
     public function ready_endpoint_reports_external_ai_when_a_provider_is_configured(): void
     {
+        putenv('HEALTH_EXPOSE_DETAILS=true');
+
         config([
             'services.openrouter.api_key' => 'test-openrouter',
         ]);
@@ -107,6 +132,7 @@ class HealthCheckTest extends TestCase
     public function ready_endpoint_reports_fallback_when_a_probed_provider_is_degraded(): void
     {
         putenv('HEALTH_PROBE_EXTERNAL_AI=true');
+        putenv('HEALTH_EXPOSE_DETAILS=true');
 
         config([
             'services.openrouter.api_key' => 'test-openrouter',
@@ -134,6 +160,8 @@ class HealthCheckTest extends TestCase
     /** @test */
     public function ready_endpoint_reports_optional_integrations_when_configured(): void
     {
+        putenv('HEALTH_EXPOSE_DETAILS=true');
+
         config([
             'services.google.client_id' => 'google-client-id',
             'services.google.client_secret' => 'google-client-secret',
@@ -147,5 +175,27 @@ class HealthCheckTest extends TestCase
             ->assertStatus(200)
             ->assertJsonPath('details.integrations.google_oauth.status', 'ready')
             ->assertJsonPath('details.integrations.academic_risk_webhook.status', 'secured');
+    }
+
+    private function createPortalUser(string $role, string $email, string $fullName): User
+    {
+        $user = User::factory()->create([
+            'email' => $email,
+            'password' => Hash::make('SecretPass123!'),
+        ]);
+
+        $user->profile()->create([
+            'full_name' => $fullName,
+            'id_number' => null,
+            'anonymous_mode' => false,
+            'peer_available' => true,
+        ]);
+
+        $user->roles()->create([
+            'role' => $role,
+            'approved' => true,
+        ]);
+
+        return $user;
     }
 }

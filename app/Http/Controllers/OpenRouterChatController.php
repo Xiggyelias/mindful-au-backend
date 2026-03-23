@@ -5,8 +5,9 @@ namespace App\Http\Controllers;
 use App\Services\OpenRouterService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OpenRouterChatController extends Controller
 {
@@ -78,34 +79,51 @@ class OpenRouterChatController extends Controller
         $conversationId = $request->input('conversation_id');
 
         if ($conversationId && !$this->conversationBelongsToUser((int) $conversationId, (int) $user->id)) {
-            return response(json_encode([
+            return response()->json([
                 'success' => false,
                 'error' => 'Conversation not found',
-            ], JSON_UNESCAPED_UNICODE), 404, ['Content-Type' => 'application/json']);
+            ], 404);
         }
-
-        $response = new Response();
-        $response->header('Content-Type', 'text/event-stream');
-        $response->header('Cache-Control', 'no-cache');
-        $response->header('Connection', 'keep-alive');
 
         $stream = $this->openRouterService->streamMessage($messages, $model, $conversationId);
-
-        foreach ($stream as $chunk) {
-            if (isset($chunk['success']) && !$chunk['success']) {
-                $response->setContent("data: " . json_encode([
-                    'success' => false,
-                    'error' => $chunk['error'] ?? 'Unknown error occurred',
-                    'done' => true,
-                ]) . "\n\n");
-                break;
+        return new StreamedResponse(function () use ($stream): void {
+            if (function_exists('ignore_user_abort')) {
+                ignore_user_abort(true);
             }
 
-            $response->setContent("data: " . json_encode($chunk) . "\n\n");
-            $response->send();
-        }
+            foreach ($stream as $chunk) {
+                $payload = $chunk;
+                if (isset($chunk['success']) && $chunk['success'] === false) {
+                    $payload = [
+                        'success' => false,
+                        'error' => $chunk['error'] ?? 'Unknown error occurred',
+                        'done' => true,
+                    ];
+                }
 
-        return $response;
+                echo 'data: ' . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n\n";
+
+                if (function_exists('ob_get_level') && ob_get_level() > 0 && function_exists('ob_flush')) {
+                    @ob_flush();
+                }
+                flush();
+
+                if (($payload['done'] ?? false) === true) {
+                    return;
+                }
+            }
+
+            echo 'data: {"content":"","done":true}' . "\n\n";
+            if (function_exists('ob_get_level') && ob_get_level() > 0 && function_exists('ob_flush')) {
+                @ob_flush();
+            }
+            flush();
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-transform',
+            'Connection' => 'keep-alive',
+            'X-Accel-Buffering' => 'no',
+        ]);
     }
 
     /**

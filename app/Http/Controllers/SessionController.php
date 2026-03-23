@@ -305,6 +305,28 @@ class SessionController extends Controller
         $perPage = (int) ($validated['per_page'] ?? $limit);
         $perPage = max(1, min(200, $perPage));
         $openOnly = array_key_exists('open_only', $validated) ? (bool) $validated['open_only'] : true;
+        $debugTiming = (bool) ($validated['debug_timing'] ?? false);
+        $chatListCacheSeconds = max(0, (int) env('CHAT_LIST_CACHE_SECONDS', 8));
+        $chatListCacheKey = null;
+
+        if ($chatListCacheSeconds > 0 && !$debugTiming) {
+            $chatListCacheKey = implode(':', [
+                'chat-list',
+                'v1',
+                "user-{$user->id}",
+                "role-{$effectiveRole}",
+                'open-' . ($openOnly ? '1' : '0'),
+                'page-' . ($usePagination ? $page : 1),
+                'per-' . ($usePagination ? $perPage : $limit),
+            ]);
+
+            $cachedPayload = Cache::get($chatListCacheKey);
+            if (is_array($cachedPayload)) {
+                return response()
+                    ->json($cachedPayload)
+                    ->header('X-Chat-List-Cache', 'hit');
+            }
+        }
 
         $scopedSessionQuery = DB::table('counseling_sessions as s')
             ->where('s.session_type', 'chat');
@@ -443,7 +465,6 @@ class SessionController extends Controller
         $transformDurationMs = (microtime(true) - $transformStart) * 1000;
         $totalDurationMs = (microtime(true) - $requestStart) * 1000;
 
-        $debugTiming = (bool) ($validated['debug_timing'] ?? false);
         $slowThresholdMs = max(100, (int) env('CHAT_LIST_SLOW_LOG_MS', 1500));
         if ($debugTiming || $totalDurationMs >= $slowThresholdMs) {
             Log::info('chat-list timing', [
@@ -483,7 +504,12 @@ class SessionController extends Controller
             ];
         }
 
+        if ($chatListCacheKey !== null) {
+            Cache::put($chatListCacheKey, $responseBody, now()->addSeconds($chatListCacheSeconds));
+        }
+
         $response = response()->json($responseBody)
+            ->header('X-Chat-List-Cache', $chatListCacheKey !== null ? 'miss' : 'off')
             ->header('X-Chat-List-Total-Ms', (string) round($totalDurationMs, 2))
             ->header('X-Chat-List-Query-Ms', (string) round($queryDurationMs, 2))
             ->header('X-Chat-List-Transform-Ms', (string) round($transformDurationMs, 2))

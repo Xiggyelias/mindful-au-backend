@@ -26,8 +26,8 @@ class SecurityHeaders
         $response->headers->set('Cross-Origin-Opener-Policy', 'same-origin');
         $response->headers->set('Cross-Origin-Resource-Policy', 'same-origin');
 
-        if ($request->is('api/*')) {
-            // Avoid sensitive API payloads being cached by browsers/intermediaries.
+        if ($request->is('api/*') || $request->is('health') || $request->is('live')) {
+            // Avoid sensitive API and health payloads being cached by browsers/intermediaries.
             $response->headers->set('Cache-Control', self::API_NO_STORE_CACHE_CONTROL);
             $response->headers->set('Pragma', 'no-cache');
             $response->headers->set('Expires', '0');

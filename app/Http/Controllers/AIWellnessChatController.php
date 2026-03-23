@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +16,7 @@ class AIWellnessChatController extends Controller
     private const WELLNESS_MODEL = 'wellness-assistant-v1';
     private const CONTEXT_WINDOW_MESSAGES = 10;
     private const HISTORY_LIMIT_MESSAGES = 100;
+    private const STATUS_CACHE_SECONDS = 60;
 
     public function chat(Request $request): JsonResponse
     {
@@ -212,6 +214,22 @@ Local context:
                 'last_message_at' => $conversation->last_message_at,
             ],
             'messages' => $messages,
+        ]);
+    }
+
+    public function status(): JsonResponse
+    {
+        $status = $this->resolveAiStatus();
+
+        return response()->json([
+            'mode' => $status['mode'],
+            'validation' => $status['validation'],
+            'configured_providers' => $status['configured_providers'],
+            'active_provider' => $status['active_provider'],
+            'external_provider_configured' => $status['external_provider_configured'],
+            'external_provider_ready' => $status['external_provider_ready'],
+            'providers' => $status['providers'],
+            'warning' => $status['warning'],
         ]);
     }
 
@@ -970,6 +988,238 @@ Local context:
     private function hasConfiguredExternalAiProvider(): bool
     {
         return $this->configuredAiProviders() !== [];
+    }
+
+    /**
+     * @return array{
+     *   mode: string,
+     *   validation: string,
+     *   configured_providers: array<int, string>,
+     *   active_provider: string|null,
+     *   external_provider_configured: bool,
+     *   external_provider_ready: bool,
+     *   providers: array<string, array{configured: bool, status: string, reachable: bool|null, probe_supported: bool, checked_at?: string, http_status?: int, error?: string}>,
+     *   warning: string|null
+     * }
+     */
+    private function resolveAiStatus(): array
+    {
+        $configuredProviders = [];
+        $providerStatuses = [];
+        $activeProvider = null;
+        $externalReady = false;
+        $validation = 'not_configured';
+
+        foreach ($this->aiProviderDefinitions() as $providerName => $definition) {
+            $configured = trim((string) config($definition['config_key'], '')) !== '';
+            $providerStatuses[$providerName] = [
+                'configured' => $configured,
+                'status' => $configured ? 'configured' : 'not_configured',
+                'reachable' => $configured ? null : false,
+                'probe_supported' => (bool) ($definition['probe_supported'] ?? false),
+            ];
+
+            if (!$configured) {
+                continue;
+            }
+
+            $configuredProviders[] = $providerName;
+
+            if (!(bool) ($definition['probe_supported'] ?? false)) {
+                if ($activeProvider === null) {
+                    $activeProvider = $providerName;
+                }
+                $externalReady = true;
+                if ($validation === 'not_configured') {
+                    $validation = 'configuration_only';
+                }
+                continue;
+            }
+
+            $probe = $this->probeAiProvider($providerName, $definition);
+            $providerStatuses[$providerName] = array_merge($providerStatuses[$providerName], $probe);
+
+            if (($probe['status'] ?? null) === 'ready') {
+                $externalReady = true;
+                $validation = 'verified';
+                if ($activeProvider === null) {
+                    $activeProvider = $providerName;
+                }
+            }
+        }
+
+        $externalConfigured = $configuredProviders !== [];
+        $mode = $externalConfigured && $externalReady ? 'external' : 'local_fallback';
+        $warning = null;
+
+        if (!$externalConfigured) {
+            $warning = 'No external AI provider is configured. Local fallback guidance is active.';
+        } elseif (!$externalReady) {
+            $warning = 'Configured external AI providers are not currently reachable. Local fallback guidance is active.';
+        } elseif ($validation === 'configuration_only') {
+            $warning = 'External AI availability is based on configuration only.';
+        }
+
+        return [
+            'mode' => $mode,
+            'validation' => $validation,
+            'configured_providers' => $configuredProviders,
+            'active_provider' => $activeProvider,
+            'external_provider_configured' => $externalConfigured,
+            'external_provider_ready' => $externalReady,
+            'providers' => $providerStatuses,
+            'warning' => $warning,
+        ];
+    }
+
+    /**
+     * @return array<string, array{config_key: string, probe_supported: bool}>
+     */
+    private function aiProviderDefinitions(): array
+    {
+        return [
+            'kwaipilot' => [
+                'config_key' => 'services.kwaipilot.api_key',
+                'probe_supported' => false,
+            ],
+            'openrouter' => [
+                'config_key' => 'services.openrouter.api_key',
+                'probe_supported' => true,
+            ],
+            'gemini' => [
+                'config_key' => 'services.gemini.api_key',
+                'probe_supported' => true,
+            ],
+            'openai' => [
+                'config_key' => 'services.openai.api_key',
+                'probe_supported' => true,
+            ],
+        ];
+    }
+
+    /**
+     * @param array{config_key: string, probe_supported: bool} $definition
+     * @return array{status: string, reachable: bool|null, checked_at?: string, http_status?: int, error?: string}
+     */
+    private function probeAiProvider(string $providerName, array $definition): array
+    {
+        $cacheSeed = trim((string) config($definition['config_key'], ''));
+        $cacheKey = 'ai:status:provider:' . $providerName . ':' . md5($cacheSeed);
+
+        return Cache::remember(
+            $cacheKey,
+            now()->addSeconds(self::STATUS_CACHE_SECONDS),
+            fn (): array => $this->executeAiProviderProbe($providerName)
+        );
+    }
+
+    /**
+     * @return array{status: string, reachable: bool|null, checked_at?: string, http_status?: int, error?: string}
+     */
+    private function executeAiProviderProbe(string $providerName): array
+    {
+        try {
+            return match ($providerName) {
+                'openrouter' => $this->probeOpenRouterStatus(),
+                'gemini' => $this->probeGeminiStatus(),
+                'openai' => $this->probeOpenAiStatus(),
+                default => [
+                    'status' => 'configured',
+                    'reachable' => null,
+                    'checked_at' => now()->toIso8601String(),
+                ],
+            };
+        } catch (\Throwable $exception) {
+            return [
+                'status' => 'degraded',
+                'reachable' => false,
+                'checked_at' => now()->toIso8601String(),
+                'error' => $this->sanitizeProbeError($exception),
+            ];
+        }
+    }
+
+    /**
+     * @return array{status: string, reachable: bool, checked_at: string, http_status?: int, error?: string}
+     */
+    private function probeOpenRouterStatus(): array
+    {
+        $response = Http::timeout(5)
+            ->withHeaders([
+                'Authorization' => 'Bearer ' . (string) config('services.openrouter.api_key', ''),
+                'HTTP-Referer' => (string) config('services.openrouter.site_url', 'https://mindful-au.local'),
+                'X-Title' => (string) config('services.openrouter.site_name', 'Mindful AU'),
+            ])
+            ->get(rtrim((string) config('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/') . '/models');
+
+        return $this->probeResultFromResponse($response);
+    }
+
+    /**
+     * @return array{status: string, reachable: bool, checked_at: string, http_status?: int, error?: string}
+     */
+    private function probeGeminiStatus(): array
+    {
+        $response = Http::timeout(5)
+            ->get('https://generativelanguage.googleapis.com/v1beta/models', [
+                'key' => (string) config('services.gemini.api_key', ''),
+            ]);
+
+        return $this->probeResultFromResponse($response);
+    }
+
+    /**
+     * @return array{status: string, reachable: bool, checked_at: string, http_status?: int, error?: string}
+     */
+    private function probeOpenAiStatus(): array
+    {
+        $response = Http::timeout(5)
+            ->withToken((string) config('services.openai.api_key', ''))
+            ->get('https://api.openai.com/v1/models');
+
+        return $this->probeResultFromResponse($response);
+    }
+
+    /**
+     * @return array{status: string, reachable: bool, checked_at: string, http_status?: int, error?: string}
+     */
+    private function probeResultFromResponse(\Illuminate\Http\Client\Response $response): array
+    {
+        if ($response->successful()) {
+            return [
+                'status' => 'ready',
+                'reachable' => true,
+                'checked_at' => now()->toIso8601String(),
+            ];
+        }
+
+        return [
+            'status' => 'degraded',
+            'reachable' => false,
+            'checked_at' => now()->toIso8601String(),
+            'http_status' => $response->status(),
+            'error' => $this->summarizeProbeResponse($response),
+        ];
+    }
+
+    private function summarizeProbeResponse(\Illuminate\Http\Client\Response $response): string
+    {
+        $body = trim((string) $response->body());
+        if ($body === '') {
+            return 'provider_probe_failed';
+        }
+
+        return Str::limit(preg_replace('/\s+/', ' ', $body) ?: $body, 160, '...');
+    }
+
+    private function sanitizeProbeError(\Throwable $exception): string
+    {
+        $message = trim($exception->getMessage());
+        if ($message === '') {
+            return 'provider_probe_failed';
+        }
+
+        return Str::limit($message, 160, '...');
     }
 
     private function sanitizeUserText(string $value): string

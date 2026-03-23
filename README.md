@@ -155,6 +155,7 @@ Health probes:
 
 - `GET /health` readiness (DB + cache + queue + disk)
 - `GET /live` liveness
+- Detailed readiness diagnostics are hidden from public responses by default. Set `HEALTH_EXPOSE_DETAILS=true` only for trusted internal monitoring, or call `/api/ready` as an authenticated admin.
 
 Backup key rotation note:
 
@@ -167,6 +168,12 @@ Validate production env before deploy (run from workspace root):
 
 ```bash
 node backend/scripts/validate-production-env.mjs
+```
+
+Validate against a 2k-4k active-user scale target:
+
+```bash
+SCALE_TARGET_USERS=4000 node backend/scripts/validate-production-env.mjs
 ```
 
 ## Load Speed Benchmark
@@ -184,3 +191,44 @@ Optional knobs:
 BENCH_RUNS=20 BENCH_CONCURRENCY=15 BENCH_ROUNDS=3 node backend/scripts/benchmark-load-speed.mjs
 API_BASE_URL=http://127.0.0.1:8000/api FRONTEND_URL=http://127.0.0.1:5173/ node backend/scripts/benchmark-load-speed.mjs
 ```
+
+## 2k-4k User Readiness Workflow
+
+Use this profile when you want to validate a horizontally scalable deployment:
+
+```env
+CACHE_STORE=redis
+SESSION_DRIVER=redis
+SESSION_STORE=redis
+QUEUE_CONNECTION=redis
+REDIS_HOST=redis
+PRESENCE_TOUCH_INTERVAL_SECONDS=60
+NOTIFICATIONS_CACHE_SECONDS=10
+CHAT_LIST_CACHE_SECONDS=8
+```
+
+Apply the latest indexes before load testing:
+
+```bash
+php artisan migrate --force
+```
+
+Seed a large user pool:
+
+```bash
+LOAD_TEST_STUDENTS=2000 LOAD_TEST_COUNSELORS=100 php artisan db:seed --class=LoadTestUserSeeder
+```
+
+Run the chat/video load scenario with staged ramp-up:
+
+```bash
+LOAD_TEST_STUDENTS=2000 LOAD_TEST_COUNSELORS=100 LOAD_TEST_DURATION_SECONDS=120 LOAD_TEST_POLL_INTERVAL_MS=12000 LOAD_TEST_PREP_BATCH_SIZE=50 LOAD_TEST_PREP_BATCH_DELAY_MS=250 LOAD_TEST_CALL_BATCH_SIZE=200 node backend/scripts/load-test-chat-video.mjs
+```
+
+For the upper bound:
+
+```bash
+LOAD_TEST_STUDENTS=4000 LOAD_TEST_COUNSELORS=200 LOAD_TEST_DURATION_SECONDS=180 LOAD_TEST_POLL_INTERVAL_MS=12000 LOAD_TEST_PREP_BATCH_SIZE=50 LOAD_TEST_PREP_BATCH_DELAY_MS=250 LOAD_TEST_CALL_BATCH_SIZE=250 node backend/scripts/load-test-chat-video.mjs
+```
+
+Production note: do not treat the system as 2k-4k ready unless Redis-backed cache/session/queue are active and queue workers are running.

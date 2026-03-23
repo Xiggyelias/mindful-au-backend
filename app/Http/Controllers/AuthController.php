@@ -12,6 +12,7 @@ use App\Models\UserTwoFactorMethod;
 use App\Support\SystemSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -21,7 +22,7 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
-    private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
+    private const DEFAULT_PRESENCE_TOUCH_INTERVAL_SECONDS = 60;
 
     public function register(Request $request): JsonResponse
     {
@@ -583,14 +584,29 @@ class AuthController extends Controller
     private function touchPresenceIfStale(User $user): void
     {
         $lastSeenAt = $user->last_seen_at;
+        $presenceTouchIntervalSeconds = $this->presenceTouchIntervalSeconds();
         if (
             $lastSeenAt instanceof \DateTimeInterface
-            && $lastSeenAt->getTimestamp() >= now()->subSeconds(self::PRESENCE_TOUCH_INTERVAL_SECONDS)->getTimestamp()
+            && $lastSeenAt->getTimestamp() >= now()->subSeconds($presenceTouchIntervalSeconds)->getTimestamp()
         ) {
             return;
         }
 
+        if (!Cache::add($this->presenceTouchCacheKey((int) $user->id), 1, now()->addSeconds($presenceTouchIntervalSeconds))) {
+            return;
+        }
+
         $user->forceFill(['last_seen_at' => now()])->saveQuietly();
+    }
+
+    private function presenceTouchIntervalSeconds(): int
+    {
+        return max(15, (int) env('PRESENCE_TOUCH_INTERVAL_SECONDS', self::DEFAULT_PRESENCE_TOUCH_INTERVAL_SECONDS));
+    }
+
+    private function presenceTouchCacheKey(int $userId): string
+    {
+        return "presence:touch:user:{$userId}";
     }
 
     /**
