@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Appointment;
 use App\Models\CounselingSession;
+use App\Models\Notification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -73,9 +75,17 @@ class VideoCallController extends Controller
                 $session->update([
                     'status' => 'active',
                     'started_at' => $session->started_at ?? now(),
+                    'notes' => "Video appointment #{$appointment->id}",
                 ]);
             } elseif (!$session->started_at) {
-                $session->update(['started_at' => now()]);
+                $session->update([
+                    'started_at' => now(),
+                    'notes' => "Video appointment #{$appointment->id}",
+                ]);
+            } elseif ((string) ($session->notes ?? '') !== "Video appointment #{$appointment->id}") {
+                $session->update([
+                    'notes' => "Video appointment #{$appointment->id}",
+                ]);
             }
 
             return $session->fresh();
@@ -111,39 +121,78 @@ class VideoCallController extends Controller
             return response()->json(['message' => 'Unauthorized for this video call.'], 403);
         }
 
-        $session = CounselingSession::query()
-            ->where('student_id', $appointment->student_id)
-            ->where('counselor_id', $appointment->counselor_id)
-            ->where('session_type', 'video')
-            ->whereIn('status', ['pending', 'active'])
-            ->latest('id')
-            ->first();
+        $result = DB::transaction(function () use ($appointment) {
+            $lockedAppointment = Appointment::query()
+                ->with(['student.profile', 'counselor.profile'])
+                ->lockForUpdate()
+                ->findOrFail($appointment->id);
 
-        if ($session) {
-            $session->update([
-                'status' => 'completed',
-                'started_at' => $session->started_at ?? now(),
-                'ended_at' => now(),
-            ]);
+            $session = CounselingSession::query()
+                ->where('student_id', $lockedAppointment->student_id)
+                ->where('counselor_id', $lockedAppointment->counselor_id)
+                ->where('session_type', 'video')
+                ->whereIn('status', ['pending', 'active'])
+                ->lockForUpdate()
+                ->latest('id')
+                ->first();
 
-            return response()->json([
-                'message' => 'Video call ended.',
-                'session_id' => (int) $session->id,
-                'status' => $session->status,
-            ]);
+            $appointmentMarkedCompleted = false;
+
+            if ($session) {
+                $session->update([
+                    'status' => 'completed',
+                    'started_at' => $session->started_at ?? now(),
+                    'ended_at' => now(),
+                ]);
+
+                if ($this->shouldMarkAppointmentCompleted($lockedAppointment, $session->fresh())) {
+                    $lockedAppointment->update([
+                        'status' => 'completed',
+                    ]);
+                    $appointmentMarkedCompleted = true;
+                }
+
+                return [
+                    'message' => 'Video call ended.',
+                    'session' => $session->fresh(),
+                    'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
+                    'appointment_marked_completed' => $appointmentMarkedCompleted,
+                ];
+            }
+
+            $latestSession = CounselingSession::query()
+                ->where('student_id', $lockedAppointment->student_id)
+                ->where('counselor_id', $lockedAppointment->counselor_id)
+                ->where('session_type', 'video')
+                ->latest('id')
+                ->first();
+
+            if ($this->shouldMarkAppointmentCompleted($lockedAppointment, $latestSession)) {
+                $lockedAppointment->update([
+                    'status' => 'completed',
+                ]);
+                $appointmentMarkedCompleted = true;
+            }
+
+            return [
+                'message' => 'No active video session found. Call already ended.',
+                'session' => $latestSession,
+                'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
+                'appointment_marked_completed' => $appointmentMarkedCompleted,
+            ];
+        });
+
+        if ($result['appointment_marked_completed']) {
+            $this->notifyStudentOnAppointmentCompleted($result['appointment']);
+            $this->flushDashboardCaches();
         }
 
-        $latestSession = CounselingSession::query()
-            ->where('student_id', $appointment->student_id)
-            ->where('counselor_id', $appointment->counselor_id)
-            ->where('session_type', 'video')
-            ->latest('id')
-            ->first();
-
         return response()->json([
-            'message' => 'No active video session found. Call already ended.',
-            'session_id' => $latestSession ? (int) $latestSession->id : null,
-            'status' => $latestSession?->status,
+            'message' => $result['message'],
+            'session_id' => $result['session'] ? (int) $result['session']->id : null,
+            'status' => $result['session']?->status,
+            'appointment_id' => (int) $result['appointment']->id,
+            'appointment_status' => $result['appointment']->status,
         ]);
     }
 
@@ -157,6 +206,34 @@ class VideoCallController extends Controller
     {
         $normalized = Str::lower(trim($notes));
         return !Str::startsWith($normalized, 'physical');
+    }
+
+    private function shouldMarkAppointmentCompleted(
+        Appointment $appointment,
+        ?CounselingSession $session
+    ): bool {
+        if (!$session) {
+            return false;
+        }
+
+        if (in_array((string) $appointment->status, ['completed', 'cancelled'], true)) {
+            return false;
+        }
+
+        if ((string) $session->status !== 'completed') {
+            return false;
+        }
+
+        if (!$session->started_at && !$session->ended_at) {
+            return false;
+        }
+
+        $sessionNotes = trim((string) ($session->notes ?? ''));
+        if ($sessionNotes !== '') {
+            return Str::contains($sessionNotes, "Video appointment #{$appointment->id}");
+        }
+
+        return true;
     }
 
     private function normalizeDurationMinutes(?int $durationMinutes): int
@@ -220,5 +297,45 @@ class VideoCallController extends Controller
             'starts_in_seconds' => 0,
             'ends_in_seconds' => $secondsUntilClose,
         ];
+    }
+
+    private function notifyStudentOnAppointmentCompleted(Appointment $appointment): void
+    {
+        if (!$appointment->student_id) {
+            return;
+        }
+
+        $counselorName = optional($appointment->counselor?->profile)->full_name
+            ?: ($appointment->counselor?->email ? Str::before($appointment->counselor?->email, '@') : 'your counselor');
+
+        Notification::create([
+            'user_id' => $appointment->student_id,
+            'title' => 'Appointment Completed',
+            'message' => sprintf(
+                'Your appointment with %s scheduled for %s has been completed.',
+                $counselorName,
+                $this->formatAppointmentTime($appointment->scheduled_at)
+            ),
+            'type' => 'success',
+        ]);
+    }
+
+    private function formatAppointmentTime(mixed $scheduledAt): string
+    {
+        if (!$scheduledAt) {
+            return 'a recent session';
+        }
+
+        try {
+            return Carbon::parse($scheduledAt)->format('M j, Y g:i A');
+        } catch (\Throwable) {
+            return 'a recent session';
+        }
+    }
+
+    private function flushDashboardCaches(): void
+    {
+        Cache::forget('analytics:admin:overview:v1');
+        Cache::forget('analytics:dashboard:v2');
     }
 }

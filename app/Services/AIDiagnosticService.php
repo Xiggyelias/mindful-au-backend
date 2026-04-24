@@ -10,19 +10,33 @@ use Illuminate\Support\Facades\Log;
 
 class AIDiagnosticService
 {
+    public function __construct(
+        private readonly MentalHealthMlService $mentalHealthMlService
+    ) {
+    }
+
     public function analyzeSession(CounselingSession $session, array $messages): AiDiagnostic
     {
         $conversationText = $this->extractConversationText($messages);
+        $promptContext = $this->mentalHealthMlService->buildPromptSafeStudentContext((int) $session->student_id);
+        $localAnalysis = $this->analyzeLocally($conversationText);
         
         // Try providers in order
-        $analysis = $this->analyzeWithOpenRouter($conversationText)
-            ?? $this->analyzeWithGemini($conversationText) 
+        $analysis = $this->analyzeWithOpenRouter($conversationText, $promptContext)
+            ?? $this->analyzeWithGemini($conversationText, $promptContext) 
             ?? $this->analyzeWithEcoBot($conversationText)
-            ?? $this->analyzeLocally($conversationText);
+            ?? $localAnalysis;
 
         if (!$analysis) {
             throw new \RuntimeException('AI provider unavailable for session diagnostics.');
         }
+
+        $analysis = $this->mentalHealthMlService->buildHybridDiagnostic(
+            $session,
+            $messages,
+            $analysis,
+            $localAnalysis
+        );
 
         return AiDiagnostic::create([
             'student_id' => $session->student_id,
@@ -60,13 +74,13 @@ class AIDiagnosticService
         return $analysis;
     }
 
-    private function analyzeWithOpenRouter(string $text): ?array
+    private function analyzeWithOpenRouter(string $text, array $context = []): ?array
     {
         $apiKey = config('services.openrouter.api_key');
         if (!$apiKey) return null;
 
         try {
-            $prompt = $this->buildDiagnosticPrompt($text);
+            $prompt = $this->buildDiagnosticPrompt($text, $context);
             $response = Http::timeout(30)
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $apiKey,
@@ -249,7 +263,7 @@ class AIDiagnosticService
         ];
     }
 
-    private function analyzeWithGemini(string $text): ?array
+    private function analyzeWithGemini(string $text, array $context = []): ?array
     {
         $apiKey = config('services.gemini.api_key');
         
@@ -262,7 +276,7 @@ class AIDiagnosticService
                 ->post(
                 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' . $apiKey,
                 [
-                    'contents' => [['parts' => [['text' => $this->buildDiagnosticPrompt($text)]]]],
+                    'contents' => [['parts' => [['text' => $this->buildDiagnosticPrompt($text, $context)]]]],
                     'system_instruction' => ['parts' => [['text' => 'You are a professional counseling diagnostic assistant. Respond ONLY with valid JSON.']]]
                 ]
             );
@@ -305,8 +319,26 @@ class AIDiagnosticService
         return null;
     }
 
-    private function buildDiagnosticPrompt(string $conversation): string
+    private function buildDiagnosticPrompt(string $conversation, array $context = []): string
     {
+        $contextParts = [];
+        if (!empty($context['prompt_summary']) && is_string($context['prompt_summary'])) {
+            $contextParts[] = 'Aggregated student context: ' . trim($context['prompt_summary']);
+        }
+
+        $recommendedActions = array_slice(
+            array_values(array_filter($context['recommended_actions'] ?? [], fn ($item) => is_string($item) && trim($item) !== '')),
+            0,
+            2
+        );
+        if (!empty($recommendedActions)) {
+            $contextParts[] = 'Preferred support directions: ' . implode(' ', $recommendedActions);
+        }
+
+        $contextBlock = empty($contextParts)
+            ? ''
+            : "\n\nContext (privacy-safe aggregated features only):\n- " . implode("\n- ", $contextParts);
+
         return "Analyze this counseling session conversation and provide a JSON response with:
         - stress_level: integer 0-100
         - anxiety_level: integer 0-100
@@ -316,7 +348,7 @@ class AIDiagnosticService
         - insights: detailed text analysis
         - recommendations: actionable recommendations
 
-        Conversation: {$conversation}
+        Conversation: {$conversation}{$contextBlock}
 
         Respond ONLY with valid JSON in this format:
         {

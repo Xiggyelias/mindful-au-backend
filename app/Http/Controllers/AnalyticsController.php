@@ -9,6 +9,7 @@ use App\Models\Appointment;
 use App\Models\Message;
 use App\Models\AiDiagnostic;
 use App\Models\PanicLog;
+use App\Services\MentalHealthMlService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,11 @@ use Illuminate\Support\Facades\Cache;
 
 class AnalyticsController extends Controller
 {
+    public function __construct(
+        private readonly MentalHealthMlService $mentalHealthMlService
+    ) {
+    }
+
     public function dashboard(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -24,7 +30,7 @@ class AnalyticsController extends Controller
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
-        $cacheKey = 'analytics:dashboard:v2';
+        $cacheKey = 'analytics:dashboard:v3';
         $stats = Cache::remember($cacheKey, now()->addSeconds(20), function () {
             return [
                 'overview' => $this->getOverviewStats(),
@@ -32,6 +38,7 @@ class AnalyticsController extends Controller
                 'sessions' => $this->getSessionStats(),
                 'appointments' => $this->getAppointmentStats(),
                 'ai_diagnostics' => $this->getAIDiagnosticStats(),
+                'ml_intelligence' => $this->mentalHealthMlService->buildAdminMlOverview(),
                 'recent_activity' => $this->getRecentActivity(),
                 'risk_levels' => $this->getRiskLevelDistribution(),
                 'counselor_performance' => $this->getCounselorPerformance(),
@@ -49,13 +56,14 @@ class AnalyticsController extends Controller
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
-        $cacheKey = 'analytics:admin:overview:v1';
+        $cacheKey = 'analytics:admin:overview:v2';
         $stats = Cache::remember($cacheKey, now()->addSeconds(10), function () {
             return [
                 'overview' => $this->getOverviewStats(),
                 'sessions' => $this->getDashboardSessionOverview(),
                 'appointments' => $this->getDashboardAppointmentOverview(),
                 'ai_diagnostics' => $this->getDashboardAIDiagnosticOverview(),
+                'ml_intelligence' => $this->mentalHealthMlService->buildAdminMlOverview(),
                 'alerts' => $this->getDashboardAlertOverview(),
                 'counselor_presence' => $this->getDashboardCounselorPresence(),
                 'pending_appointments' => $this->getDashboardPendingAppointments(),

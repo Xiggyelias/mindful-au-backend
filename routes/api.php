@@ -142,6 +142,7 @@ Route::middleware(['auth:sanctum', 'session.timeout', 'audit.admin', 'audit.acce
     Route::get('/diagnostics/trends', [\App\Http\Controllers\DiagnosticController::class, 'getTrends']);
     Route::get('/diagnostics/counselor-dashboard', [\App\Http\Controllers\DiagnosticController::class, 'getCounselorDashboard'])->middleware('counselor');
     Route::get('/student-wellness/summary', [\App\Http\Controllers\StudentWellnessController::class, 'summary']);
+    Route::get('/ml/counselor-matches', [\App\Http\Controllers\MlInsightsController::class, 'counselorMatches']);
     Route::get('/student-mood/today', [\App\Http\Controllers\StudentMoodController::class, 'today']);
     Route::post('/student-mood', [\App\Http\Controllers\StudentMoodController::class, 'store']);
 

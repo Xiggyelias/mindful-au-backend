@@ -7,11 +7,17 @@ use App\Models\Appointment;
 use App\Models\CounselingSession;
 use App\Models\Diagnostic;
 use App\Models\User;
+use App\Services\MentalHealthMlService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class StudentWellnessController extends Controller
 {
+    public function __construct(
+        private readonly MentalHealthMlService $mentalHealthMlService
+    ) {
+    }
+
     public function summary(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -55,6 +61,7 @@ class StudentWellnessController extends Controller
     private function buildSummary(User $student): array
     {
         $now = now();
+        $mlInsights = $this->mentalHealthMlService->buildStudentMlInsights($student);
 
         $diagnostics = Diagnostic::query()
             ->where('student_id', $student->id)
@@ -190,13 +197,15 @@ class StudentWellnessController extends Controller
             $scores,
             $metrics,
             $parsedDiagnosticRecommendation,
-            $aiRecommendation
+            $aiRecommendation,
+            $mlInsights['recommended_actions'] ?? []
         );
 
         $insights = $this->buildLiveInsights(
             $scores,
             $metrics,
-            $aiInsight
+            $aiInsight,
+            $mlInsights
         );
 
         $history = $diagnostics->map(function ($item) {
@@ -222,6 +231,7 @@ class StudentWellnessController extends Controller
             'mood' => $latestAiDiagnostic?->mood,
             'insights' => $insights,
             'recommendations' => $recommendations,
+            'ml_insights' => $mlInsights,
             'metrics' => $metrics,
             'latest_diagnostic' => $latestDiagnostic,
             'latest_ai_diagnostic' => $latestAiDiagnostic,
@@ -320,7 +330,7 @@ class StudentWellnessController extends Controller
         return implode(' ', array_filter($parts));
     }
 
-    private function buildLiveInsights(array $scores, array $metrics, string $aiInsight): string
+    private function buildLiveInsights(array $scores, array $metrics, string $aiInsight, array $mlInsights = []): string
     {
         if (!is_int($scores['wellness_score'])) {
             return 'No live wellness insight yet. Complete a diagnostic assessment or counseling session to generate one.';
@@ -345,6 +355,25 @@ class StudentWellnessController extends Controller
             $insightParts[] = $aiInsight;
         }
 
+        $focusArea = trim((string) ($mlInsights['focus_area'] ?? ''));
+        if ($focusArea !== '') {
+            $insightParts[] = sprintf('ML support focus: %s.', $focusArea);
+        }
+
+        $trendLabel = trim((string) ($mlInsights['trend']['label'] ?? ''));
+        if ($trendLabel !== '') {
+            $insightParts[] = sprintf('Forecast trend is %s.', $trendLabel);
+        }
+
+        $dominantTopics = array_slice(
+            array_values(array_filter($mlInsights['dominant_topics'] ?? [], fn ($item) => is_string($item) && trim($item) !== '')),
+            0,
+            2
+        );
+        if (!empty($dominantTopics)) {
+            $insightParts[] = 'Recent support themes: ' . implode(', ', $dominantTopics) . '.';
+        }
+
         return implode(' ', $insightParts);
     }
 
@@ -352,7 +381,8 @@ class StudentWellnessController extends Controller
         array $scores,
         array $metrics,
         string $diagnosticRecommendation,
-        string $aiRecommendation
+        string $aiRecommendation,
+        array $mlActions = []
     ): string {
         $recommendations = [];
 
@@ -382,6 +412,12 @@ class StudentWellnessController extends Controller
 
         if (($metrics['cancelled_appointments_30d'] ?? 0) > 1) {
             $recommendations[] = 'Multiple recent cancellations were detected. Choose consistent session slots to improve progress.';
+        }
+
+        foreach ($mlActions as $action) {
+            if (is_string($action) && trim($action) !== '') {
+                $recommendations[] = $this->cleanText($action);
+            }
         }
 
         $final = implode(' ', array_unique(array_filter($recommendations)));

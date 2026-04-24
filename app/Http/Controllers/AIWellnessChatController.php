@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\MentalHealthMlService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,11 @@ class AIWellnessChatController extends Controller
     private const WELLNESS_MODEL = 'wellness-assistant-v1';
     private const CONTEXT_WINDOW_MESSAGES = 10;
     private const HISTORY_LIMIT_MESSAGES = 100;
+
+    public function __construct(
+        private readonly MentalHealthMlService $mentalHealthMlService
+    ) {
+    }
 
     public function chat(Request $request): JsonResponse
     {
@@ -90,6 +96,8 @@ class AIWellnessChatController extends Controller
         $requiresImmediateHelp = $conversationTopic === 'crisis';
         $providerMode = 'local_fallback';
         $providerName = 'offline_companion';
+        $promptSafeContext = $this->mentalHealthMlService->buildPromptSafeStudentContext($user);
+        $studentMlInsights = $this->mentalHealthMlService->buildStudentMlInsights($user);
 
         // Build conversation context
         $systemPrompt = "You are a compassionate and supportive AI wellness assistant for university students. Your role is to:
@@ -109,6 +117,12 @@ Important guidelines:
 - Keep responses concise but warm and helpful
 - Use techniques from CBT and mindfulness when appropriate
 - Validate feelings before offering suggestions";
+
+        if (!empty($promptSafeContext['prompt_summary']) && is_string($promptSafeContext['prompt_summary'])) {
+            $systemPrompt .= "\n- Internal privacy-safe context: {$promptSafeContext['prompt_summary']}";
+        }
+
+        $systemPrompt .= "\n- Optimize for low-bandwidth delivery with short paragraphs and no unnecessary filler.";
 
         if ($requiresImmediateHelp) {
             $response = $this->isFollowUpPrompt($normalizedMessage)
@@ -145,11 +159,36 @@ Important guidelines:
             }
         }
 
+        $mlSignals = [
+            'model_version' => MentalHealthMlService::MODEL_VERSION,
+            'conversation_topic' => $conversationTopic,
+            'focus_area' => $studentMlInsights['focus_area'] ?? null,
+            'risk_forecast' => $studentMlInsights['risk_forecast'] ?? null,
+            'trend' => $studentMlInsights['trend'] ?? null,
+            'dominant_topics' => $studentMlInsights['dominant_topics'] ?? [],
+            'recommended_actions' => array_slice($studentMlInsights['recommended_actions'] ?? [], 0, 2),
+            'low_bandwidth_mode' => true,
+        ];
+
         [$userMessageId, $assistantMessageId] = $this->persistMessages(
             (int) $conversation->id,
             $message,
             $response,
-            (bool) $created
+            (bool) $created,
+            [
+                'conversation_topic' => $conversationTopic ?? 'general',
+                'risk_level' => $requiresImmediateHelp ? 'crisis' : 'normal',
+                'requires_immediate_help' => $requiresImmediateHelp,
+                'ml_signal_snapshot' => $mlSignals,
+            ],
+            [
+                'conversation_topic' => $conversationTopic ?? 'general',
+                'risk_level' => $requiresImmediateHelp ? 'crisis' : 'normal',
+                'requires_immediate_help' => $requiresImmediateHelp,
+                'provider_mode' => $providerMode,
+                'provider_name' => $providerName,
+                'ml_signal_snapshot' => $mlSignals,
+            ]
         );
 
         return response()->json([
@@ -164,6 +203,7 @@ Important guidelines:
             'provider_mode' => $providerMode,
             'provider_name' => $providerName,
             'external_ai_configured' => $this->hasConfiguredExternalAiProvider(),
+            'ml_signals' => $mlSignals,
         ]);
     }
 
@@ -274,7 +314,14 @@ Important guidelines:
             ->first();
     }
 
-    private function persistMessages(int $conversationId, string $userMessage, string $assistantMessage, bool $isNewConversation): array
+    private function persistMessages(
+        int $conversationId,
+        string $userMessage,
+        string $assistantMessage,
+        bool $isNewConversation,
+        array $userMetadata = [],
+        array $assistantMetadata = []
+    ): array
     {
         $now = now();
 
@@ -285,6 +332,7 @@ Important guidelines:
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+        $this->persistMessageMetadata($userMessageId, $userMetadata);
 
         $assistantMessageId = DB::table('chat_messages')->insertGetId([
             'conversation_id' => $conversationId,
@@ -293,6 +341,7 @@ Important guidelines:
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+        $this->persistMessageMetadata($assistantMessageId, $assistantMetadata);
 
         $updates = [
             'last_message_at' => $now,
@@ -308,6 +357,50 @@ Important guidelines:
             ->update($updates);
 
         return [$userMessageId, $assistantMessageId];
+    }
+
+    private function persistMessageMetadata(int $messageId, array $metadata): void
+    {
+        if ($messageId <= 0 || empty($metadata)) {
+            return;
+        }
+
+        $now = now();
+        $rows = [];
+
+        foreach ($metadata as $key => $value) {
+            if (!is_string($key) || trim($key) === '' || $value === null) {
+                continue;
+            }
+
+            $type = 'string';
+            if (is_bool($value)) {
+                $type = 'boolean';
+            } elseif (is_int($value)) {
+                $type = 'integer';
+            } elseif (is_float($value)) {
+                $type = 'decimal';
+            } elseif (is_array($value) || is_object($value)) {
+                $type = 'json';
+            }
+
+            $rows[] = [
+                'message_id' => $messageId,
+                'key' => trim($key),
+                'value' => is_scalar($value) ? (string) $value : json_encode($value),
+                'type' => $type,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        if (!empty($rows)) {
+            DB::table('message_metadata')->upsert(
+                $rows,
+                ['message_id', 'key'],
+                ['value', 'type', 'updated_at']
+            );
+        }
     }
 
     private function tryKwaipilot(array $messages): ?string
