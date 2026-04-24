@@ -162,6 +162,7 @@ class AppointmentController extends Controller
 
         $appointment->load(['student.profile', 'counselor.profile']);
         $this->notifyCounselorOnAppointmentCreated($appointment);
+        $this->flushDashboardCaches();
 
         return response()->json($appointment, 201);
     }
@@ -197,6 +198,8 @@ class AppointmentController extends Controller
                 $this->notifyStudentOnAppointmentRescheduled($appointment);
             }
         }
+
+        $this->flushDashboardCaches();
 
         return response()->json($appointment);
     }
@@ -234,6 +237,7 @@ class AppointmentController extends Controller
 
             $appointment->refresh()->load(['student.profile', 'counselor.profile']);
             $this->notifyCounselorOnAppointmentCancelled($appointment, (int) $user->id, $reason);
+            $this->flushDashboardCaches();
 
             return response()->json([
                 'message' => 'Appointment cancelled successfully.',
@@ -243,6 +247,7 @@ class AppointmentController extends Controller
 
         $this->notifyCounselorOnAppointmentCancelled($appointment, (int) $user->id);
         $appointment->delete();
+        $this->flushDashboardCaches();
 
         return response()->json(['message' => 'Appointment deleted successfully']);
     }
@@ -432,6 +437,12 @@ class AppointmentController extends Controller
         } catch (\Throwable) {
             return 'a future date';
         }
+    }
+
+    private function flushDashboardCaches(): void
+    {
+        Cache::forget('analytics:admin:overview:v1');
+        Cache::forget('analytics:dashboard:v2');
     }
 }
 

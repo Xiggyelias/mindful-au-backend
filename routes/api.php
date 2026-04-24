@@ -86,6 +86,7 @@ Route::middleware(['auth:sanctum', 'session.timeout', 'audit.admin', 'audit.acce
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 
     // Analytics (Admin only)
+    Route::get('/analytics/overview', [AnalyticsController::class, 'overview'])->middleware('admin');
     Route::get('/analytics/dashboard', [AnalyticsController::class, 'dashboard'])->middleware('admin');
     Route::get('/analytics/export', [ReportExportController::class, 'export'])->middleware('admin');
 

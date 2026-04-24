@@ -8,6 +8,7 @@ use App\Models\CounselingSession;
 use App\Models\Appointment;
 use App\Models\Message;
 use App\Models\AiDiagnostic;
+use App\Models\PanicLog;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +41,30 @@ class AnalyticsController extends Controller
         return response()->json($stats);
     }
 
+    public function overview(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (!$user->hasRole('admin')) {
+            return response()->json(['message' => 'Admin access required'], 403);
+        }
+
+        $cacheKey = 'analytics:admin:overview:v1';
+        $stats = Cache::remember($cacheKey, now()->addSeconds(10), function () {
+            return [
+                'overview' => $this->getOverviewStats(),
+                'sessions' => $this->getDashboardSessionOverview(),
+                'appointments' => $this->getDashboardAppointmentOverview(),
+                'ai_diagnostics' => $this->getDashboardAIDiagnosticOverview(),
+                'alerts' => $this->getDashboardAlertOverview(),
+                'counselor_presence' => $this->getDashboardCounselorPresence(),
+                'pending_appointments' => $this->getDashboardPendingAppointments(),
+            ];
+        });
+
+        return response()->json($stats);
+    }
+
     private function getOverviewStats(): array
     {
         return [
@@ -66,6 +91,169 @@ class AnalyticsController extends Controller
                 ->pluck('count', 'role')
                 ->toArray(),
         ];
+    }
+
+    private function getDashboardSessionOverview(): array
+    {
+        return [
+            'total_sessions' => CounselingSession::count(),
+            'sessions_by_status' => CounselingSession::select('status', DB::raw('count(*) as count'))
+                ->groupBy('status')
+                ->get()
+                ->pluck('count', 'status')
+                ->toArray(),
+            'sessions_this_week' => CounselingSession::whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()])->count(),
+        ];
+    }
+
+    private function getDashboardAppointmentOverview(): array
+    {
+        return [
+            'total_appointments' => Appointment::count(),
+            'appointments_today' => Appointment::whereDate('scheduled_at', today())->count(),
+            'appointments_this_week' => Appointment::whereBetween('scheduled_at', [now()->startOfWeek(), now()->endOfWeek()])->count(),
+        ];
+    }
+
+    private function getDashboardAIDiagnosticOverview(): array
+    {
+        $riskDistribution = AiDiagnostic::select('risk_level', DB::raw('count(*) as count'))
+            ->whereNotNull('risk_level')
+            ->groupBy('risk_level')
+            ->get()
+            ->pluck('count', 'risk_level')
+            ->toArray();
+
+        return [
+            'high_risk_alerts' => (int) (($riskDistribution['high'] ?? 0) + ($riskDistribution['critical'] ?? 0)),
+            'diagnostics_this_month' => AiDiagnostic::whereMonth('created_at', now()->month)->count(),
+        ];
+    }
+
+    private function getDashboardAlertOverview(): array
+    {
+        $activePanicLogs = PanicLog::query()
+            ->where('resolved', false)
+            ->count();
+
+        $highOrCriticalLast30Days = AiDiagnostic::query()
+            ->where('created_at', '>=', now()->subDays(30))
+            ->whereIn('risk_level', ['high', 'critical'])
+            ->count();
+
+        return [
+            'active_panic_logs' => $activePanicLogs,
+            'high_or_critical_last_30_days' => $highOrCriticalLast30Days,
+            'open_total' => $activePanicLogs + $highOrCriticalLast30Days,
+        ];
+    }
+
+    private function getDashboardCounselorPresence(): array
+    {
+        $onlineThreshold = now()->subMinutes((int) env('COUNSELOR_ONLINE_WINDOW_MINUTES', 10));
+        $staff = User::query()
+            ->whereHas('roles', function ($query) {
+                $query->whereIn('role', ['counselor', 'peer_counselor']);
+            })
+            ->with(['profile:id,user_id,full_name'])
+            ->select(['id', 'email', 'last_seen_at'])
+            ->orderByDesc('last_seen_at')
+            ->orderByDesc('id')
+            ->get();
+
+        $appointmentsTodayByCounselor = Appointment::query()
+            ->whereNotNull('counselor_id')
+            ->whereDate('scheduled_at', today())
+            ->select('counselor_id', DB::raw('count(*) as count'))
+            ->groupBy('counselor_id')
+            ->pluck('count', 'counselor_id');
+
+        $activeStaffIds = [];
+        $activeSessionAssignments = CounselingSession::query()
+            ->where('status', 'active')
+            ->get(['counselor_id', 'peer_counselor_id']);
+
+        foreach ($activeSessionAssignments as $assignment) {
+            $counselorId = (int) ($assignment->counselor_id ?? 0);
+            $peerCounselorId = (int) ($assignment->peer_counselor_id ?? 0);
+
+            if ($counselorId > 0) {
+                $activeStaffIds[$counselorId] = true;
+            }
+            if ($peerCounselorId > 0) {
+                $activeStaffIds[$peerCounselorId] = true;
+            }
+        }
+
+        $items = $staff
+            ->map(function (User $member) use ($onlineThreshold, $appointmentsTodayByCounselor, $activeStaffIds) {
+                $isOnline = $member->last_seen_at !== null
+                    && $member->last_seen_at->greaterThanOrEqualTo($onlineThreshold);
+                $isInSession = isset($activeStaffIds[(int) $member->id]);
+
+                $status = 'Offline';
+                if ($isOnline) {
+                    $status = $isInSession ? 'In Session' : 'Available';
+                }
+
+                $fallbackName = strtok((string) $member->email, '@') ?: 'Unknown';
+
+                return [
+                    'id' => (int) $member->id,
+                    'name' => $member->profile?->full_name ?? $fallbackName,
+                    'status' => $status,
+                    'sessions' => (int) ($appointmentsTodayByCounselor[(int) $member->id] ?? 0),
+                ];
+            })
+            ->values();
+
+        return [
+            'summary' => [
+                'total' => $items->count(),
+                'available' => $items->where('status', 'Available')->count(),
+            ],
+            'items' => $items->take(5)->all(),
+        ];
+    }
+
+    private function getDashboardPendingAppointments(): array
+    {
+        return Appointment::query()
+            ->where('status', 'scheduled')
+            ->with([
+                'student:id,email',
+                'student.profile:id,user_id,full_name',
+                'counselor:id,email',
+                'counselor.profile:id,user_id,full_name',
+            ])
+            ->orderBy('scheduled_at')
+            ->orderBy('id')
+            ->limit(5)
+            ->get()
+            ->map(function (Appointment $appointment) {
+                return [
+                    'id' => (int) $appointment->id,
+                    'student_id' => (int) $appointment->student_id,
+                    'counselor_id' => (int) $appointment->counselor_id,
+                    'status' => (string) $appointment->status,
+                    'scheduled_at' => $appointment->scheduled_at?->toIso8601String(),
+                    'student' => [
+                        'id' => $appointment->student?->id,
+                        'email' => $appointment->student?->email,
+                        'profile' => [
+                            'full_name' => $appointment->student?->profile?->full_name,
+                        ],
+                    ],
+                    'counselor' => [
+                        'id' => $appointment->counselor?->id,
+                        'email' => $appointment->counselor?->email,
+                        'profile' => [
+                            'full_name' => $appointment->counselor?->profile?->full_name,
+                        ],
+                    ],
+                ];
+            })
+            ->all();
     }
 
     private function getSessionStats(): array
