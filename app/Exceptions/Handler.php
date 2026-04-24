@@ -174,7 +174,12 @@ class Handler extends ExceptionHandler
             return false;
         }
 
-        $allowExposure = filter_var(env('API_EXPOSE_ERROR_DETAILS', false), FILTER_VALIDATE_BOOL);
+        $rawExposure = getenv('API_EXPOSE_ERROR_DETAILS');
+        if ($rawExposure === false) {
+            $rawExposure = env('API_EXPOSE_ERROR_DETAILS', false);
+        }
+
+        $allowExposure = filter_var($rawExposure, FILTER_VALIDATE_BOOL);
         return $allowExposure && (bool) config('app.debug');
     }
 
