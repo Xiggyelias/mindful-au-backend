@@ -438,6 +438,10 @@ class MessageController extends Controller
         $user = $request->user();
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
 
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
+        }
+
         if (
             !$user->hasRole('admin')
             && $session->student_id !== $user->id

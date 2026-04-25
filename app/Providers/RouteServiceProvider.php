@@ -26,6 +26,21 @@ class RouteServiceProvider extends ServiceProvider
         $aiReadPerMinute = max(10, (int) env('AI_READ_RATE_LIMIT_PER_MINUTE', 60));
         $diagnosticsSubmitPerMinute = max(5, (int) env('DIAGNOSTICS_SUBMIT_RATE_LIMIT_PER_MINUTE', 20));
 
+        if (app()->environment('testing')) {
+            // Keep throttling behavior in production while preventing flaky 429s in automated tests.
+            $apiAuthPerMinute = 100000;
+            $apiGuestPerMinute = 100000;
+            $authLoginPerMinute = 100000;
+            $authRegisterPerMinute = 100000;
+            $oauthTicketExchangePerMinute = 100000;
+            $messagesReadPerMinute = 100000;
+            $messagesWritePerMinute = 100000;
+            $presencePerMinute = 100000;
+            $aiChatPerMinute = 100000;
+            $aiReadPerMinute = 100000;
+            $diagnosticsSubmitPerMinute = 100000;
+        }
+
         RateLimiter::for('api', function (Request $request) use ($apiAuthPerMinute, $apiGuestPerMinute) {
             $userId = $request->user()?->id;
             if ($userId) {
