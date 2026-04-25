@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Models\Profile;
 use App\Models\UserRole;
@@ -9,6 +10,7 @@ use App\Models\InstitutionAccount;
 use App\Models\LoginLog;
 use App\Models\Notification;
 use App\Models\UserTwoFactorMethod;
+use App\Services\TokenSessionService;
 use App\Support\SystemSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -17,11 +19,14 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\NewAccessToken;
-use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
     private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
+
+    public function __construct(private readonly TokenSessionService $tokenSessionService)
+    {
+    }
 
     public function register(Request $request): JsonResponse
     {
@@ -139,13 +144,12 @@ class AuthController extends Controller
             ], 201);
         }
 
-        // Issue Sanctum token for roles that do not require admin approval.
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $issuedToken = $this->tokenSessionService->issueToken($request, $user, 'auth_token');
 
         return response()->json([
             'message' => 'Registration successful',
             'user' => $user->loadMissing(['profile', 'roles']),
-            'access_token' => $token,
+            'access_token' => $issuedToken->plainTextToken,
             'token_type' => 'bearer',
             'expires_in' => $this->tokenExpirySeconds(),
         ], 201);
@@ -243,11 +247,7 @@ class AuthController extends Controller
 
         $this->touchPresenceIfStale($user);
 
-        // Revoke older tokens to reduce token reuse risk.
-        $user->tokens()->delete();
-
-        // Issue Sanctum token
-        $issuedToken = $user->createToken('auth_token');
+        $issuedToken = $this->tokenSessionService->issueToken($request, $user, 'auth_token');
         $twoFactorState = $this->resolveTwoFactorState($user, false);
         $this->setTokenTwoFactorPassed($issuedToken, !$twoFactorState['required']);
         if (!$twoFactorState['required']) {
@@ -289,11 +289,28 @@ class AuthController extends Controller
         return response()->json(['message' => 'Logged out successfully']);
     }
 
-    public function refresh(): JsonResponse
+    public function refresh(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if (!$user instanceof User) {
+            return response()->json([
+                'message' => 'Authentication required.',
+            ], 401);
+        }
+
+        $issuedToken = $this->tokenSessionService->rotateCurrentToken($request, $user, 'auth_token');
+        if (!$issuedToken) {
+            return response()->json([
+                'message' => 'Current session could not be refreshed.',
+            ], 422);
+        }
+
         return response()->json([
-            'message' => 'Refresh not supported for Sanctum tokens. Request a new token via login.',
-        ], 400);
+            'message' => 'Session refreshed successfully.',
+            'access_token' => $issuedToken->plainTextToken,
+            'token_type' => 'bearer',
+            'expires_in' => $this->tokenExpirySeconds(),
+        ]);
     }
 
     public function me(Request $request): JsonResponse
@@ -306,6 +323,7 @@ class AuthController extends Controller
             ], 403);
         }
         $this->touchPresenceIfStale($user);
+        $this->tokenSessionService->touchCurrentToken($request, $user, true);
 
         $user->loadMissing(['profile', 'roles']);
         $twoFactorState = $this->resolveTwoFactorState($user, $this->isTokenTwoFactorVerified($user));
@@ -329,6 +347,7 @@ class AuthController extends Controller
             ], 403);
         }
         $this->touchPresenceIfStale($user);
+        $this->tokenSessionService->touchCurrentToken($request, $user, true);
 
         return response()->json([
             'status' => 'ok',

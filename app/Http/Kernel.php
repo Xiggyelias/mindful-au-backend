@@ -49,6 +49,7 @@ class Kernel extends HttpKernel
         'counselor' => \App\Http\Middleware\CounselorMiddleware::class,
         'student' => \App\Http\Middleware\StudentMiddleware::class,
         'anonymous' => \App\Http\Middleware\AnonymousModeMiddleware::class,
+        'track.device_session' => \App\Http\Middleware\TrackDeviceSession::class,
         'session.timeout' => \App\Http\Middleware\EnforceSessionTimeout::class,
         'audit.admin' => \App\Http\Middleware\AuditAdminActions::class,
         'audit.access' => \App\Http\Middleware\AuditDataAccess::class,

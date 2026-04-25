@@ -2,13 +2,13 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Models\UserTwoFactorMethod;
 use App\Support\SystemSettings;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
-use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
 
 class RequireCounselorTwoFactor

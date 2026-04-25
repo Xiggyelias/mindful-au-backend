@@ -71,6 +71,18 @@ Response:
 - fit reasons
 - availability and reliability metrics
 
+### ML health telemetry (Admin)
+
+`GET /api/ml/health`
+
+Operational monitoring payload includes:
+
+- inference volume in last 24h
+- provider mode/name distribution
+- fallback rate
+- average and p95 latency
+- high-risk follow-up indicators
+
 ### Admin analytics
 
 `GET /api/analytics/dashboard`
@@ -82,10 +94,12 @@ New field:
 ## Release Checklist
 
 1. Run backend tests: `php artisan test`
+   - Include ML telemetry checks: `php artisan test --filter=MlHealthEndpointTest`
 2. Run frontend build: `npm run build`
 3. Review `ml_intelligence.validation` in admin analytics
-4. Confirm counselor matching and AI chat flows in staging
-5. Verify production environment variables for AI providers if external AI is required
+4. Review `/api/ml/health` for fallback rate and latency budgets
+5. Confirm counselor matching and AI chat flows in staging
+6. Verify production environment variables for AI providers if external AI is required
 
 ## Deployment Note
 

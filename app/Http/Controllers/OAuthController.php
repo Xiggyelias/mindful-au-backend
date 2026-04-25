@@ -7,6 +7,7 @@ use App\Models\LoginLog;
 use App\Models\User;
 use App\Models\Profile;
 use App\Models\UserRole;
+use App\Services\TokenSessionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -22,6 +23,10 @@ class OAuthController extends Controller
 {
     private const OAUTH_TICKET_CACHE_PREFIX = 'oauth:ticket:';
     private const OAUTH_FRONTEND_URL_SESSION_KEY = 'oauth:frontend:url';
+
+    public function __construct(private readonly TokenSessionService $tokenSessionService)
+    {
+    }
 
     public function redirectToGoogle(Request $request): RedirectResponse
     {
@@ -173,10 +178,7 @@ class OAuthController extends Controller
 
             $user->forceFill(['last_seen_at' => now()])->saveQuietly();
 
-            // Rotate existing API tokens on new OAuth session.
-            $user->tokens()->delete();
-            $token = $user->createToken('google_oauth')->plainTextToken;
-            $loginTicket = $this->issueLoginTicket($token);
+            $loginTicket = $this->issueLoginTicket($user);
 
             $this->recordGoogleLogin($request, $user, $email, true, null);
 
@@ -217,17 +219,27 @@ class OAuthController extends Controller
             ], 422);
         }
 
-        $token = trim((string) ($payload['token'] ?? ''));
-        if ($token === '') {
+        $userId = (int) ($payload['user_id'] ?? 0);
+        if ($userId <= 0) {
             return response()->json([
                 'message' => 'OAuth login ticket is invalid or expired.',
             ], 422);
         }
 
+        $user = User::query()->with(['profile', 'roles'])->find($userId);
+        if (!$user) {
+            return response()->json([
+                'message' => 'OAuth login ticket is invalid or expired.',
+            ], 422);
+        }
+
+        $issuedToken = $this->tokenSessionService->issueToken($request, $user, 'google_oauth');
+
         return response()->json([
-            'access_token' => $token,
+            'access_token' => $issuedToken->plainTextToken,
             'token_type' => 'bearer',
             'expires_in' => $this->tokenExpirySeconds(),
+            'user' => $user,
         ]);
     }
 
@@ -603,13 +615,13 @@ class OAuthController extends Controller
         return redirect()->away($this->oauthCallbackUrl() . '?' . $query);
     }
 
-    private function issueLoginTicket(string $token): string
+    private function issueLoginTicket(User $user): string
     {
         $ticket = Str::random(96);
         Cache::put(
             $this->oauthTicketCacheKey($ticket),
             [
-                'token' => $token,
+                'user_id' => $user->id,
                 'issued_at' => now()->toIso8601String(),
             ],
             now()->addSeconds($this->oauthTicketTtlSeconds())

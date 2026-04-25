@@ -31,7 +31,7 @@ class AppointmentController extends Controller
         ]);
 
         $query = Appointment::query()
-            ->with(['student', 'counselor']);
+            ->with(['student.profile', 'counselor.profile']);
 
         if ($user->hasRole('student')) {
             $query->where('student_id', $user->id);
@@ -66,6 +66,10 @@ class AppointmentController extends Controller
             $paginator = $query
                 ->paginate($perPage, ['*'], 'page', $page)
                 ->appends($request->query());
+            $paginator->getCollection()->transform(function (Appointment $appointment) use ($user) {
+                $this->applyAnonymousAppointmentProjection($appointment, $user);
+                return $appointment;
+            });
 
             return response()->json(
                 PaginationPayload::fromPaginator($paginator, $request, ['status', 'from', 'to'])
@@ -76,6 +80,10 @@ class AppointmentController extends Controller
             $query->limit($limit);
         }
         $appointments = $query->get();
+        $appointments->transform(function (Appointment $appointment) use ($user) {
+            $this->applyAnonymousAppointmentProjection($appointment, $user);
+            return $appointment;
+        });
 
         return response()->json($appointments);
     }
@@ -340,8 +348,7 @@ class AppointmentController extends Controller
             return;
         }
 
-        $studentName = optional($appointment->student?->profile)->full_name
-            ?: ($appointment->student?->email ? Str::before($appointment->student?->email, '@') : 'A student');
+        $studentName = $this->resolveAppointmentStudentLabel($appointment);
 
         Notification::create([
             'user_id' => $appointment->counselor_id,
@@ -406,8 +413,7 @@ class AppointmentController extends Controller
             return;
         }
 
-        $studentName = optional($appointment->student?->profile)->full_name
-            ?: ($appointment->student?->email ? Str::before($appointment->student?->email, '@') : 'A student');
+        $studentName = $this->resolveAppointmentStudentLabel($appointment);
         $message = sprintf(
             '%s cancelled an appointment scheduled for %s.',
             $studentName,
@@ -443,6 +449,46 @@ class AppointmentController extends Controller
     {
         Cache::forget('analytics:admin:overview:v1');
         Cache::forget('analytics:dashboard:v2');
+    }
+
+    private function applyAnonymousAppointmentProjection(Appointment $appointment, User $viewer): void
+    {
+        $isAnonymousStudent = (bool) ($appointment->student?->profile?->anonymous_mode ?? false);
+        if (!$isAnonymousStudent) {
+            return;
+        }
+
+        $isStudentViewer = (int) $appointment->student_id === (int) $viewer->id;
+        $isAdminViewer = $viewer->hasRole('admin');
+        if ($isStudentViewer || $isAdminViewer) {
+            return;
+        }
+
+        if ($appointment->relationLoaded('student') && $appointment->student) {
+            $appointment->student->setAttribute('id', 0);
+            $appointment->student->email = null;
+            $appointment->student->setAttribute('masked_for_viewer', true);
+            if ($appointment->student->relationLoaded('profile') && $appointment->student->profile) {
+                $appointment->student->profile->full_name = $this->resolveAppointmentStudentAlias($appointment);
+                $appointment->student->profile->id_number = null;
+                $appointment->student->profile->avatar_url = null;
+            }
+        }
+    }
+
+    private function resolveAppointmentStudentAlias(Appointment $appointment): string
+    {
+        return 'User_' . str_pad((string) ((int) $appointment->student_id % 10000), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function resolveAppointmentStudentLabel(Appointment $appointment): string
+    {
+        if ((bool) ($appointment->student?->profile?->anonymous_mode ?? false)) {
+            return $this->resolveAppointmentStudentAlias($appointment);
+        }
+
+        return optional($appointment->student?->profile)->full_name
+            ?: ($appointment->student?->email ? Str::before($appointment->student?->email, '@') : 'A student');
     }
 }
 

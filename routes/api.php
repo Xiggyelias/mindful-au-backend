@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AuthSessionController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\OAuthController;
 use App\Http\Controllers\SessionController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\CounselorTwoFactorController;
 use App\Http\Controllers\DataAccessLogController;
 use App\Http\Controllers\InstitutionAccountController;
 use App\Http\Controllers\PeerSupportController;
+use App\Http\Controllers\TipController;
 
 // Authentication routes
 Route::get('/health', [HealthController::class, 'health']);
@@ -38,14 +40,18 @@ Route::post('/integrations/academic-risk/webhook', [AcademicRiskWebhookControlle
     ->middleware(['verify.integration.signature', 'throttle:120,1']);
 
 // Protected routes (Sanctum)
-Route::middleware(['auth:sanctum', 'session.timeout', 'audit.admin', 'audit.access', 'counselor.2fa'])->group(function () {
+Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'audit.admin', 'audit.access', 'counselor.2fa'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/me/presence', [AuthController::class, 'presence'])->middleware('throttle:presence');
+    Route::get('/auth/sessions', [AuthSessionController::class, 'index']);
+    Route::delete('/auth/sessions/{sessionId}', [AuthSessionController::class, 'destroy']);
+    Route::post('/auth/sessions/logout-others', [AuthSessionController::class, 'logoutOtherDevices']);
     Route::get('/auth/2fa/status', [CounselorTwoFactorController::class, 'status']);
     Route::post('/auth/2fa/setup', [CounselorTwoFactorController::class, 'setup'])->middleware('throttle:auth-login');
     Route::post('/auth/2fa/verify', [CounselorTwoFactorController::class, 'verify'])->middleware('throttle:auth-login');
+    Route::get('/tips/today', [TipController::class, 'today']);
 
     // Sessions
     Route::get('/sessions/chat-list', [SessionController::class, 'chatList'])->middleware('throttle:messages-read');
@@ -63,6 +69,7 @@ Route::middleware(['auth:sanctum', 'session.timeout', 'audit.admin', 'audit.acce
     Route::post('/sessions/{id}/escalate', [SessionController::class, 'escalateToCounselor'])->middleware('throttle:30,1');
     Route::post('/sessions/{id}/panic-escalate', [SessionController::class, 'panicEscalation'])->middleware('throttle:20,1');
     Route::post('/sessions/{id}/flag-urgent', [SessionController::class, 'flagUrgentConcern'])->middleware('throttle:30,1');
+    Route::post('/sessions/{id}/reveal-identity', [SessionController::class, 'revealIdentity'])->middleware('throttle:10,1');
 
     // Appointments
     Route::apiResource('appointments', AppointmentController::class);
@@ -143,6 +150,7 @@ Route::middleware(['auth:sanctum', 'session.timeout', 'audit.admin', 'audit.acce
     Route::get('/diagnostics/counselor-dashboard', [\App\Http\Controllers\DiagnosticController::class, 'getCounselorDashboard'])->middleware('counselor');
     Route::get('/student-wellness/summary', [\App\Http\Controllers\StudentWellnessController::class, 'summary']);
     Route::get('/ml/counselor-matches', [\App\Http\Controllers\MlInsightsController::class, 'counselorMatches']);
+    Route::get('/ml/health', [\App\Http\Controllers\MlInsightsController::class, 'health']);
     Route::get('/student-mood/today', [\App\Http\Controllers\StudentMoodController::class, 'today']);
     Route::post('/student-mood', [\App\Http\Controllers\StudentMoodController::class, 'store']);
 
@@ -161,6 +169,10 @@ Route::middleware(['auth:sanctum', 'session.timeout', 'audit.admin', 'audit.acce
     Route::get('/settings', [\App\Http\Controllers\SystemSettingController::class, 'index'])->middleware('admin');
     Route::put('/settings', [\App\Http\Controllers\SystemSettingController::class, 'update'])->middleware('admin');
     Route::post('/settings/clear-cache', [\App\Http\Controllers\SystemSettingController::class, 'clearCache'])->middleware('admin');
+    Route::get('/tips', [TipController::class, 'index'])->middleware('admin');
+    Route::post('/tips', [TipController::class, 'store'])->middleware('admin');
+    Route::put('/tips/{tip}', [TipController::class, 'update'])->middleware('admin');
+    Route::delete('/tips/{tip}', [TipController::class, 'destroy'])->middleware('admin');
     Route::get('/backups', [BackupController::class, 'index'])->middleware('admin');
     Route::post('/backups/verify', [BackupController::class, 'verify'])->middleware('admin');
     Route::post('/backups/drill', [BackupController::class, 'drill'])->middleware('admin');

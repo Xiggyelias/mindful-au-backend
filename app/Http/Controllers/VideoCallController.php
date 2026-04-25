@@ -11,6 +11,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Models\User;
 
 class VideoCallController extends Controller
 {
@@ -63,6 +64,10 @@ class VideoCallController extends Controller
                 ->first();
 
             if (!$session) {
+                $isAnonymous = (bool) (User::query()
+                    ->whereKey($appointment->student_id)
+                    ->with('profile:id,user_id,anonymous_mode')
+                    ->first()?->profile?->anonymous_mode ?? false);
                 $session = CounselingSession::create([
                     'student_id' => $appointment->student_id,
                     'counselor_id' => $appointment->counselor_id,
@@ -70,6 +75,10 @@ class VideoCallController extends Controller
                     'status' => 'active',
                     'started_at' => now(),
                     'notes' => "Video appointment #{$appointment->id}",
+                    'is_anonymous' => $isAnonymous,
+                    'anonymous_id' => $isAnonymous
+                        ? ('User_' . str_pad((string) ((int) $appointment->student_id % 10000), 4, '0', STR_PAD_LEFT))
+                        : null,
                 ]);
             } elseif ($session->status !== 'active') {
                 $session->update([

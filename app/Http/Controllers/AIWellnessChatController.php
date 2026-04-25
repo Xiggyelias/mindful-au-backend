@@ -24,6 +24,7 @@ class AIWellnessChatController extends Controller
 
     public function chat(Request $request): JsonResponse
     {
+        $startedAt = microtime(true);
         $validated = $request->validate([
             'message' => [
                 'required',
@@ -158,6 +159,14 @@ Important guidelines:
                 Log::info('AI wellness chat provider fallback used.');
             }
         }
+        $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
+        if ($latencyMs > 3000) {
+            Log::warning('AI wellness chat slow response budget exceeded.', [
+                'latency_ms' => $latencyMs,
+                'provider_mode' => $providerMode,
+                'provider_name' => $providerName,
+            ]);
+        }
 
         $mlSignals = [
             'model_version' => MentalHealthMlService::MODEL_VERSION,
@@ -187,6 +196,7 @@ Important guidelines:
                 'requires_immediate_help' => $requiresImmediateHelp,
                 'provider_mode' => $providerMode,
                 'provider_name' => $providerName,
+                'latency_ms' => $latencyMs,
                 'ml_signal_snapshot' => $mlSignals,
             ]
         );
@@ -202,9 +212,19 @@ Important guidelines:
             'crisis_hotline' => $requiresImmediateHelp ? $this->resolveCrisisHotline() : null,
             'provider_mode' => $providerMode,
             'provider_name' => $providerName,
+            'latency_ms' => $latencyMs,
             'external_ai_configured' => $this->hasConfiguredExternalAiProvider(),
             'ml_signals' => $mlSignals,
         ]);
+    }
+
+    public function providerHealthSnapshot(): array
+    {
+        $providers = $this->configuredAiProviders();
+        return [
+            'configured_external_providers' => $providers,
+            'external_ai_configured' => !empty($providers),
+        ];
     }
 
     public function history(Request $request): JsonResponse

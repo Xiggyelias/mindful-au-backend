@@ -19,6 +19,7 @@ class MessageController extends Controller
 {
     private const TYPING_STATE_TTL_SECONDS = 5;
     private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
+    private const ANONYMOUS_SESSION_TTL_HOURS = 24;
 
     public function index(Request $request, string $sessionId): JsonResponse
     {
@@ -29,12 +30,18 @@ class MessageController extends Controller
                 'counselor_id',
                 'peer_counselor_id',
                 'assigned_role',
+                'status',
                 'is_anonymous',
                 'identity_revealed_at',
+                'updated_at',
             ])
             ->findOrFail($sessionId);
         $user = $request->user();
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
+
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
+        }
 
         if (
             !$user->hasRole('admin')
@@ -191,10 +198,15 @@ class MessageController extends Controller
                 'is_anonymous',
                 'anonymous_id',
                 'identity_revealed_at',
+                'updated_at',
             ])
             ->findOrFail($sessionId);
         $user = $request->user();
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
+
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
+        }
 
         if (
             !$user->hasRole('admin')
@@ -319,6 +331,10 @@ class MessageController extends Controller
         $user = $request->user();
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
 
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
+        }
+
         if (
             !$user->hasRole('admin')
             && $session->student_id !== $user->id
@@ -362,6 +378,10 @@ class MessageController extends Controller
             ->findOrFail($sessionId);
         $user = $request->user();
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
+
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
+        }
 
         if (
             !$user->hasRole('admin')
@@ -409,8 +429,10 @@ class MessageController extends Controller
                 'counselor_id',
                 'peer_counselor_id',
                 'assigned_role',
+                'status',
                 'is_anonymous',
                 'identity_revealed_at',
+                'updated_at',
             ])
             ->findOrFail($sessionId);
         $user = $request->user();
@@ -601,14 +623,12 @@ class MessageController extends Controller
             return true;
         }
 
-        if ($recipient->hasRole('admin')) {
-            return false;
-        }
-
         if (
-            $recipient->hasRole('counselor')
-            && $recipientId === (int) $session->counselor_id
-            && $session->identity_revealed_at !== null
+            $session->identity_revealed_at !== null
+            && (
+                $recipient->hasRole('admin')
+                || ($recipient->hasRole('counselor') && $recipientId === (int) $session->counselor_id)
+            )
         ) {
             return false;
         }
@@ -623,7 +643,32 @@ class MessageController extends Controller
             return $value;
         }
 
-        return 'ANON-' . str_pad((string) $session->id, 4, '0', STR_PAD_LEFT);
+        return 'User_' . str_pad((string) ((int) $session->id % 10000), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function isAnonymousSessionExpired(CounselingSession $session): bool
+    {
+        if (!$session->is_anonymous) {
+            return false;
+        }
+
+        $ttlHours = max(1, (int) env('ANONYMOUS_SESSION_TTL_HOURS', self::ANONYMOUS_SESSION_TTL_HOURS));
+        $updatedAt = $session->updated_at instanceof \DateTimeInterface
+            ? Carbon::instance($session->updated_at)
+            : now();
+
+        if ($updatedAt->greaterThanOrEqualTo(now()->subHours($ttlHours))) {
+            return false;
+        }
+
+        if (in_array((string) $session->status, ['pending', 'active'], true)) {
+            $session->forceFill([
+                'status' => 'cancelled',
+                'ended_at' => now(),
+            ])->saveQuietly();
+        }
+
+        return true;
     }
 
     private function resolveRecipientId(CounselingSession $session, int $senderId): ?int

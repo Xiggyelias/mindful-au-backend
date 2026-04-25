@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Log;
 
 class SessionController extends Controller
 {
+    private const ANONYMOUS_SESSION_TTL_HOURS = 24;
     /**
      * Cached risk lookups for the current request to avoid N+1 diagnostics queries.
      *
@@ -38,6 +39,7 @@ class SessionController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $this->expireStaleAnonymousSessions();
         $user = $request->user();
         $lightweight = $request->boolean('lightweight');
         $isAdmin = $user->hasRole('admin');
@@ -260,6 +262,7 @@ class SessionController extends Controller
 
     public function chatList(Request $request): JsonResponse
     {
+        $this->expireStaleAnonymousSessions();
         $requestStart = microtime(true);
         $user = $request->user();
         $validated = $request->validate([
@@ -343,6 +346,7 @@ class SessionController extends Controller
                 's.status',
                 's.is_anonymous',
                 's.anonymous_id',
+                's.identity_revealed_at',
                 's.created_at',
                 's.updated_at',
                 'student.email as student_email',
@@ -383,7 +387,15 @@ class SessionController extends Controller
                 $anonymousDisplayId = 'ANON-' . str_pad((string) $row->id, 4, '0', STR_PAD_LEFT);
             }
 
-            $identityVisible = !$isAnonymous || $viewerIsAdmin || (int) $row->student_id === $viewerId;
+            $identityVisible = !$isAnonymous
+                || (int) $row->student_id === $viewerId
+                || (
+                    !empty($row->identity_revealed_at)
+                    && (
+                        $viewerIsAdmin
+                        || (int) $row->counselor_id === $viewerId
+                    )
+                );
             $visibleStudentId = $identityVisible ? (int) $row->student_id : 0;
 
             $studentName = $identityVisible
@@ -521,7 +533,9 @@ class SessionController extends Controller
             return response()->json(['message' => 'You cannot start a session with your own account'], 422);
         }
 
-        $isAnonymous = (bool) ($validated['is_anonymous'] ?? false);
+        $isAnonymous = array_key_exists('is_anonymous', $validated)
+            ? (bool) $validated['is_anonymous']
+            : (bool) ($request->user()->profile?->anonymous_mode ?? false);
 
         $existing = CounselingSession::where('student_id', $request->user()->id)
             ->where('counselor_id', $validated['counselor_id'])
@@ -616,6 +630,7 @@ class SessionController extends Controller
 
     public function show(Request $request, string $id): JsonResponse
     {
+        $this->expireStaleAnonymousSessions();
         $session = CounselingSession::with([
             'student.profile',
             'counselor.profile',
@@ -1351,6 +1366,76 @@ class SessionController extends Controller
         return response()->json($session);
     }
 
+    public function revealIdentity(Request $request, string $id): JsonResponse
+    {
+        $session = CounselingSession::with([
+            'student.profile',
+            'counselor.profile',
+            'peerCounselor.profile',
+            'assignedByUser.profile',
+            'identityRevealedByUser.profile',
+        ])->findOrFail($id);
+        $user = $request->user();
+
+        if (!$this->canViewSession($user, $session)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if (!$session->is_anonymous) {
+            return response()->json(['message' => 'Identity reveal is only available for anonymous sessions.'], 422);
+        }
+
+        if (
+            !$user->hasRole('admin')
+            && !($user->hasRole('counselor') && (int) $session->counselor_id === (int) $user->id)
+        ) {
+            return response()->json(['message' => 'Only authorized counselors or admins can reveal identity.'], 403);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|min:5|max:1000',
+        ]);
+        $reason = trim((string) $validated['reason']);
+
+        $this->revealAnonymousIdentity(
+            $request,
+            $session,
+            $user,
+            'manual_authorized_reveal',
+            null
+        );
+
+        ActivityLog::query()->create([
+            'user_id' => $user->id,
+            'action' => 'anonymous_identity_manual_reveal',
+            'description' => "Authorized identity reveal for session {$session->id}.",
+            'type' => 'alert',
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'metadata' => [
+                'session_id' => $session->id,
+                'reason' => $reason,
+                'student_id' => $session->student_id,
+                'revealed_by' => $user->id,
+                'anonymous_id' => $session->anonymous_id,
+            ],
+        ]);
+
+        $session->refresh()->load([
+            'student.profile',
+            'counselor.profile',
+            'peerCounselor.profile',
+            'assignedByUser.profile',
+            'identityRevealedByUser.profile',
+        ]);
+        $this->appendRiskSignals($session, $user, $request);
+
+        return response()->json([
+            'message' => 'Identity revealed and access logged.',
+            'session' => $session,
+        ]);
+    }
+
     private function canViewSession(User $user, CounselingSession $session): bool
     {
         if ($user->hasRole('admin')) {
@@ -1505,15 +1590,22 @@ class SessionController extends Controller
             return true;
         }
 
-        if ($viewer->hasRole('admin')) {
-            return true;
-        }
-
         if ((int) $session->student_id === (int) $viewer->id) {
             return true;
         }
 
-        // Anonymous sessions must keep student identity hidden from counselors and peer counselors.
+        if ($session->identity_revealed_at === null) {
+            return false;
+        }
+
+        if ($viewer->hasRole('admin')) {
+            return true;
+        }
+
+        if ($viewer->hasRole('counselor') && (int) $session->counselor_id === (int) $viewer->id) {
+            return true;
+        }
+
         return false;
     }
 
@@ -1556,7 +1648,7 @@ class SessionController extends Controller
             return $value;
         }
 
-        return 'ANON-' . str_pad((string) $session->id, 4, '0', STR_PAD_LEFT);
+        return 'User_' . str_pad((string) ((int) $session->id % 10000), 4, '0', STR_PAD_LEFT);
     }
 
     private function latestRiskLevel(CounselingSession $session): ?string
@@ -1718,7 +1810,7 @@ class SessionController extends Controller
     private function generateAnonymousId(): string
     {
         do {
-            $candidate = 'ANON-' . Str::upper(Str::random(6));
+            $candidate = 'User_' . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         } while (
             CounselingSession::query()->where('anonymous_id', $candidate)->exists()
         );
@@ -1737,6 +1829,21 @@ class SessionController extends Controller
         }
 
         return "{$label} triggered emergency escalation from chat.";
+    }
+
+    private function expireStaleAnonymousSessions(): void
+    {
+        $ttlHours = max(1, (int) env('ANONYMOUS_SESSION_TTL_HOURS', self::ANONYMOUS_SESSION_TTL_HOURS));
+        $cutoff = now()->subHours($ttlHours);
+
+        CounselingSession::query()
+            ->where('is_anonymous', true)
+            ->whereIn('status', ['pending', 'active'])
+            ->where('updated_at', '<', $cutoff)
+            ->update([
+                'status' => 'cancelled',
+                'ended_at' => now(),
+            ]);
     }
 
     private function logCaseTransition(

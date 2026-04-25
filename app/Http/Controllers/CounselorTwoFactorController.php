@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Models\UserTwoFactorMethod;
 use App\Support\SystemSettings;
@@ -10,7 +11,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Schema;
-use Laravel\Sanctum\PersonalAccessToken;
 
 class CounselorTwoFactorController extends Controller
 {
