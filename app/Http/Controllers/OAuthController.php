@@ -215,18 +215,39 @@ class OAuthController extends Controller
         try {
             $payload = Cache::pull($cacheKey);
         } catch (Throwable $e) {
-            $errorId = (string) Str::uuid();
-            Log::error('OAuth login ticket exchange failed to read cache.', [
-                'error_id' => $errorId,
-                'cache_key_hash' => hash('sha256', $cacheKey),
-                'exception' => $e::class,
-                'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
-            ]);
+            $payload = null;
+            $fallbackStore = $this->oauthTicketFallbackCacheStore();
 
-            return response()->json([
-                'message' => 'OAuth sign-in is temporarily unavailable. Please try again.',
-                'error_id' => $errorId,
-            ], 503);
+            if ($fallbackStore !== null) {
+                try {
+                    $payload = Cache::store($fallbackStore)->pull($cacheKey);
+                } catch (Throwable $fallbackException) {
+                    // If fallback cache fails too, proceed to structured 503 below.
+                    $payload = null;
+                }
+            }
+
+            if (is_array($payload)) {
+                Log::warning('OAuth login ticket exchange used fallback cache store.', [
+                    'cache_key_hash' => hash('sha256', $cacheKey),
+                    'fallback_store' => $fallbackStore,
+                    'primary_exception' => $e::class,
+                ]);
+            } else {
+                $errorId = (string) Str::uuid();
+                Log::error('OAuth login ticket exchange failed to read cache.', [
+                    'error_id' => $errorId,
+                    'cache_key_hash' => hash('sha256', $cacheKey),
+                    'fallback_store' => $fallbackStore,
+                    'exception' => $e::class,
+                    'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
+                ]);
+
+                return response()->json([
+                    'message' => 'OAuth sign-in is temporarily unavailable. Please try again.',
+                    'error_id' => $errorId,
+                ], 503);
+            }
         }
 
         if (!is_array($payload)) {
@@ -649,16 +670,61 @@ class OAuthController extends Controller
     private function issueLoginTicket(User $user): string
     {
         $ticket = Str::random(96);
-        Cache::put(
-            $this->oauthTicketCacheKey($ticket),
-            [
-                'user_id' => $user->id,
-                'issued_at' => now()->toIso8601String(),
-            ],
-            now()->addSeconds($this->oauthTicketTtlSeconds())
-        );
+        $cacheKey = $this->oauthTicketCacheKey($ticket);
+        $cacheValue = [
+            'user_id' => $user->id,
+            'issued_at' => now()->toIso8601String(),
+        ];
+        $ttl = now()->addSeconds($this->oauthTicketTtlSeconds());
+
+        try {
+            Cache::put($cacheKey, $cacheValue, $ttl);
+        } catch (Throwable $e) {
+            $fallbackStore = $this->oauthTicketFallbackCacheStore();
+
+            if ($fallbackStore !== null) {
+                try {
+                    Cache::store($fallbackStore)->put($cacheKey, $cacheValue, $ttl);
+                    Log::warning('OAuth login ticket stored in fallback cache store.', [
+                        'cache_key_hash' => hash('sha256', $cacheKey),
+                        'fallback_store' => $fallbackStore,
+                        'primary_exception' => $e::class,
+                    ]);
+                } catch (Throwable $fallbackException) {
+                    Log::error('OAuth login ticket cache write failed.', [
+                        'cache_key_hash' => hash('sha256', $cacheKey),
+                        'fallback_store' => $fallbackStore,
+                        'exception' => $e::class,
+                        'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
+                        'fallback_exception' => $fallbackException::class,
+                        'fallback_exception_message_hash' => hash('sha256', (string) $fallbackException->getMessage()),
+                    ]);
+                }
+            } else {
+                Log::error('OAuth login ticket cache write failed.', [
+                    'cache_key_hash' => hash('sha256', $cacheKey),
+                    'exception' => $e::class,
+                    'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
+                ]);
+            }
+        }
 
         return $ticket;
+    }
+
+    private function oauthTicketFallbackCacheStore(): ?string
+    {
+        $fallback = trim((string) env('OAUTH_TICKET_FALLBACK_CACHE_STORE', 'file'));
+        if ($fallback === '') {
+            return null;
+        }
+
+        $primary = trim((string) config('cache.default', ''));
+        if ($primary !== '' && $primary === $fallback) {
+            return null;
+        }
+
+        return $fallback;
     }
 
     private function oauthTicketCacheKey(string $ticket): string
