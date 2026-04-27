@@ -35,7 +35,7 @@ class OAuthController extends Controller
 
         if (!$this->isGoogleOAuthConfigured()) {
             return $this->redirectToFrontendWithError(
-                'Google sign-in is not configured yet. Please contact support.'
+                'OAuth sign-in is not configured yet. Please contact support.'
             );
         }
 
@@ -58,7 +58,7 @@ class OAuthController extends Controller
             ]);
 
             return $this->redirectToFrontendWithError(
-                'Google sign-in is temporarily unavailable. Please try again.'
+                'OAuth sign-in is temporarily unavailable. Please try again.'
             );
         }
     }
@@ -67,7 +67,7 @@ class OAuthController extends Controller
     {
         if (!$this->isGoogleOAuthConfigured()) {
             return $this->redirectToFrontendWithError(
-                'Google sign-in is not configured yet. Please contact support.'
+                'OAuth sign-in is not configured yet. Please contact support.'
             );
         }
 
@@ -91,7 +91,7 @@ class OAuthController extends Controller
             if (!$request->filled('code')) {
                 $this->recordGoogleLogin($request, null, null, false, 'missing_authorization_code');
                 return $this->redirectToFrontendWithError(
-                    'Google sign-in did not return a valid authorization code. Please try again.'
+                    'OAuth sign-in did not return a valid authorization code. Please try again.'
                 );
             }
 
@@ -612,11 +612,11 @@ class OAuthController extends Controller
         $description = trim($providerDescription);
 
         return match ($normalized) {
-            'access_denied' => 'Google sign-in was canceled.',
-            'temporarily_unavailable' => 'Google sign-in is temporarily unavailable. Please try again.',
+            'access_denied' => 'OAuth sign-in was canceled.',
+            'temporarily_unavailable' => 'OAuth sign-in is temporarily unavailable. Please try again.',
             default => $description !== ''
-                ? "Google sign-in error: {$description}"
-                : 'Google sign-in failed. Please try again.',
+                ? "OAuth sign-in error: {$description}"
+                : 'OAuth sign-in failed. Please try again.',
         };
     }
 
@@ -625,7 +625,7 @@ class OAuthController extends Controller
         $message = Str::lower((string) $e->getMessage());
 
         if (str_contains($message, 'access_denied')) {
-            return 'Google sign-in was canceled.';
+            return 'OAuth sign-in was canceled.';
         }
 
         if (str_contains($message, 'redirect_uri_mismatch')) {
@@ -637,7 +637,7 @@ class OAuthController extends Controller
         }
 
         if (str_contains($message, 'invalid_grant')) {
-            return 'Google sign-in session expired or code was invalid. Please try again.';
+            return 'OAuth sign-in session expired or code was invalid. Please try again.';
         }
 
         if (
@@ -652,10 +652,10 @@ class OAuthController extends Controller
         if ((bool) config('app.debug', false)) {
             $raw = trim((string) $e->getMessage());
             $snippet = Str::limit($raw !== '' ? $raw : get_class($e), 240);
-            return 'Google sign-in failed: ' . $snippet;
+            return 'OAuth sign-in failed: ' . $snippet;
         }
 
-        return 'Google sign-in failed. Please try again.';
+        return 'OAuth sign-in failed. Please try again.';
     }
 
     private function redirectToFrontendWithLoginTicket(string $ticket): RedirectResponse
