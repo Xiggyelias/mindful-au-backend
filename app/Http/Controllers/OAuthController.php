@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -212,6 +213,7 @@ class OAuthController extends Controller
         }
 
         $cacheKey = $this->oauthTicketCacheKey($ticket);
+        $ticketHash = hash('sha256', $ticket);
         try {
             $payload = Cache::pull($cacheKey);
         } catch (Throwable $e) {
@@ -234,26 +236,35 @@ class OAuthController extends Controller
                     'primary_exception' => $e::class,
                 ]);
             } else {
-                $errorId = (string) Str::uuid();
-                Log::error('OAuth login ticket exchange failed to read cache.', [
-                    'error_id' => $errorId,
-                    'cache_key_hash' => hash('sha256', $cacheKey),
-                    'fallback_store' => $fallbackStore,
-                    'exception' => $e::class,
-                    'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
-                ]);
+                // Cache may be unavailable in production; fall back to database-backed ticket lookup.
+                $payload = $this->consumeLoginTicketFromDatabase($ticketHash);
+                if (!is_array($payload)) {
+                    $errorId = (string) Str::uuid();
+                    Log::error('OAuth login ticket exchange failed to read cache and database fallback did not resolve ticket.', [
+                        'error_id' => $errorId,
+                        'cache_key_hash' => hash('sha256', $cacheKey),
+                        'ticket_hash' => $ticketHash,
+                        'fallback_store' => $fallbackStore,
+                        'exception' => $e::class,
+                        'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
+                    ]);
 
-                return response()->json([
-                    'message' => 'OAuth sign-in is temporarily unavailable. Please try again.',
-                    'error_id' => $errorId,
-                ], 503);
+                    return response()->json([
+                        'message' => 'OAuth sign-in is temporarily unavailable. Please try again.',
+                        'error_id' => $errorId,
+                    ], 503);
+                }
             }
         }
 
         if (!is_array($payload)) {
-            return response()->json([
-                'message' => 'OAuth login ticket is invalid or expired.',
-            ], 422);
+            // Cache might be operational but ticket was stored in DB (multi-node / fallback).
+            $payload = $this->consumeLoginTicketFromDatabase($ticketHash);
+            if (!is_array($payload)) {
+                return response()->json([
+                    'message' => 'OAuth login ticket is invalid or expired.',
+                ], 422);
+            }
         }
 
         $userId = (int) ($payload['user_id'] ?? 0);
@@ -671,11 +682,34 @@ class OAuthController extends Controller
     {
         $ticket = Str::random(96);
         $cacheKey = $this->oauthTicketCacheKey($ticket);
+        $ticketHash = hash('sha256', $ticket);
         $cacheValue = [
             'user_id' => $user->id,
             'issued_at' => now()->toIso8601String(),
         ];
         $ttl = now()->addSeconds($this->oauthTicketTtlSeconds());
+
+        // Persist ticket in DB so the exchange endpoint works even if cache is unavailable or a multi-node deployment
+        // does not share filesystem cache.
+        try {
+            if (Schema::hasTable('oauth_login_tickets')) {
+                DB::table('oauth_login_tickets')->insert([
+                    'user_id' => (int) $user->id,
+                    'ticket_hash' => $ticketHash,
+                    'expires_at' => $ttl,
+                    'consumed_at' => null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        } catch (Throwable $e) {
+            Log::warning('Unable to persist OAuth login ticket to database.', [
+                'ticket_hash' => $ticketHash,
+                'user_id' => (int) $user->id,
+                'exception' => $e::class,
+                'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
+            ]);
+        }
 
         try {
             Cache::put($cacheKey, $cacheValue, $ttl);
@@ -710,6 +744,54 @@ class OAuthController extends Controller
         }
 
         return $ticket;
+    }
+
+    /**
+     * Best-effort: consume a ticket from the DB so it is one-time use.
+     *
+     * @return array{user_id:int, issued_at:string}|null
+     */
+    private function consumeLoginTicketFromDatabase(string $ticketHash): ?array
+    {
+        try {
+            if (!Schema::hasTable('oauth_login_tickets')) {
+                return null;
+            }
+
+            return DB::transaction(function () use ($ticketHash): ?array {
+                $now = now();
+
+                $row = DB::table('oauth_login_tickets')
+                    ->where('ticket_hash', $ticketHash)
+                    ->whereNull('consumed_at')
+                    ->where('expires_at', '>', $now)
+                    ->lockForUpdate()
+                    ->first(['id', 'user_id', 'created_at']);
+
+                if (!$row) {
+                    return null;
+                }
+
+                DB::table('oauth_login_tickets')
+                    ->where('id', (int) $row->id)
+                    ->update([
+                        'consumed_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+
+                return [
+                    'user_id' => (int) $row->user_id,
+                    'issued_at' => optional($row->created_at)->toIso8601String() ?? $now->toIso8601String(),
+                ];
+            }, 3);
+        } catch (Throwable $e) {
+            Log::warning('OAuth ticket database fallback failed.', [
+                'ticket_hash' => $ticketHash,
+                'exception' => $e::class,
+                'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
+            ]);
+            return null;
+        }
     }
 
     private function oauthTicketFallbackCacheStore(): ?string
