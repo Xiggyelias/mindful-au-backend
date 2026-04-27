@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\MentalHealthMlService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -415,11 +416,19 @@ Important guidelines:
         }
 
         if (!empty($rows)) {
-            DB::table('message_metadata')->upsert(
-                $rows,
-                ['message_id', 'key'],
-                ['value', 'type', 'updated_at']
-            );
+            try {
+                DB::table('message_metadata')->upsert(
+                    $rows,
+                    ['message_id', 'key'],
+                    ['value', 'type', 'updated_at']
+                );
+            } catch (QueryException $exception) {
+                // Metadata is best-effort; do not fail chat delivery if schema is behind.
+                Log::warning('Unable to persist AI wellness chat metadata.', [
+                    'message_id' => $messageId,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
         }
     }
 
