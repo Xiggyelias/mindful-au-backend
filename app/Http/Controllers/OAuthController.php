@@ -212,7 +212,23 @@ class OAuthController extends Controller
         }
 
         $cacheKey = $this->oauthTicketCacheKey($ticket);
-        $payload = Cache::pull($cacheKey);
+        try {
+            $payload = Cache::pull($cacheKey);
+        } catch (Throwable $e) {
+            $errorId = (string) Str::uuid();
+            Log::error('OAuth login ticket exchange failed to read cache.', [
+                'error_id' => $errorId,
+                'cache_key_hash' => hash('sha256', $cacheKey),
+                'exception' => $e::class,
+                'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
+            ]);
+
+            return response()->json([
+                'message' => 'OAuth sign-in is temporarily unavailable. Please try again.',
+                'error_id' => $errorId,
+            ], 503);
+        }
+
         if (!is_array($payload)) {
             return response()->json([
                 'message' => 'OAuth login ticket is invalid or expired.',
@@ -233,7 +249,22 @@ class OAuthController extends Controller
             ], 422);
         }
 
-        $issuedToken = $this->tokenSessionService->issueToken($request, $user, 'google_oauth');
+        try {
+            $issuedToken = $this->tokenSessionService->issueToken($request, $user, 'google_oauth');
+        } catch (Throwable $e) {
+            $errorId = (string) Str::uuid();
+            Log::error('OAuth login ticket exchange failed to issue token.', [
+                'error_id' => $errorId,
+                'user_id' => (int) $user->id,
+                'exception' => $e::class,
+                'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
+            ]);
+
+            return response()->json([
+                'message' => 'OAuth sign-in is temporarily unavailable. Please try again.',
+                'error_id' => $errorId,
+            ], 503);
+        }
 
         return response()->json([
             'access_token' => $issuedToken->plainTextToken,
