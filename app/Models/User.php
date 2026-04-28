@@ -138,4 +138,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(StudentMoodLog::class, 'student_id');
     }
+
+    public function tipDeliveries()
+    {
+        return $this->hasMany(TipDelivery::class);
+    }
+
+    public function tipFavorites()
+    {
+        return $this->hasMany(TipFavorite::class);
+    }
 }

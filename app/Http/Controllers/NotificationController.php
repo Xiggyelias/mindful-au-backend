@@ -3,14 +3,25 @@
 namespace App\Http\Controllers;
 
 use App\Models\Notification;
+use App\Models\User;
+use App\Services\TipOfDayService;
 use App\Support\PaginationPayload;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
 class NotificationController extends Controller
 {
+    public function __construct(private readonly TipOfDayService $tipOfDayService)
+    {
+    }
+
     public function index(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if ($user instanceof User) {
+            $this->tipOfDayService->resolveForUser($user);
+        }
+
         $validated = $request->validate([
             'limit' => 'sometimes|integer|min:1|max:100',
             'unread_only' => 'sometimes|boolean',

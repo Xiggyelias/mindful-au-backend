@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Notification;
 use App\Models\StudentMoodLog;
 use App\Models\Tip;
+use App\Models\TipDelivery;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -15,6 +17,18 @@ class TipOfDayService
      */
     public function resolveForUser(User $user): ?array
     {
+        $today = now()->toDateString();
+        $existingDelivery = TipDelivery::query()
+            ->with('tip')
+            ->where('user_id', $user->id)
+            ->whereDate('delivered_on', $today)
+            ->first();
+
+        if ($existingDelivery instanceof TipDelivery && $existingDelivery->tip instanceof Tip) {
+            $this->ensureNotification($existingDelivery, $user);
+            return $this->buildPayload($existingDelivery->tip, $existingDelivery, $user);
+        }
+
         $audience = $this->resolveAudience($user);
         $eligibleTips = Tip::query()
             ->where('is_active', true)
@@ -45,17 +59,23 @@ class TipOfDayService
             return null;
         }
 
-        return [
-            'id' => $selectedTip->id,
-            'title' => $selectedTip->title,
-            'content' => $selectedTip->content,
-            'category' => $selectedTip->category,
-            'audience' => $selectedTip->audience,
-            'mood_tags' => $selectedTip->mood_tags ?? [],
-            'personalized' => $personalizedTips->isNotEmpty(),
-            'mood' => $personalizedTips->isNotEmpty() ? $latestMood : null,
-            'served_for_date' => now()->toDateString(),
-        ];
+        $delivery = TipDelivery::query()->updateOrCreate(
+            [
+                'user_id' => $user->id,
+                'delivered_on' => $today,
+            ],
+            [
+                'tip_id' => $selectedTip->id,
+                'audience' => $audience,
+                'mood' => $personalizedTips->isNotEmpty() ? $latestMood : null,
+                'personalized' => $personalizedTips->isNotEmpty(),
+            ]
+        );
+
+        $delivery->setRelation('tip', $selectedTip);
+        $this->ensureNotification($delivery, $user);
+
+        return $this->buildPayload($selectedTip, $delivery, $user);
     }
 
     private function resolveAudience(User $user): string
@@ -107,5 +127,54 @@ class TipOfDayService
 
         $index = ($dayIndex + $seed) % $pool->count();
         return $pool->values()->get($index);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildPayload(Tip $tip, TipDelivery $delivery, User $user): array
+    {
+        return [
+            'id' => $tip->id,
+            'title' => $tip->title,
+            'content' => $tip->content,
+            'category' => $tip->category,
+            'audience' => $tip->audience,
+            'mood_tags' => $tip->mood_tags ?? [],
+            'priority' => $tip->priority,
+            'is_active' => $tip->is_active,
+            'personalized' => (bool) $delivery->personalized,
+            'mood' => $delivery->mood,
+            'served_for_date' => $delivery->delivered_on?->toDateString(),
+            'delivered_at' => $delivery->created_at?->toISOString(),
+            'is_favorite' => $user->tipFavorites()->where('tip_id', $tip->id)->exists(),
+        ];
+    }
+
+    private function ensureNotification(TipDelivery $delivery, User $user): void
+    {
+        if ($delivery->notification_id) {
+            return;
+        }
+
+        $tip = $delivery->relationLoaded('tip')
+            ? $delivery->tip
+            : $delivery->tip()->first();
+
+        if (!$tip instanceof Tip) {
+            return;
+        }
+
+        $notification = Notification::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Daily Wellness Tip',
+            'message' => trim($tip->title . '. ' . $tip->content),
+            'type' => 'info',
+            'read' => false,
+        ]);
+
+        $delivery->forceFill([
+            'notification_id' => $notification->id,
+        ])->save();
     }
 }

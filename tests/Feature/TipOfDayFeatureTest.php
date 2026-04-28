@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\StudentMoodLog;
 use App\Models\Tip;
+use App\Models\TipDelivery;
+use App\Models\TipFavorite;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -89,13 +91,25 @@ class TipOfDayFeatureTest extends TestCase
             'logged_on' => now()->toDateString(),
         ]);
 
-        $response = $this->actingAs($student)->getJson('/api/tips/today');
+        $response = $this->actingAs($student)->getJson('/api/wellness/tip');
 
         $response
             ->assertStatus(200)
             ->assertJsonPath('tip.title', 'Tired-day recovery')
             ->assertJsonPath('tip.personalized', true)
-            ->assertJsonPath('tip.mood', 'tired');
+            ->assertJsonPath('tip.mood', 'tired')
+            ->assertJsonPath('tip.is_favorite', false);
+
+        $this->assertDatabaseHas('tip_deliveries', [
+            'user_id' => $student->id,
+            'tip_id' => $response->json('tip.id'),
+            'personalized' => true,
+        ]);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $student->id,
+            'title' => 'Daily Wellness Tip',
+        ]);
     }
 
     /** @test */
@@ -139,6 +153,98 @@ class TipOfDayFeatureTest extends TestCase
 
         $this->assertCount(3, array_unique(array_slice($tipIds, 0, 3)));
         $this->assertSame($tipIds[0], $tipIds[3]);
+    }
+
+    /** @test */
+    public function notifications_endpoint_primes_the_daily_wellness_tip_notification_once_per_day(): void
+    {
+        $student = $this->createPortalUser('student', 'tip-notify@test.com', 'Tip Notify Student');
+
+        Tip::query()->create([
+            'title' => 'Wellness primer',
+            'content' => 'Take one steady breath before your next task.',
+            'category' => 'Stress Management',
+            'audience' => 'all',
+            'priority' => 9,
+            'is_active' => true,
+            'mood_tags' => [],
+        ]);
+
+        $this->actingAs($student)
+            ->getJson('/api/notifications')
+            ->assertStatus(200);
+
+        $this->actingAs($student)
+            ->getJson('/api/notifications')
+            ->assertStatus(200);
+
+        $this->assertSame(
+            1,
+            TipDelivery::query()
+                ->where('user_id', $student->id)
+                ->whereDate('delivered_on', now()->toDateString())
+                ->count()
+        );
+
+        $this->assertSame(
+            1,
+            $student->notifications()->where('title', 'Daily Wellness Tip')->count()
+        );
+    }
+
+    /** @test */
+    public function user_can_save_and_remove_a_favorite_tip(): void
+    {
+        $student = $this->createPortalUser('student', 'tip-favorite@test.com', 'Tip Favorite Student');
+
+        $tip = Tip::query()->create([
+            'title' => 'Saveable tip',
+            'content' => 'Start with the smallest helpful step you can take today.',
+            'category' => 'Motivation & Productivity',
+            'audience' => 'all',
+            'priority' => 7,
+            'is_active' => true,
+            'mood_tags' => [],
+        ]);
+
+        $this->actingAs($student)
+            ->postJson("/api/wellness/tips/{$tip->id}/favorite")
+            ->assertStatus(200)
+            ->assertJsonPath('tip.is_favorite', true);
+
+        $this->assertDatabaseHas('tip_favorites', [
+            'user_id' => $student->id,
+            'tip_id' => $tip->id,
+        ]);
+
+        $this->actingAs($student)
+            ->deleteJson("/api/wellness/tips/{$tip->id}/favorite")
+            ->assertStatus(200)
+            ->assertJsonPath('tip.is_favorite', false);
+
+        $this->assertDatabaseMissing('tip_favorites', [
+            'user_id' => $student->id,
+            'tip_id' => $tip->id,
+        ]);
+    }
+
+    /** @test */
+    public function admin_tip_validation_rejects_harmful_or_overlong_tip_content(): void
+    {
+        $admin = $this->createPortalUser('admin', 'tip-guard@test.com', 'Tip Guard Admin');
+
+        $this->actingAs($admin)
+            ->postJson('/api/tips', [
+                'title' => 'Unsafe tip',
+                'content' => 'Please diagnose yourself. Skip your medication. Keep going no matter what.',
+                'category' => 'Emotional Wellbeing',
+                'audience' => 'all',
+                'priority' => 10,
+                'is_active' => true,
+                'mood_tags' => [],
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('content');
     }
 
     private function createPortalUser(string $role, string $email, string $fullName): User

@@ -15,6 +15,7 @@ use App\Http\Controllers\VoiceNotesController;
 use App\Http\Controllers\VideoCallController;
 use App\Http\Controllers\OpenRouterChatController;
 use App\Http\Controllers\IntakeController;
+use App\Http\Controllers\ChatAttachmentController;
 use App\Http\Controllers\ReferralController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\ReportExportController;
@@ -31,6 +32,9 @@ Route::get('/ready', [HealthController::class, 'ready']);
 
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth-register');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth-login');
+Route::get('/chat/files/{chatFile}/content', [ChatAttachmentController::class, 'show'])
+    ->name('chat-files.content')
+    ->middleware('signed');
 
 // OAuth routes
 Route::get('/auth/google', [OAuthController::class, 'redirectToGoogle'])->middleware('web');
@@ -52,15 +56,25 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/auth/2fa/setup', [CounselorTwoFactorController::class, 'setup'])->middleware('throttle:auth-login');
     Route::post('/auth/2fa/verify', [CounselorTwoFactorController::class, 'verify'])->middleware('throttle:auth-login');
     Route::get('/tips/today', [TipController::class, 'today']);
+    Route::get('/wellness/tip', [TipController::class, 'wellnessTip']);
+    Route::get('/wellness/tips/favorites', [TipController::class, 'favorites']);
+    Route::post('/wellness/tips/{tip}/favorite', [TipController::class, 'favorite']);
+    Route::delete('/wellness/tips/{tip}/favorite', [TipController::class, 'unfavorite']);
 
     // Sessions
     Route::get('/sessions/chat-list', [SessionController::class, 'chatList'])->middleware('throttle:messages-read');
     Route::apiResource('sessions', SessionController::class);
     Route::get('/sessions/{id}/messages', [MessageController::class, 'index'])->middleware('throttle:messages-read');
+    Route::get('/chat/messages', [MessageController::class, 'indexBySession'])->middleware('throttle:messages-read');
     Route::post('/sessions/{id}/messages', [MessageController::class, 'store'])->middleware('throttle:messages-write');
     Route::delete('/sessions/{id}/messages/{messageId}', [MessageController::class, 'destroy'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/typing', [MessageController::class, 'setTyping'])->middleware('throttle:messages-write');
     Route::get('/sessions/{id}/typing', [MessageController::class, 'typingStatus'])->middleware('throttle:messages-read');
+    
+    // Chat Attachments
+    Route::post('/chat/upload-file', [ChatAttachmentController::class, 'uploadForChat'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/attachments', [ChatAttachmentController::class, 'upload'])->middleware('throttle:messages-write');
+    Route::get('/messages/{id}/attachment', [ChatAttachmentController::class, 'download'])->middleware('throttle:messages-read');
     Route::post('/sessions/counselor', [SessionController::class, 'storeAsCounselor']);
     Route::put('/sessions/{id}/note', [SessionController::class, 'upsertNote'])->middleware('throttle:60,1');
     Route::delete('/sessions/{id}/note', [SessionController::class, 'deleteNote'])->middleware('throttle:60,1');
@@ -173,6 +187,9 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/tips', [TipController::class, 'store'])->middleware('admin');
     Route::put('/tips/{tip}', [TipController::class, 'update'])->middleware('admin');
     Route::delete('/tips/{tip}', [TipController::class, 'destroy'])->middleware('admin');
+    Route::post('/admin/add-tip', [TipController::class, 'store'])->middleware('admin');
+    Route::put('/admin/update-tip/{tip}', [TipController::class, 'update'])->middleware('admin');
+    Route::delete('/admin/delete-tip/{tip}', [TipController::class, 'destroy'])->middleware('admin');
     Route::get('/backups', [BackupController::class, 'index'])->middleware('admin');
     Route::post('/backups/verify', [BackupController::class, 'verify'])->middleware('admin');
     Route::post('/backups/drill', [BackupController::class, 'drill'])->middleware('admin');

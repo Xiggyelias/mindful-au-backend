@@ -1,0 +1,43 @@
+<?php
+
+return [
+    'attachments' => [
+        'disk' => env('CHAT_UPLOAD_DISK', 'local'),
+        'directory' => trim((string) env('CHAT_UPLOAD_DIRECTORY', 'uploads/chat_files'), '/'),
+        'max_upload_kb' => max(256, (int) env('CHAT_UPLOAD_MAX_FILE_SIZE_KB', 5120)),
+        'signed_url_minutes' => max(30, (int) env('CHAT_UPLOAD_SIGNED_URL_MINUTES', 1440)),
+        'allowed_extensions' => [
+            'jpg',
+            'jpeg',
+            'png',
+            'gif',
+            'pdf',
+            'docx',
+            'txt',
+            'mp3',
+            'wav',
+            'webm',
+            'ogg',
+            'm4a',
+            'aac',
+        ],
+        'allowed_mime_types' => [
+            'image/jpeg',
+            'image/png',
+            'image/gif',
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain',
+            'audio/mpeg',
+            'audio/mp3',
+            'audio/wav',
+            'audio/x-wav',
+            'audio/webm',
+            'audio/ogg',
+            'audio/mp4',
+            'audio/x-m4a',
+            'audio/aac',
+            'audio/m4a',
+        ],
+    ],
+];

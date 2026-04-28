@@ -1,0 +1,147 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\CounselingSession;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Tests\TestCase;
+
+class ChatAttachmentUploadTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private User $student;
+    private User $counselor;
+    private CounselingSession $session;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('local');
+
+        $this->student = User::factory()->create(['email' => 'student-attachment@test.com']);
+        $this->counselor = User::factory()->create(['email' => 'counselor-attachment@test.com']);
+
+        $this->assignRole($this->student, 'student');
+        $this->assignRole($this->counselor, 'counselor');
+
+        $this->session = CounselingSession::create([
+            'student_id' => $this->student->id,
+            'counselor_id' => $this->counselor->id,
+            'status' => 'active',
+            'session_type' => 'chat',
+        ]);
+    }
+
+    /** @test */
+    public function participant_can_upload_attachment_and_message_history_includes_metadata(): void
+    {
+        $file = UploadedFile::fake()->create('support-note.png', 512, 'image/png');
+
+        $uploadResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'file' => $file,
+        ]);
+
+        $uploadResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'file')
+            ->assertJsonPath('has_file', true)
+            ->assertJsonPath('attachment.file_name', 'support-note.png');
+
+        $messageId = (int) $uploadResponse->json('id');
+        $attachmentId = (int) $uploadResponse->json('attachment.id');
+        $storedPath = (string) $uploadResponse->json('attachment.file_path');
+
+        $this->assertGreaterThan(0, $messageId);
+        $this->assertGreaterThan(0, $attachmentId);
+        Storage::disk('local')->assertExists($storedPath);
+
+        $this->assertDatabaseHas('messages', [
+            'id' => $messageId,
+            'session_id' => $this->session->id,
+            'message_type' => 'file',
+            'has_file' => true,
+        ]);
+
+        $this->assertDatabaseHas('chat_files', [
+            'id' => $attachmentId,
+            'message_id' => $messageId,
+            'file_name' => 'support-note.png',
+            'file_path' => $storedPath,
+        ]);
+
+        $messagesResponse = $this->actingAs($this->counselor)->getJson(
+            '/api/chat/messages?session_id=' . $this->session->id
+        );
+
+        $messagesResponse
+            ->assertStatus(200)
+            ->assertJsonPath('0.id', $messageId)
+            ->assertJsonPath('0.has_file', true)
+            ->assertJsonPath('0.attachment.file_name', 'support-note.png');
+
+        $attachmentUrl = (string) $messagesResponse->json('0.attachment.url');
+        $downloadUrl = (string) $messagesResponse->json('0.attachment.download_url');
+
+        $this->assertStringContainsString('/api/chat/files/' . $attachmentId . '/content', $attachmentUrl);
+        $this->assertStringContainsString('/api/chat/files/' . $attachmentId . '/content', $downloadUrl);
+    }
+
+    /** @test */
+    public function upload_rejects_disallowed_file_types(): void
+    {
+        $file = UploadedFile::fake()->create('payload.php', 10, 'application/x-httpd-php');
+
+        $response = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'file' => $file,
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseCount('chat_files', 0);
+    }
+
+    /** @test */
+    public function deleting_an_attachment_message_removes_the_file_record_and_blob(): void
+    {
+        $file = UploadedFile::fake()->create('progress-report.pdf', 256, 'application/pdf');
+
+        $uploadResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'file' => $file,
+        ]);
+
+        $uploadResponse->assertStatus(201);
+
+        $messageId = (int) $uploadResponse->json('id');
+        $storedPath = (string) $uploadResponse->json('attachment.file_path');
+
+        $deleteResponse = $this->actingAs($this->student)->deleteJson(
+            "/api/sessions/{$this->session->id}/messages/{$messageId}"
+        );
+
+        $deleteResponse
+            ->assertStatus(200)
+            ->assertJson([
+                'ok' => true,
+                'id' => $messageId,
+            ]);
+
+        $this->assertDatabaseMissing('messages', ['id' => $messageId]);
+        $this->assertDatabaseMissing('chat_files', ['message_id' => $messageId]);
+        Storage::disk('local')->assertMissing($storedPath);
+    }
+
+    private function assignRole(User $user, string $role): void
+    {
+        $user->roles()->create([
+            'role' => $role,
+            'approved' => true,
+        ]);
+    }
+}

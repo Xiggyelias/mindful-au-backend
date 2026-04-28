@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\Message;
+use App\Support\ChatMessageData;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
@@ -19,7 +20,7 @@ class MessageSent implements ShouldBroadcast
 
     public function __construct(Message $message)
     {
-        $this->message = $message->load('sender');
+        $this->message = $message->load('sender.profile', 'chatFile');
     }
 
     public function broadcastOn(): array
@@ -36,19 +37,7 @@ class MessageSent implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return [
-            'id' => $this->message->id,
-            'session_id' => $this->message->session_id,
-            'sender_id' => $this->message->sender_id,
-            'sender' => [
-                'id' => $this->message->sender->id,
-                'name' => $this->message->sender->profile->full_name ?? 'Anonymous',
-            ],
-            'content' => $this->message->content,
-            'message_type' => $this->message->message_type,
-            'file_url' => $this->message->file_url,
-            'created_at' => $this->message->created_at->toISOString(),
-        ];
+        return ChatMessageData::make($this->message, true);
     }
 }
 

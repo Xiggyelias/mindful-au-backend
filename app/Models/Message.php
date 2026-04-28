@@ -16,11 +16,13 @@ class Message extends Model
         'content',
         'message_type',
         'file_url',
+        'has_file',
         'is_encrypted',
         'seen_at',
     ];
 
     protected $casts = [
+        'has_file' => 'boolean',
         'is_encrypted' => 'boolean',
         'seen_at' => 'datetime',
     ];
@@ -33,5 +35,10 @@ class Message extends Model
     public function sender()
     {
         return $this->belongsTo(User::class, 'sender_id');
+    }
+
+    public function chatFile()
+    {
+        return $this->hasOne(ChatFile::class, 'message_id');
     }
 }

@@ -8,11 +8,13 @@ use App\Models\CounselingSession;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
+use App\Support\ChatMessageData;
 use App\Support\SystemSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class MessageController extends Controller
@@ -71,6 +73,7 @@ class MessageController extends Controller
 
         $query = Message::query()
             ->where('session_id', $sessionId)
+            ->with('chatFile')
             ->select([
                 'id',
                 'session_id',
@@ -79,6 +82,7 @@ class MessageController extends Controller
                 'content',
                 'message_type',
                 'file_url',
+                'has_file',
                 'is_encrypted',
                 'seen_at',
                 'created_at',
@@ -181,7 +185,16 @@ class MessageController extends Controller
             );
         }
 
-        return response()->json($messages);
+        return response()->json(ChatMessageData::collection($messages));
+    }
+
+    public function indexBySession(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'session_id' => 'required|integer|min:1',
+        ]);
+
+        return $this->index($request, (string) $validated['session_id']);
     }
 
     public function store(Request $request, string $sessionId): JsonResponse
@@ -297,6 +310,7 @@ class MessageController extends Controller
             'content' => $content,
             'message_type' => $messageType,
             'file_url' => $validated['file_url'] ?? null,
+            'has_file' => !empty($validated['file_url']),
             'is_encrypted' => $isEncrypted,
             'seen_at' => null,
         ]);
@@ -320,7 +334,7 @@ class MessageController extends Controller
             // no-op
         }
 
-        return response()->json($message, 201);
+        return response()->json(ChatMessageData::make($message), 201);
     }
 
     public function destroy(Request $request, string $sessionId, string $messageId): JsonResponse
@@ -363,6 +377,7 @@ class MessageController extends Controller
         }
 
         $deletedMessageId = (int) $message->id;
+        $this->deleteAttachmentFiles($message);
         $message->delete();
 
         return response()->json([
@@ -746,6 +761,35 @@ class MessageController extends Controller
         }
 
         $user->forceFill(['last_seen_at' => now()])->saveQuietly();
+    }
+
+    private function deleteAttachmentFiles(Message $message): void
+    {
+        $message->loadMissing('chatFile');
+
+        if ($message->chatFile) {
+            $message->chatFile->deleteStoredFile();
+            $message->chatFile->delete();
+        }
+
+        $fileUrl = trim((string) $message->file_url);
+        if ($fileUrl === '') {
+            return;
+        }
+
+        $urlPath = parse_url($fileUrl, PHP_URL_PATH);
+        if (!is_string($urlPath) || !str_starts_with($urlPath, '/storage/')) {
+            return;
+        }
+
+        $path = ltrim(Str::after($urlPath, '/storage/'), '/');
+        if ($path === '' || str_contains($path, '..')) {
+            return;
+        }
+
+        if (Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
     }
 
 }

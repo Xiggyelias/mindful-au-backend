@@ -12,7 +12,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -35,7 +34,7 @@ class OAuthController extends Controller
 
         if (!$this->isGoogleOAuthConfigured()) {
             return $this->redirectToFrontendWithError(
-                'OAuth sign-in is not configured yet. Please contact support.'
+                'Google sign-in is not configured yet. Please contact support.'
             );
         }
 
@@ -58,7 +57,7 @@ class OAuthController extends Controller
             ]);
 
             return $this->redirectToFrontendWithError(
-                'OAuth sign-in is temporarily unavailable. Please try again.'
+                'Google sign-in is temporarily unavailable. Please try again.'
             );
         }
     }
@@ -67,7 +66,7 @@ class OAuthController extends Controller
     {
         if (!$this->isGoogleOAuthConfigured()) {
             return $this->redirectToFrontendWithError(
-                'OAuth sign-in is not configured yet. Please contact support.'
+                'Google sign-in is not configured yet. Please contact support.'
             );
         }
 
@@ -91,7 +90,7 @@ class OAuthController extends Controller
             if (!$request->filled('code')) {
                 $this->recordGoogleLogin($request, null, null, false, 'missing_authorization_code');
                 return $this->redirectToFrontendWithError(
-                    'OAuth sign-in did not return a valid authorization code. Please try again.'
+                    'Google sign-in did not return a valid authorization code. Please try again.'
                 );
             }
 
@@ -213,58 +212,11 @@ class OAuthController extends Controller
         }
 
         $cacheKey = $this->oauthTicketCacheKey($ticket);
-        $ticketHash = hash('sha256', $ticket);
-        try {
-            $payload = Cache::pull($cacheKey);
-        } catch (Throwable $e) {
-            $payload = null;
-            $fallbackStore = $this->oauthTicketFallbackCacheStore();
-
-            if ($fallbackStore !== null) {
-                try {
-                    $payload = Cache::store($fallbackStore)->pull($cacheKey);
-                } catch (Throwable $fallbackException) {
-                    // If fallback cache fails too, proceed to structured 503 below.
-                    $payload = null;
-                }
-            }
-
-            if (is_array($payload)) {
-                Log::warning('OAuth login ticket exchange used fallback cache store.', [
-                    'cache_key_hash' => hash('sha256', $cacheKey),
-                    'fallback_store' => $fallbackStore,
-                    'primary_exception' => $e::class,
-                ]);
-            } else {
-                // Cache may be unavailable in production; fall back to database-backed ticket lookup.
-                $payload = $this->consumeLoginTicketFromDatabase($ticketHash);
-                if (!is_array($payload)) {
-                    $errorId = (string) Str::uuid();
-                    Log::error('OAuth login ticket exchange failed to read cache and database fallback did not resolve ticket.', [
-                        'error_id' => $errorId,
-                        'cache_key_hash' => hash('sha256', $cacheKey),
-                        'ticket_hash' => $ticketHash,
-                        'fallback_store' => $fallbackStore,
-                        'exception' => $e::class,
-                        'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
-                    ]);
-
-                    return response()->json([
-                        'message' => 'OAuth sign-in is temporarily unavailable. Please try again.',
-                        'error_id' => $errorId,
-                    ], 503);
-                }
-            }
-        }
-
+        $payload = Cache::pull($cacheKey);
         if (!is_array($payload)) {
-            // Cache might be operational but ticket was stored in DB (multi-node / fallback).
-            $payload = $this->consumeLoginTicketFromDatabase($ticketHash);
-            if (!is_array($payload)) {
-                return response()->json([
-                    'message' => 'OAuth login ticket is invalid or expired.',
-                ], 422);
-            }
+            return response()->json([
+                'message' => 'OAuth login ticket is invalid or expired.',
+            ], 422);
         }
 
         $userId = (int) ($payload['user_id'] ?? 0);
@@ -281,22 +233,7 @@ class OAuthController extends Controller
             ], 422);
         }
 
-        try {
-            $issuedToken = $this->tokenSessionService->issueToken($request, $user, 'google_oauth');
-        } catch (Throwable $e) {
-            $errorId = (string) Str::uuid();
-            Log::error('OAuth login ticket exchange failed to issue token.', [
-                'error_id' => $errorId,
-                'user_id' => (int) $user->id,
-                'exception' => $e::class,
-                'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
-            ]);
-
-            return response()->json([
-                'message' => 'OAuth sign-in is temporarily unavailable. Please try again.',
-                'error_id' => $errorId,
-            ], 503);
-        }
+        $issuedToken = $this->tokenSessionService->issueToken($request, $user, 'google_oauth');
 
         return response()->json([
             'access_token' => $issuedToken->plainTextToken,
@@ -612,11 +549,11 @@ class OAuthController extends Controller
         $description = trim($providerDescription);
 
         return match ($normalized) {
-            'access_denied' => 'OAuth sign-in was canceled.',
-            'temporarily_unavailable' => 'OAuth sign-in is temporarily unavailable. Please try again.',
+            'access_denied' => 'Google sign-in was canceled.',
+            'temporarily_unavailable' => 'Google sign-in is temporarily unavailable. Please try again.',
             default => $description !== ''
-                ? "OAuth sign-in error: {$description}"
-                : 'OAuth sign-in failed. Please try again.',
+                ? "Google sign-in error: {$description}"
+                : 'Google sign-in failed. Please try again.',
         };
     }
 
@@ -625,7 +562,7 @@ class OAuthController extends Controller
         $message = Str::lower((string) $e->getMessage());
 
         if (str_contains($message, 'access_denied')) {
-            return 'OAuth sign-in was canceled.';
+            return 'Google sign-in was canceled.';
         }
 
         if (str_contains($message, 'redirect_uri_mismatch')) {
@@ -637,7 +574,7 @@ class OAuthController extends Controller
         }
 
         if (str_contains($message, 'invalid_grant')) {
-            return 'OAuth sign-in session expired or code was invalid. Please try again.';
+            return 'Google sign-in session expired or code was invalid. Please try again.';
         }
 
         if (
@@ -652,10 +589,10 @@ class OAuthController extends Controller
         if ((bool) config('app.debug', false)) {
             $raw = trim((string) $e->getMessage());
             $snippet = Str::limit($raw !== '' ? $raw : get_class($e), 240);
-            return 'OAuth sign-in failed: ' . $snippet;
+            return 'Google sign-in failed: ' . $snippet;
         }
 
-        return 'OAuth sign-in failed. Please try again.';
+        return 'Google sign-in failed. Please try again.';
     }
 
     private function redirectToFrontendWithLoginTicket(string $ticket): RedirectResponse
@@ -681,132 +618,16 @@ class OAuthController extends Controller
     private function issueLoginTicket(User $user): string
     {
         $ticket = Str::random(96);
-        $cacheKey = $this->oauthTicketCacheKey($ticket);
-        $ticketHash = hash('sha256', $ticket);
-        $cacheValue = [
-            'user_id' => $user->id,
-            'issued_at' => now()->toIso8601String(),
-        ];
-        $ttl = now()->addSeconds($this->oauthTicketTtlSeconds());
-
-        // Persist ticket in DB so the exchange endpoint works even if cache is unavailable or a multi-node deployment
-        // does not share filesystem cache.
-        try {
-            if (Schema::hasTable('oauth_login_tickets')) {
-                DB::table('oauth_login_tickets')->insert([
-                    'user_id' => (int) $user->id,
-                    'ticket_hash' => $ticketHash,
-                    'expires_at' => $ttl,
-                    'consumed_at' => null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
-        } catch (Throwable $e) {
-            Log::warning('Unable to persist OAuth login ticket to database.', [
-                'ticket_hash' => $ticketHash,
-                'user_id' => (int) $user->id,
-                'exception' => $e::class,
-                'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
-            ]);
-        }
-
-        try {
-            Cache::put($cacheKey, $cacheValue, $ttl);
-        } catch (Throwable $e) {
-            $fallbackStore = $this->oauthTicketFallbackCacheStore();
-
-            if ($fallbackStore !== null) {
-                try {
-                    Cache::store($fallbackStore)->put($cacheKey, $cacheValue, $ttl);
-                    Log::warning('OAuth login ticket stored in fallback cache store.', [
-                        'cache_key_hash' => hash('sha256', $cacheKey),
-                        'fallback_store' => $fallbackStore,
-                        'primary_exception' => $e::class,
-                    ]);
-                } catch (Throwable $fallbackException) {
-                    Log::error('OAuth login ticket cache write failed.', [
-                        'cache_key_hash' => hash('sha256', $cacheKey),
-                        'fallback_store' => $fallbackStore,
-                        'exception' => $e::class,
-                        'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
-                        'fallback_exception' => $fallbackException::class,
-                        'fallback_exception_message_hash' => hash('sha256', (string) $fallbackException->getMessage()),
-                    ]);
-                }
-            } else {
-                Log::error('OAuth login ticket cache write failed.', [
-                    'cache_key_hash' => hash('sha256', $cacheKey),
-                    'exception' => $e::class,
-                    'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
-                ]);
-            }
-        }
+        Cache::put(
+            $this->oauthTicketCacheKey($ticket),
+            [
+                'user_id' => $user->id,
+                'issued_at' => now()->toIso8601String(),
+            ],
+            now()->addSeconds($this->oauthTicketTtlSeconds())
+        );
 
         return $ticket;
-    }
-
-    /**
-     * Best-effort: consume a ticket from the DB so it is one-time use.
-     *
-     * @return array{user_id:int, issued_at:string}|null
-     */
-    private function consumeLoginTicketFromDatabase(string $ticketHash): ?array
-    {
-        try {
-            if (!Schema::hasTable('oauth_login_tickets')) {
-                return null;
-            }
-
-            return DB::transaction(function () use ($ticketHash): ?array {
-                $now = now();
-
-                $row = DB::table('oauth_login_tickets')
-                    ->where('ticket_hash', $ticketHash)
-                    ->whereNull('consumed_at')
-                    ->where('expires_at', '>', $now)
-                    ->lockForUpdate()
-                    ->first(['id', 'user_id', 'created_at']);
-
-                if (!$row) {
-                    return null;
-                }
-
-                DB::table('oauth_login_tickets')
-                    ->where('id', (int) $row->id)
-                    ->update([
-                        'consumed_at' => $now,
-                        'updated_at' => $now,
-                    ]);
-
-                return [
-                    'user_id' => (int) $row->user_id,
-                    'issued_at' => optional($row->created_at)->toIso8601String() ?? $now->toIso8601String(),
-                ];
-            }, 3);
-        } catch (Throwable $e) {
-            Log::warning('OAuth ticket database fallback failed.', [
-                'ticket_hash' => $ticketHash,
-                'exception' => $e::class,
-                'exception_message_hash' => hash('sha256', (string) $e->getMessage()),
-            ]);
-            return null;
-        }
-    }
-
-    private function oauthTicketFallbackCacheStore(): ?string
-    {
-        $fallback = trim((string) env('OAUTH_TICKET_FALLBACK_CACHE_STORE', 'file'));
-        if ($fallback === '') {
-            return null;
-        }
-
-        $primary = trim((string) config('cache.default', ''));
-        if ($primary !== '' && $primary === $fallback) {
-            return null;
-        }
-
-        return $fallback;
     }
 
     private function oauthTicketCacheKey(string $ticket): string

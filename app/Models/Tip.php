@@ -24,4 +24,14 @@ class Tip extends Model
         'priority' => 'integer',
         'is_active' => 'boolean',
     ];
+
+    public function deliveries()
+    {
+        return $this->hasMany(TipDelivery::class);
+    }
+
+    public function favorites()
+    {
+        return $this->hasMany(TipFavorite::class);
+    }
 }
