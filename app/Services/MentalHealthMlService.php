@@ -16,43 +16,29 @@ class MentalHealthMlService
     public const MODEL_VERSION = 'mindful-lightweight-ml-v1';
 
     private const DISTRESS_TERMS = [
-        'stress',
-        'stressed',
-        'anxious',
-        'anxiety',
-        'panic',
-        'overwhelmed',
-        'hopeless',
-        'alone',
-        'lonely',
-        'drained',
-        'tired',
-        'exhausted',
-        'burnout',
-        'can\'t cope',
-        'cannot cope',
-        'no point',
-        'give up',
+        'stress', 'stressed', 'anxious', 'anxiety', 'panic', 'overwhelmed',
+        'hopeless', 'alone', 'lonely', 'drained', 'tired', 'exhausted',
+        'burnout', "can't cope", 'cannot cope', 'no point', 'give up',
+        'suffocating', 'lost', 'unbearable', 'drowning', 'empty',
+        'help me', 'crisis', 'distressed', 'miserable', 'heartbroken',
+        'scared', 'fearful', 'shaking', 'crying', 'tears', 'heavy',
+        'worthless', 'failure', 'useless', 'hating myself'
     ];
 
     private const CRISIS_TERMS = [
-        'suicide',
-        'kill myself',
-        'end my life',
-        'self harm',
-        'hurt myself',
-        'jump off',
-        'wish i were dead',
-        'better off without me',
+        'suicide', 'kill myself', 'end my life', 'self harm', 'hurt myself',
+        'jump off', 'wish i were dead', 'better off without me', 'take my life',
+        'dont want to live', 'sleeping pills', 'overdose', 'goodbye everyone',
+        'no more pain', 'done with life', 'cutting', 'bleeding', 'hanging'
     ];
 
     private const CHAT_TOPICS = [
-        'anxiety' => ['anxiety', 'anxious', 'panic', 'overwhelmed', 'stress', 'stressed'],
-        'study' => ['exam', 'assignment', 'deadline', 'study', 'focus', 'concentrate'],
-        'sleep' => ['sleep', 'insomnia', 'tired', 'exhausted', 'rest'],
-        'sadness' => ['sad', 'depressed', 'hopeless', 'alone', 'lonely', 'empty'],
-        'relationships' => ['relationship', 'breakup', 'friend', 'friendship', 'partner'],
-        'financial' => ['fees', 'tuition', 'money', 'rent', 'financial', 'debt', 'food'],
+        'anxiety' => ['anxiety', 'anxious', 'panic', 'overwhelmed', 'stress', 'stressed', 'scared', 'fear'],
+        'study' => ['exam', 'assignment', 'deadline', 'study', 'focus', 'concentrate', 'university', 'grades'],
+        'sleep' => ['sleep', 'insomnia', 'tired', 'exhausted', 'rest', 'nightmare', 'awake'],
+        'sadness' => ['sad', 'depressed', 'hopeless', 'alone', 'lonely', 'empty', 'worthless', 'miserable'],
+        'relationships' => ['relationship', 'breakup', 'friend', 'friendship', 'partner', 'family', 'parents'],
+        'financial' => ['fees', 'tuition', 'money', 'rent', 'financial', 'debt', 'food', 'budget', 'work'],
     ];
 
     public function buildStudentMlInsights(User|int $student): array
@@ -440,10 +426,13 @@ class MentalHealthMlService
             'mood_logs_14d' => 0,
             'low_mood_logs_14d' => 0,
             'ai_chat_messages_30d' => 0,
+            'session_messages_30d' => 0,
             'ai_chat_word_count_30d' => 0,
             'distress_messages_30d' => 0,
             'crisis_messages_30d' => 0,
             'topic_counts' => [],
+            'distress_words' => [],
+            'crisis_words' => [],
         ];
     }
 
@@ -594,14 +583,68 @@ class MentalHealthMlService
             $snapshots[$studentId]['ai_chat_messages_30d']++;
             $snapshots[$studentId]['ai_chat_word_count_30d'] += str_word_count($normalized);
 
-            $distressHits = $this->countKeywordHits($normalized, self::DISTRESS_TERMS);
-            $crisisHits = $this->countKeywordHits($normalized, self::CRISIS_TERMS);
+            $distressWords = $this->getMatchedKeywords($normalized, self::DISTRESS_TERMS);
+            $crisisWords = $this->getMatchedKeywords($normalized, self::CRISIS_TERMS);
 
-            if ($distressHits > 0) {
+            if (!empty($distressWords)) {
                 $snapshots[$studentId]['distress_messages_30d']++;
+                $snapshots[$studentId]['distress_words'] = array_unique(array_merge(
+                    $snapshots[$studentId]['distress_words'],
+                    $distressWords
+                ));
             }
-            if ($crisisHits > 0) {
+            if (!empty($crisisWords)) {
                 $snapshots[$studentId]['crisis_messages_30d']++;
+                $snapshots[$studentId]['crisis_words'] = array_unique(array_merge(
+                    $snapshots[$studentId]['crisis_words'],
+                    $crisisWords
+                ));
+            }
+
+            $topic = $this->detectDominantTopic($normalized);
+            if ($topic !== null) {
+                $snapshots[$studentId]['topic_counts'][$topic] = (int) (($snapshots[$studentId]['topic_counts'][$topic] ?? 0) + 1);
+            }
+        }
+
+        // Include regular counseling session messages in the analysis
+        $sessionMessages = DB::table('messages')
+            ->join('counseling_sessions', 'messages.session_id', '=', 'counseling_sessions.id')
+            ->whereIn('counseling_sessions.student_id', $studentIds)
+            ->whereColumn('messages.sender_id', 'counseling_sessions.student_id')
+            ->where('messages.is_encrypted', false)
+            ->where('messages.created_at', '>=', now()->subDays(30))
+            ->orderBy('messages.id')
+            ->get([
+                'counseling_sessions.student_id',
+                'messages.content',
+            ]);
+
+        foreach ($sessionMessages as $row) {
+            $studentId = (int) $row->student_id;
+            $normalized = $this->normalizeText((string) $row->content);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $snapshots[$studentId]['session_messages_30d']++;
+            
+            $distressWords = $this->getMatchedKeywords($normalized, self::DISTRESS_TERMS);
+            $crisisWords = $this->getMatchedKeywords($normalized, self::CRISIS_TERMS);
+
+            if (!empty($distressWords)) {
+                $snapshots[$studentId]['distress_messages_30d']++;
+                $snapshots[$studentId]['distress_words'] = array_unique(array_merge(
+                    $snapshots[$studentId]['distress_words'],
+                    $distressWords
+                ));
+            }
+            if (!empty($crisisWords)) {
+                $snapshots[$studentId]['crisis_messages_30d']++;
+                $snapshots[$studentId]['crisis_words'] = array_unique(array_merge(
+                    $snapshots[$studentId]['crisis_words'],
+                    $crisisWords
+                ));
             }
 
             $topic = $this->detectDominantTopic($normalized);
@@ -727,6 +770,7 @@ class MentalHealthMlService
             ],
             'focus_area' => $focusArea,
             'dominant_topics' => $this->dominantTopicsFromSnapshot($snapshot),
+            'risk_indicators' => $this->buildRiskIndicators($snapshot),
             'protective_factors' => $protectiveFactors,
             'recommended_actions' => $recommendedActions,
             'feature_snapshot' => [
@@ -748,19 +792,31 @@ class MentalHealthMlService
         $diagnosticScore = is_numeric($snapshot['latest_diagnostic_score']) ? (int) $snapshot['latest_diagnostic_score'] : null;
         $aiScore = is_numeric($snapshot['latest_ai_score']) ? (int) $snapshot['latest_ai_score'] : null;
         $cancelRate = (float) ($snapshot['cancel_rate_60d'] ?? 0.0);
-        $distressRatio = ((int) ($snapshot['distress_messages_30d'] ?? 0)) / max(1, (int) ($snapshot['ai_chat_messages_30d'] ?? 0));
-        $base = 0.0;
+        
+        $msgCount = (int) ($snapshot['ai_chat_messages_30d'] ?? 0) + (int) ($snapshot['session_messages_30d'] ?? 0);
+        $distressRatio = $msgCount > 0 
+            ? ((int) ($snapshot['distress_messages_30d'] ?? 0)) / $msgCount
+            : 0.0;
+            
+        $weightedSum = 0.0;
+        $weightTotal = 0.0;
 
         if (is_int($diagnosticScore)) {
-            $base += $diagnosticScore * 0.40;
+            $weightedSum += $diagnosticScore * 0.40;
+            $weightTotal += 0.40;
         }
         if (is_int($aiScore)) {
-            $base += $aiScore * 0.34;
-        }
-        if (!is_int($diagnosticScore) && !is_int($aiScore)) {
-            $base += min(55, ((int) ($snapshot['distress_messages_30d'] ?? 0) * 12) + ((int) ($snapshot['low_mood_logs_14d'] ?? 0) * 6));
+            $weightedSum += $aiScore * 0.34;
+            $weightTotal += 0.34;
         }
 
+        if ($weightTotal > 0) {
+            $base = $weightedSum / $weightTotal;
+        } else {
+            $base = min(55, ((int) ($snapshot['distress_messages_30d'] ?? 0) * 12) + ((int) ($snapshot['low_mood_logs_14d'] ?? 0) * 6));
+        }
+
+        // Add context-based bonuses/penalties to the base
         $base += min(18, $distressRatio * 100 * 0.18);
         $base += min(12, $cancelRate * 100 * 0.12);
         $base += min(12, (int) ($snapshot['low_mood_logs_14d'] ?? 0) * 2.5);
@@ -848,24 +904,44 @@ class MentalHealthMlService
     private function buildProtectiveFactors(array $snapshot, string $trendLabel): array
     {
         $factors = [];
-
         if ((int) ($snapshot['upcoming_appointments'] ?? 0) > 0) {
-            $factors[] = 'Upcoming counselor follow-up already scheduled';
+            $factors[] = 'Has upcoming support scheduled.';
         }
         if ((int) ($snapshot['completed_sessions_60d'] ?? 0) >= 2) {
-            $factors[] = 'Recent counseling continuity';
-        }
-        if ((int) ($snapshot['mood_logs_14d'] ?? 0) >= 4) {
-            $factors[] = 'Consistent self-check-ins';
+            $factors[] = 'Consistent engagement with counseling.';
         }
         if ($trendLabel === 'improving') {
-            $factors[] = 'Recent wellness trend is improving';
+            $factors[] = 'Wellness trend is moving positively.';
         }
-        if ((float) ($snapshot['cancel_rate_60d'] ?? 0.0) <= 0.1 && (int) ($snapshot['appointments_60d'] ?? 0) > 0) {
-            $factors[] = 'Low cancellation pattern';
+        if ((int) ($snapshot['mood_logs_14d'] ?? 0) >= 5) {
+            $factors[] = 'Active self-monitoring of mood.';
         }
 
-        return array_slice($factors, 0, 3);
+        return $factors;
+    }
+
+    private function buildRiskIndicators(array $snapshot): array
+    {
+        $indicators = [];
+        if ((int) ($snapshot['crisis_messages_30d'] ?? 0) > 0) {
+            $words = implode(', ', array_slice($snapshot['crisis_words'] ?? [], 0, 3));
+            $indicators[] = "Critical keywords detected: {$words}.";
+        }
+        if ((int) ($snapshot['distress_messages_30d'] ?? 0) >= 3) {
+            $words = implode(', ', array_slice($snapshot['distress_words'] ?? [], 0, 3));
+            $indicators[] = "Recent distress indicators: {$words}.";
+        }
+        if ((float) ($snapshot['cancel_rate_60d'] ?? 0) >= 0.4) {
+            $indicators[] = 'High appointment cancellation rate.';
+        }
+        if ((int) ($snapshot['low_mood_logs_14d'] ?? 0) >= 4) {
+            $indicators[] = 'Recent low-mood logs reported.';
+        }
+        if (($snapshot['diagnostic_trend_delta'] ?? 0) >= 15) {
+            $indicators[] = 'Significant worsening in self-assessment scores.';
+        }
+
+        return $indicators;
     }
 
     /**
@@ -971,9 +1047,10 @@ class MentalHealthMlService
 
     /**
      * @param array<int, array<string, mixed>> $messages
+     * @param int|null $studentId
      * @return array<string, int|float|string|null>
      */
-    private function extractConversationFeatures(array $messages): array
+    private function extractConversationFeatures(array $messages, ?int $studentId = null): array
     {
         $studentMessageCount = 0;
         $distressHits = 0;
@@ -981,10 +1058,25 @@ class MentalHealthMlService
         $topicCounts = [];
         $anxietyTopicHits = 0;
         $sadnessTopicHits = 0;
+        $matchedDistress = [];
+        $matchedCrisis = [];
 
         foreach ($messages as $message) {
-            $sender = strtolower(trim((string) ($message['sender'] ?? $message['role'] ?? 'user')));
-            if (!in_array($sender, ['student', 'user'], true)) {
+            $isStudent = false;
+            
+            if (isset($message['sender_id']) && $studentId !== null) {
+                $isStudent = (int) $message['sender_id'] === $studentId;
+            } elseif (isset($message['sender'])) {
+                $sender = strtolower(trim((string) $message['sender']));
+                $isStudent = in_array($sender, ['student', 'user'], true);
+            } elseif (isset($message['role'])) {
+                $role = strtolower(trim((string) $message['role']));
+                $isStudent = in_array($role, ['user', 'student'], true);
+            } else {
+                $isStudent = true;
+            }
+
+            if (!$isStudent) {
                 continue;
             }
 
@@ -994,8 +1086,15 @@ class MentalHealthMlService
             }
 
             $studentMessageCount++;
-            $distressHits += $this->countKeywordHits($normalized, self::DISTRESS_TERMS);
-            $criticalHits += $this->countKeywordHits($normalized, self::CRISIS_TERMS);
+            
+            $distressWords = $this->getMatchedKeywords($normalized, self::DISTRESS_TERMS);
+            $distressHits += count($distressWords);
+            $matchedDistress = array_unique(array_merge($matchedDistress, $distressWords));
+
+            $crisisWords = $this->getMatchedKeywords($normalized, self::CRISIS_TERMS);
+            $criticalHits += count($crisisWords);
+            $matchedCrisis = array_unique(array_merge($matchedCrisis, $crisisWords));
+
             $anxietyTopicHits += $this->countKeywordHits($normalized, self::CHAT_TOPICS['anxiety']);
             $sadnessTopicHits += $this->countKeywordHits($normalized, self::CHAT_TOPICS['sadness']);
 
@@ -1022,6 +1121,8 @@ class MentalHealthMlService
             'dominant_negative_topic' => $dominantNegativeTopic,
             'anxiety_topic_hits' => $anxietyTopicHits,
             'sadness_topic_hits' => $sadnessTopicHits,
+            'matched_distress_words' => array_values($matchedDistress),
+            'matched_crisis_words' => array_values($matchedCrisis),
         ];
     }
 
@@ -1130,15 +1231,20 @@ class MentalHealthMlService
      */
     private function countKeywordHits(string $text, array $terms): int
     {
-        $hits = 0;
+        return count($this->getMatchedKeywords($text, $terms));
+    }
+
+    private function getMatchedKeywords(string $text, array $terms): array
+    {
+        $matches = [];
         foreach ($terms as $term) {
             $needle = $this->normalizeText((string) $term);
             if ($needle !== '' && str_contains($text, $needle)) {
-                $hits++;
+                $matches[] = $term;
             }
         }
 
-        return $hits;
+        return array_unique($matches);
     }
 
     private function cleanText(mixed $value): string

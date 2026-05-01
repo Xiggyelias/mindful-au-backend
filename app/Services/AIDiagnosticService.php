@@ -17,7 +17,7 @@ class AIDiagnosticService
 
     public function analyzeSession(CounselingSession $session, array $messages): AiDiagnostic
     {
-        $conversationText = $this->extractConversationText($messages);
+        $conversationText = $this->extractConversationText($messages, (int) $session->student_id);
         $promptContext = $this->mentalHealthMlService->buildPromptSafeStudentContext((int) $session->student_id);
         $localAnalysis = $this->analyzeLocally($conversationText);
         
@@ -393,10 +393,18 @@ class AIDiagnosticService
         ]);
     }
 
-    private function extractConversationText(array $messages): string
+    private function extractConversationText(array $messages, ?int $studentId = null): string
     {
-        return implode("\n", array_map(function($msg) {
-            return ($msg['sender'] ?? 'user') . ': ' . ($msg['content'] ?? '');
+        return implode("\n", array_map(function($msg) use ($studentId) {
+            $label = 'User';
+            if (isset($msg['sender_id']) && $studentId !== null) {
+                $label = (int) $msg['sender_id'] === $studentId ? 'Student' : 'Counselor';
+            } elseif (isset($msg['role'])) {
+                $label = ucfirst((string) $msg['role']);
+            } elseif (isset($msg['sender'])) {
+                $label = ucfirst((string) $msg['sender']);
+            }
+            return $label . ': ' . ($msg['content'] ?? '');
         }, $messages));
     }
 
@@ -555,7 +563,6 @@ class AIDiagnosticService
             'recommendations' => $data['recommendations'] ?? null,
         ];
     }
-
     private function logProviderException(string $message, \Throwable $e): void
     {
         Log::error($message, [

@@ -45,6 +45,27 @@ class PanicLogController extends Controller
         ]);
 
         if (SystemSettings::getBool('panic_alerts', true)) {
+            $user = $request->user();
+            $user->loadMissing('profile');
+            $studentName = $user->profile?->full_name ?? $user->email;
+            $rawLocation = $validated['location'] ?? null;
+            
+            $locationDisplay = 'Location not provided';
+            if ($rawLocation) {
+                // If it looks like coordinates (lat, lng), provide a map link in the message if possible
+                // or just keep it as a clear string for the counselor to see.
+                $locationDisplay = $rawLocation;
+                if (preg_match('/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/', $rawLocation)) {
+                    $locationDisplay .= " (https://www.google.com/maps/search/?api=1&query=" . urlencode($rawLocation) . ")";
+                }
+            }
+
+            $alertMessage = sprintf(
+                "EMERGENCY: %s triggered the panic button. Location: %s. Please respond immediately.",
+                $studentName,
+                $locationDisplay
+            );
+
             // Create notifications for all approved counselors and admins.
             $counselors = \App\Models\User::whereHas('roles', function($query) {
                 $query->whereIn('role', ['counselor', 'admin'])->where('approved', true);
@@ -53,8 +74,8 @@ class PanicLogController extends Controller
             foreach ($counselors as $counselor) {
                 Notification::create([
                     'user_id' => $counselor->id,
-                    'title' => 'Panic Button Triggered',
-                    'message' => 'A student has triggered the panic button. Immediate attention required.',
+                    'title' => 'Panic Button Triggered!',
+                    'message' => $alertMessage,
                     'type' => 'panic',
                 ]);
             }
