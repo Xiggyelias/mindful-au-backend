@@ -29,7 +29,7 @@ class SystemSettings
             'auto_backup' => false,
             'admin_email' => '',
             'support_email' => '',
-            'crisis_hotline' => '',
+            'crisis_hotline' => '393 (Youth Helpline)',
         ];
     }
 

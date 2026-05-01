@@ -15,6 +15,13 @@ use Tests\TestCase;
 class TipOfDayFeatureTest extends TestCase
 {
     use RefreshDatabase;
+    
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Tip::query()->delete();
+    }
+
 
     /** @test */
     public function admin_can_create_update_and_delete_tips(): void
