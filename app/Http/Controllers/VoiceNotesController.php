@@ -79,7 +79,7 @@ class VoiceNotesController extends Controller
         }
 
         return response()->json([
-            'download_url' => Storage::disk('public')->url($path),
+            'download_url' => asset('storage/' . $path),
             'message' => $message,
         ]);
     }
