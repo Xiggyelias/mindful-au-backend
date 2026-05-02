@@ -18,7 +18,7 @@ class VideoCallController extends Controller
     private const MIN_DURATION_MINUTES = 15;
     private const MAX_DURATION_MINUTES = 120;
     private const DEFAULT_DURATION_MINUTES = 60;
-    private const JOIN_EARLY_MINUTES = 15;
+    private const JOIN_EARLY_MINUTES = 0;
     private const JOIN_LATE_GRACE_MINUTES = 0;
 
     public function authorizeCall(Request $request): JsonResponse

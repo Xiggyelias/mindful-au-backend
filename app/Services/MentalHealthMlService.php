@@ -39,7 +39,17 @@ class MentalHealthMlService
         'sadness' => ['sad', 'depressed', 'hopeless', 'alone', 'lonely', 'empty', 'worthless', 'miserable'],
         'relationships' => ['relationship', 'breakup', 'friend', 'friendship', 'partner', 'family', 'parents'],
         'financial' => ['fees', 'tuition', 'money', 'rent', 'financial', 'debt', 'food', 'budget', 'work'],
-    ];
+  ];
+
+    public function detectCrisisInText(string $text): array
+    {
+        return $this->getMatchedKeywords($this->normalizeText($text), self::CRISIS_TERMS);
+    }
+
+    public function detectDistressInText(string $text): array
+    {
+        return $this->getMatchedKeywords($this->normalizeText($text), self::DISTRESS_TERMS);
+    }
 
     public function buildStudentMlInsights(User|int $student): array
     {

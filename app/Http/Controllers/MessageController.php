@@ -23,11 +23,16 @@ class MessageController extends Controller
     private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
     private const ANONYMOUS_SESSION_TTL_HOURS = 24;
 
+    protected $mlService;
+
+    public function __construct(\App\Services\MentalHealthMlService $mlService)
+    {
+        $this->mlService = $mlService;
+    }
+
     public function index(Request $request, string $sessionId): JsonResponse
     {
-        $session = CounselingSession::query()
-            ->select([
-                'id',
+                $session = CounselingSession::query()->select(['id',
                 'student_id',
                 'counselor_id',
                 'peer_counselor_id',
@@ -314,6 +319,18 @@ class MessageController extends Controller
             'is_encrypted' => $isEncrypted,
             'seen_at' => null,
         ]);
+
+        // ML Crisis Detection
+        if ((int) $session->student_id === (int) $user->id && $messageType === 'text' && !$isEncrypted) {
+            $crisisWords = $this->mlService->detectCrisisInText($content);
+            if (!empty($crisisWords)) {
+                try {
+                    $this->triggerCrisisAlert($session, $user, $crisisWords);
+                } catch (\Throwable $_) {
+                    // Fail silently, don't block the message
+                }
+            }
+        }
 
         $legacyBroadcastEnabled = filter_var(
             (string) env('CHAT_LEGACY_BROADCAST', false),
@@ -789,6 +806,37 @@ class MessageController extends Controller
 
         if (Storage::disk('public')->exists($path)) {
             Storage::disk('public')->delete($path);
+        }
+    }
+
+    private function triggerCrisisAlert(CounselingSession $session, User $student, array $words): void
+    {
+        $wordList = implode(', ', $words);
+        $studentName = $student->profile?->full_name ?: $student->email;
+        $anonymousLabel = $this->resolveAnonymousLabel($session);
+        
+        $counselorId = $session->counselor_id;
+        $adminIds = User::whereHas('roles', function($q) { $q->where('role', 'admin'); })->pluck('id')->all();
+        
+        $recipients = array_unique(array_merge(
+            $counselorId ? [$counselorId] : [],
+            $adminIds
+        ));
+
+        foreach ($recipients as $recipientId) {
+            $isCounselorForSession = (int)$recipientId === (int)$session->counselor_id;
+            $viewerName = $isCounselorForSession && !$session->is_anonymous ? $studentName : $anonymousLabel;
+
+            Notification::create([
+                'user_id' => $recipientId,
+                'title' => '🚨 Crisis Alert: Chat Trigger',
+                'message' => sprintf(
+                    'Student (%s) sent a message containing high-risk terms: %s. Please review the session immediately.',
+                    $viewerName,
+                    $wordList
+                ),
+                'type' => 'error', // High priority
+            ]);
         }
     }
 
