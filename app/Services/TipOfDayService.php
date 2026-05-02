@@ -17,6 +17,11 @@ class TipOfDayService
      */
     public function resolveForUser(User $user): ?array
     {
+        $audience = $this->resolveAudience($user);
+        if (in_array($audience, ['counselor', 'admin'])) {
+            return null;
+        }
+
         $today = now()->toDateString();
         $existingDelivery = TipDelivery::query()
             ->with('tip')

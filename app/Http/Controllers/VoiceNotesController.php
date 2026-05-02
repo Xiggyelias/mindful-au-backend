@@ -18,7 +18,8 @@ class VoiceNotesController extends Controller
 
         if (!$user->hasRole('admin') && 
             $session->student_id !== $user->id && 
-            $session->counselor_id !== $user->id) {
+            $session->counselor_id !== $user->id &&
+            $session->peer_counselor_id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -54,7 +55,8 @@ class VoiceNotesController extends Controller
         $session = $message->session;
         if (!$user->hasRole('admin') && 
             $session->student_id !== $user->id && 
-            $session->counselor_id !== $user->id) {
+            $session->counselor_id !== $user->id &&
+            $session->peer_counselor_id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

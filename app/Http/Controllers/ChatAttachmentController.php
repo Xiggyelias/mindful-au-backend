@@ -69,11 +69,13 @@ class ChatAttachmentController extends Controller
 
         $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor'
             && (int) $session->peer_counselor_id > 0;
+        /*
         if (!$user->hasRole('admin') && $isDelegatedPeerThread) {
             return response()->json([
                 'message' => 'Peer delegated cases support text chat only.',
             ], 422);
         }
+        */
 
         $request->validate([
             'file' => [

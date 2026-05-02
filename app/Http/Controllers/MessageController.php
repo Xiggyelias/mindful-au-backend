@@ -262,11 +262,13 @@ class MessageController extends Controller
         $content = (string) $validated['content'];
         $isPeerDelegatedCase = $session->assigned_role === 'peer_counselor' && $session->peer_counselor_id;
 
+        /* 
         if ($isPeerDelegatedCase && !$user->hasRole('admin') && $messageType !== 'text') {
             return response()->json([
                 'message' => 'Peer delegated cases support text chat only.',
             ], 422);
         }
+        */
 
         if ($isAssignedPeerCounselor) {
             if ($session->session_type !== 'chat') {
@@ -283,11 +285,13 @@ class MessageController extends Controller
                 ], 422);
             }
 
+            /*
             if ($messageType !== 'text') {
                 return response()->json([
                     'message' => 'Peer counselors can only send text messages in supervised chat.',
                 ], 422);
             }
+            */
         }
 
         $isEncrypted = array_key_exists('is_encrypted', $validated)
