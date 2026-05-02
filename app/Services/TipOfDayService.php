@@ -38,6 +38,14 @@ class TipOfDayService
             ->get();
 
         if ($eligibleTips->isEmpty()) {
+            // Fallback to all audiences if nothing specific found
+            $eligibleTips = Tip::query()
+                ->where('is_active', true)
+                ->where('audience', 'all')
+                ->get();
+        }
+
+        if ($eligibleTips->isEmpty()) {
             return null;
         }
 
