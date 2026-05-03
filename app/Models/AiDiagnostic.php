@@ -28,6 +28,21 @@ class AiDiagnostic extends Model
 
     public function session()
     {
+        // For physical appointments, we use a virtual check
+        if (is_string($this->session_id) && str_starts_with($this->session_id, 'apt_')) {
+            return $this->belongsTo(Appointment::class, 'session_id');
+        }
         return $this->belongsTo(CounselingSession::class, 'session_id');
+    }
+
+    /**
+     * Get the associated session or appointment object.
+     */
+    public function getContextAttribute()
+    {
+        if (is_string($this->session_id) && str_starts_with($this->session_id, 'apt_')) {
+            return Appointment::find((int) substr($this->session_id, 4));
+        }
+        return CounselingSession::find($this->session_id);
     }
 }
