@@ -118,6 +118,46 @@ class AIDiagnosticController extends Controller
         ], 202);
     }
 
+    public function analyzeAppointment(Request $request, string $appointmentId): JsonResponse
+    {
+        $appointment = Appointment::findOrFail($appointmentId);
+        $user = $request->user();
+
+        if (!$user->hasRole('admin') && $appointment->counselor_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if (empty($appointment->notes)) {
+            return response()->json(['message' => 'No notes found for this appointment'], 400);
+        }
+
+        // For appointments (physical), we treat the notes as a single session content
+        $messages = [
+            [
+                'sender' => 'counselor',
+                'content' => $appointment->notes,
+            ]
+        ];
+
+        // Create a lightweight CounselingSession wrapper for the job if necessary,
+        // or update ProcessAIDiagnostic to handle Appointments directly.
+        // For now, we simulate a session for the AI engine.
+        $session = new CounselingSession([
+            'student_id' => $appointment->student_id,
+            'counselor_id' => $appointment->counselor_id,
+            'session_type' => 'physical',
+            'status' => 'completed',
+        ]);
+        $session->id = "apt_{$appointment->id}"; // Virtual ID prefix
+
+        ProcessAIDiagnostic::dispatch($session, $messages);
+
+        return response()->json([
+            'message' => 'AI analysis started for appointment notes.',
+            'appointment_id' => $appointmentId,
+        ], 202);
+    }
+
     public function latest(Request $request): JsonResponse
     {
         $user = $request->user();

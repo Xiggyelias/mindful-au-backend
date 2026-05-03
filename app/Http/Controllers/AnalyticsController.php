@@ -320,6 +320,10 @@ class AnalyticsController extends Controller
                 ->get()
                 ->pluck('count', 'status')
                 ->toArray(),
+            'appointments_by_mode' => [
+                'physical' => Appointment::where('notes', 'like', '%Physical%')->count(),
+                'online' => Appointment::where('notes', 'not like', '%Physical%')->count(),
+            ],
             'upcoming_appointments' => Appointment::where('scheduled_at', '>', now())
                 ->where('status', '!=', 'cancelled')
                 ->count(),
@@ -433,5 +437,3 @@ class AnalyticsController extends Controller
             ->toArray();
     }
 }
-
-

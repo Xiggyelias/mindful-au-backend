@@ -154,6 +154,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/ai-diagnostics/latest', [\App\Http\Controllers\AIDiagnosticController::class, 'latest']);
     Route::get('/ai-diagnostics/{id}', [\App\Http\Controllers\AIDiagnosticController::class, 'show']);
     Route::post('/sessions/{id}/analyze', [\App\Http\Controllers\AIDiagnosticController::class, 'analyzeSession']);
+    Route::post('/appointments/{id}/analyze', [\App\Http\Controllers\AIDiagnosticController::class, 'analyzeAppointment']);
     
     // Diagnostic Assessment
     Route::get('/diagnostics/questionnaire', [\App\Http\Controllers\DiagnosticController::class, 'getQuestionnaire']);
@@ -198,22 +199,5 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/activity-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->middleware('admin');
     Route::get('/activity-logs/stats', [\App\Http\Controllers\ActivityLogController::class, 'stats'])->middleware('admin');
     Route::get('/data-access-logs', [DataAccessLogController::class, 'index'])->middleware('admin');
-    Route::get('/integrations/academic-risk/events', [AcademicRiskWebhookController::class, 'events'])->middleware('admin');
-    Route::get('/integrations/academic-risk/runs', [AcademicRiskWebhookController::class, 'runs'])->middleware('admin');
-
-    // AI Reports (Admin only)
-    Route::get('/ai-reports', [\App\Http\Controllers\AIReportController::class, 'index'])->middleware('admin');
-    Route::get('/ai-reports/{id}', [\App\Http\Controllers\AIReportController::class, 'show'])->middleware('admin');
-    Route::post('/ai-reports/generate', [\App\Http\Controllers\AIReportController::class, 'generate'])->middleware('admin');
-    Route::delete('/ai-reports/{id}', [\App\Http\Controllers\AIReportController::class, 'destroy'])->middleware('admin');
-
-    // OpenRouter Chat
-    Route::post('/openrouter/chat', [OpenRouterChatController::class, 'sendMessage'])->middleware('throttle:ai-chat');
-    Route::post('/openrouter/stream', [OpenRouterChatController::class, 'streamMessage'])->middleware('throttle:ai-chat');
-    Route::get('/openrouter/models', [OpenRouterChatController::class, 'getModels'])->middleware('throttle:ai-read');
-    Route::post('/openrouter/simple-chat', [OpenRouterChatController::class, 'simpleChat'])->middleware('throttle:ai-chat');
-    Route::get('/openrouter/conversations', [OpenRouterChatController::class, 'getConversations'])->middleware('throttle:ai-read');
-    Route::post('/openrouter/conversations', [OpenRouterChatController::class, 'createConversation'])->middleware('throttle:ai-chat');
-    Route::get('/openrouter/conversations/{id}', [OpenRouterChatController::class, 'getConversationMessages'])->middleware('throttle:ai-read');
-    Route::delete('/openrouter/conversations/{id}', [OpenRouterChatController::class, 'deleteConversation'])->middleware('throttle:ai-chat');
+    Route::get('/activity-logs/stream', [\App\Http\Controllers\ActivityLogController::class, 'stream'])->middleware('admin');
 });
