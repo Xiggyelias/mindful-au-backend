@@ -240,23 +240,39 @@ class CounselorWellnessController extends Controller
             ->where('created_at', '>=', $now->copy()->subDays(7))
             ->get(['id', 'status', 'started_at', 'ended_at', 'created_at']);
 
+        $appointments7d = Appointment::query()
+            ->where('counselor_id', $counselor->id)
+            ->where('status', 'completed')
+            ->where('scheduled_at', '>=', $now->copy()->subDays(7))
+            ->get(['id', 'status', 'scheduled_at as started_at', 'scheduled_at as created_at', 'duration_minutes']);
+
         $sessions30d = CounselingSession::query()
             ->where('counselor_id', $counselor->id)
             ->where('created_at', '>=', $now->copy()->subDays(30))
             ->get(['id', 'status', 'started_at', 'ended_at', 'created_at']);
 
+        $appointments30d = Appointment::query()
+            ->where('counselor_id', $counselor->id)
+            ->where('status', 'completed')
+            ->where('scheduled_at', '>=', $now->copy()->subDays(30))
+            ->get(['id', 'status', 'scheduled_at as started_at', 'scheduled_at as created_at', 'duration_minutes']);
+
         $sessionIds30d = $sessions30d->pluck('id')->filter()->values();
+        $aptIds30d = $appointments30d->pluck('id')->map(fn($id) => "apt_{$id}")->values();
 
         $aiDiagnostics14d = collect();
-        if ($sessionIds30d->isNotEmpty()) {
+        $allContextIds = $sessionIds30d->merge($aptIds30d);
+        
+        if ($allContextIds->isNotEmpty()) {
             $aiDiagnostics14d = AiDiagnostic::query()
-                ->whereIn('session_id', $sessionIds30d->all())
+                ->whereIn('session_id', $allContextIds->all())
                 ->where('created_at', '>=', $now->copy()->subDays(14))
                 ->get(['risk_level', 'stress_level', 'anxiety_level', 'depression_level']);
         }
 
-        $minutes7d = $this->sumSessionMinutes($sessions7d);
-        $activeDays7d = $sessions7d
+        $merged7d = $sessions7d->concat($appointments7d);
+        $minutes7d = $this->sumSessionMinutes($merged7d);
+        $activeDays7d = $merged7d
             ->map(function ($session) {
                 $reference = $session->started_at ?? $session->created_at;
                 return $reference ? $reference->toDateString() : null;
@@ -306,7 +322,7 @@ class CounselorWellnessController extends Controller
                 ->avg() ?? 0
         );
 
-        $workloadFromSessions = min(100, ($sessions7d->count() / 18) * 100);
+        $workloadFromSessions = min(100, ($merged7d->count() / 18) * 100);
         $workloadFromMinutes = min(100, ($minutes7d / 900) * 100);
         $workloadIndex = (int) round(($workloadFromSessions * 0.6) + ($workloadFromMinutes * 0.4));
 
@@ -326,7 +342,7 @@ class CounselorWellnessController extends Controller
             $recoveryPenalty = 6;
         }
 
-        if ($sessions7d->count() === 0 && $upcoming7d === 0) {
+        if ($merged7d->count() === 0 && $upcoming7d === 0) {
             $stress = 18;
             $burnout = 14;
             $mood = 82;
@@ -369,8 +385,8 @@ class CounselorWellnessController extends Controller
         ];
 
         $metrics = [
-            'sessions_7d' => $sessions7d->count(),
-            'sessions_30d' => $sessions30d->count(),
+            'sessions_7d' => $merged7d->count(),
+            'sessions_30d' => $sessions30d->count() + $appointments30d->count(),
             'active_days_7d' => $activeDays7d,
             'session_minutes_7d' => $minutes7d,
             'upcoming_appointments_3d' => $upcoming3d,
@@ -409,6 +425,12 @@ class CounselorWellnessController extends Controller
                 }
 
                 // Do not treat invalid/zero-length intervals as default session durations.
+                continue;
+            }
+
+            // Check for explicit duration in appointments
+            if (isset($session->duration_minutes) && $session->duration_minutes > 0) {
+                $total += (int) $session->duration_minutes;
                 continue;
             }
 
