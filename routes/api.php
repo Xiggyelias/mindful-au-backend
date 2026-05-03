@@ -197,7 +197,13 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
 
     // Activity Logs (Admin only)
     Route::get('/activity-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->middleware('admin');
+    Route::get('/activity-logs/stream', [\App\Http\Controllers\ActivityLogController::class, 'stream'])->middleware('admin');
     Route::get('/activity-logs/stats', [\App\Http\Controllers\ActivityLogController::class, 'stats'])->middleware('admin');
     Route::get('/data-access-logs', [DataAccessLogController::class, 'index'])->middleware('admin');
-    Route::get('/activity-logs/stream', [\App\Http\Controllers\ActivityLogController::class, 'stream'])->middleware('admin');
+
+    // AI Reports (Admin only)
+    Route::get('/ai-reports', [\App\Http\Controllers\AIReportController::class, 'index'])->middleware('admin');
+    Route::get('/ai-reports/{id}', [\App\Http\Controllers\AIReportController::class, 'show'])->middleware('admin');
+    Route::post('/ai-reports/generate', [\App\Http\Controllers\AIReportController::class, 'generate'])->middleware('admin');
+    Route::delete('/ai-reports/{id}', [\App\Http\Controllers\AIReportController::class, 'destroy'])->middleware('admin');
 });
