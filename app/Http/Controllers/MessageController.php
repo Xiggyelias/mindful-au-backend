@@ -51,10 +51,7 @@ class MessageController extends Controller
         }
 
         if (
-            !$user->hasRole('admin')
-            && $session->student_id !== $user->id
-            && $session->counselor_id !== $user->id
-            && !$isAssignedPeerCounselor
+            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -177,7 +174,17 @@ class MessageController extends Controller
         if ($maskStudentIdentityForViewer) {
             $studentId = (int) $session->student_id;
             $messages->transform(
-                static function (Message $message) use ($studentId): Message {
+                function (Message $message) use ($studentId): Message {
+                    // Keep participant IDs on WebCrypto envelopes so counselors/peers can
+                    // correlate sender with envelope.from / envelope.to (masking broke E2E).
+                    if (
+                        $this->isHandshakeEnvelope(
+                            (string) $message->message_type,
+                            (string) $message->content
+                        )
+                    ) {
+                        return $message;
+                    }
                     if ((int) $message->sender_id === $studentId) {
                         $message->sender_id = 0;
                     }
@@ -227,10 +234,7 @@ class MessageController extends Controller
         }
 
         if (
-            !$user->hasRole('admin')
-            && $session->student_id !== $user->id
-            && $session->counselor_id !== $user->id
-            && !$isAssignedPeerCounselor
+            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -371,10 +375,7 @@ class MessageController extends Controller
         }
 
         if (
-            !$user->hasRole('admin')
-            && $session->student_id !== $user->id
-            && $session->counselor_id !== $user->id
-            && !$isAssignedPeerCounselor
+            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -420,10 +421,7 @@ class MessageController extends Controller
         }
 
         if (
-            !$user->hasRole('admin')
-            && $session->student_id !== $user->id
-            && $session->counselor_id !== $user->id
-            && !$isAssignedPeerCounselor
+            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -479,10 +477,7 @@ class MessageController extends Controller
         }
 
         if (
-            !$user->hasRole('admin')
-            && $session->student_id !== $user->id
-            && $session->counselor_id !== $user->id
-            && !$isAssignedPeerCounselor
+            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -612,6 +607,26 @@ class MessageController extends Controller
         }
 
         return Str::limit($trimmed, 80);
+    }
+
+    /**
+     * Compare participant ids numerically — DB drivers may return string IDs; strict PHP
+     * comparison with int user ids falsely denied counselors/students messaging access (403).
+     */
+    private function viewerCanAccessMessagingThread(
+        User $user,
+        CounselingSession $session,
+        bool $isAssignedPeerCounselor
+    ): bool {
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        $viewerId = (int) $user->id;
+
+        return (int) $session->student_id === $viewerId
+            || (int) $session->counselor_id === $viewerId
+            || $isAssignedPeerCounselor;
     }
 
     private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool

@@ -652,7 +652,7 @@ class SessionController extends Controller
         $session = CounselingSession::findOrFail($id);
         $user = $request->user();
 
-        if (!$user->hasRole('admin') && $session->counselor_id !== $user->id) {
+        if (!$user->hasRole('admin') && (int) $session->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -1337,13 +1337,13 @@ class SessionController extends Controller
         );
 
         if (SystemSettings::getBool('panic_alerts', true)) {
-            // Recipient set: approved counselors + approved peer counselors + all admins
-            // (admins always alerted regardless of `approved`).
+            // Professional counselors + admins — not peer counselors (student "need help"
+            // escalations route to clinic staff only).
             $recipientIds = User::query()
                 ->whereHas('roles', function ($query) {
                     $query->where(function ($inner) {
                         $inner->where(function ($scoped) {
-                            $scoped->whereIn('role', ['counselor', 'peer_counselor'])
+                            $scoped->where('role', 'counselor')
                                 ->where('approved', true);
                         })->orWhere('role', 'admin');
                     });
@@ -1352,9 +1352,13 @@ class SessionController extends Controller
                 ->unique()
                 ->values();
 
+            $peerCounselorId = (int) ($session->peer_counselor_id ?? 0);
             $emergencyMessage = $this->buildEmergencyMessage($session, $reason);
 
             foreach ($recipientIds as $recipientId) {
+                if ($peerCounselorId > 0 && (int) $recipientId === $peerCounselorId) {
+                    continue;
+                }
                 try {
                     $notification = Notification::query()->create([
                         'user_id' => (int) $recipientId,
@@ -1518,6 +1522,10 @@ class SessionController extends Controller
         if ($viewer) {
             $identityVisible = $this->canViewerSeeAnonymousIdentity($viewer, $session);
             $session->setAttribute('identity_visible_to_viewer', $identityVisible);
+            // Preserve the real student user id for E2E/chat routing when anonymous projection masks student_id to 0.
+            if ($session->is_anonymous) {
+                $session->setAttribute('chat_peer_student_id', (int) $session->student_id);
+            }
             $this->applyAnonymousProjection($session, $viewer, $identityVisible);
             $this->redactConfidentialNotesForViewer($session, $viewer);
         } else {
@@ -1535,6 +1543,9 @@ class SessionController extends Controller
         if ($viewer) {
             $identityVisible = $this->canViewerSeeAnonymousIdentity($viewer, $session);
             $session->setAttribute('identity_visible_to_viewer', $identityVisible);
+            if ($session->is_anonymous) {
+                $session->setAttribute('chat_peer_student_id', (int) $session->student_id);
+            }
             $this->applyAnonymousProjection($session, $viewer, $identityVisible);
             $this->redactConfidentialNotesForViewer($session, $viewer);
         } else {

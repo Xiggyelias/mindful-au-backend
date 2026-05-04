@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Message;
 use App\Models\CounselingSession;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
@@ -11,15 +12,27 @@ use Illuminate\Support\Str;
 
 class VoiceNotesController extends Controller
 {
+    private function viewerCanAccessVoiceThread(User $user, CounselingSession $session): bool
+    {
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+        $uid = (int) $user->id;
+        if ((int) $session->student_id === $uid || (int) $session->counselor_id === $uid) {
+            return true;
+        }
+
+        return $user->hasRole('peer_counselor')
+            && (int) $session->peer_counselor_id === $uid
+            && $session->assigned_role === 'peer_counselor';
+    }
+
     public function upload(Request $request, string $sessionId): JsonResponse
     {
         $session = CounselingSession::findOrFail($sessionId);
         $user = $request->user();
 
-        if (!$user->hasRole('admin') && 
-            $session->student_id !== $user->id && 
-            $session->counselor_id !== $user->id &&
-            $session->peer_counselor_id !== $user->id) {
+        if (!$this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -53,10 +66,7 @@ class VoiceNotesController extends Controller
         $user = $request->user();
 
         $session = $message->session;
-        if (!$user->hasRole('admin') && 
-            $session->student_id !== $user->id && 
-            $session->counselor_id !== $user->id &&
-            $session->peer_counselor_id !== $user->id) {
+        if (!$this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

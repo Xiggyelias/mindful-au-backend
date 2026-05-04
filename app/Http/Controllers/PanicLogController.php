@@ -91,14 +91,14 @@ class PanicLogController extends Controller
                 $locationDisplay
             );
 
-            // Recipient set: approved counselors + approved peer counselors + all admins
-            // (admins are auto-approved on creation but we don't filter on `approved` for
-            // them so a misconfiguration cannot silently mute admin alerts).
+            // Professional staff only — peer counselors are intentionally excluded so
+            // first-line peers are not alerted for crisis / panic workflows.
+            // Admins remain included even if misconfigured approval flags mute counselors.
             $recipientIds = User::query()
                 ->whereHas('roles', function ($query) {
                     $query->where(function ($inner) {
                         $inner->where(function ($scoped) {
-                            $scoped->whereIn('role', ['counselor', 'peer_counselor'])
+                            $scoped->where('role', 'counselor')
                                 ->where('approved', true);
                         })->orWhere('role', 'admin');
                     });

@@ -187,7 +187,7 @@ class AppointmentController extends Controller
         $appointment = Appointment::findOrFail($id);
         $user = $request->user();
 
-        if (!$user->hasRole('admin') && $appointment->counselor_id !== $user->id) {
+        if (!$user->hasRole('admin') && (int) $appointment->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

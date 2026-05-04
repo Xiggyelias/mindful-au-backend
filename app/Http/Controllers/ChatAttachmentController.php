@@ -52,10 +52,11 @@ class ChatAttachmentController extends Controller
             return response()->json(['message' => 'This anonymous session has expired.'], 410);
         }
 
+        $uid = (int) $user->id;
         if (
             !$user->hasRole('admin')
-            && $session->student_id !== $user->id
-            && $session->counselor_id !== $user->id
+            && (int) $session->student_id !== $uid
+            && (int) $session->counselor_id !== $uid
             && !$isAssignedPeerCounselor
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -168,12 +169,16 @@ class ChatAttachmentController extends Controller
     {
         $message = Message::findOrFail($messageId);
         $user = $request->user();
-        $session = $message->session;
+        $session = $message->session()->with(['student', 'counselor'])->first() ?? $message->session;
+        $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
+        $uid = (int) $user->id;
 
-        if (!$user->hasRole('admin') && 
-            $session->student_id !== $user->id && 
-            $session->counselor_id !== $user->id &&
-            $session->peer_counselor_id !== $user->id) {
+        if (
+            !$user->hasRole('admin')
+            && (int) $session->student_id !== $uid
+            && (int) $session->counselor_id !== $uid
+            && !$isAssignedPeerCounselor
+        ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

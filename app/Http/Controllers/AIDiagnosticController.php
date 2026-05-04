@@ -73,8 +73,9 @@ class AIDiagnosticController extends Controller
         $diagnostic = AiDiagnostic::with(['student', 'session'])->findOrFail($id);
         $user = $request->user();
 
-        $isOwnerStudent = $diagnostic->student_id === $user->id;
-        $isSessionCounselor = $diagnostic->session && $diagnostic->session->counselor_id === $user->id;
+        $uid = (int) $user->id;
+        $isOwnerStudent = (int) $diagnostic->student_id === $uid;
+        $isSessionCounselor = $diagnostic->session && (int) $diagnostic->session->counselor_id === $uid;
 
         if (!$user->hasRole('admin') && !$isOwnerStudent && !$isSessionCounselor) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -89,7 +90,7 @@ class AIDiagnosticController extends Controller
         $user = $request->user();
 
         // Only counselors and admins can trigger analysis
-        if (!$user->hasRole('admin') && $session->counselor_id !== $user->id) {
+        if (!$user->hasRole('admin') && (int) $session->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -108,7 +109,7 @@ class AIDiagnosticController extends Controller
                 }
 
                 return [
-                    'sender' => $msg->sender_id === $session->student_id ? 'student' : 'counselor',
+                    'sender' => (int) $msg->sender_id === (int) $session->student_id ? 'student' : 'counselor',
                     'content' => $content,
                 ];
             })
@@ -136,7 +137,7 @@ class AIDiagnosticController extends Controller
         $appointment = Appointment::findOrFail($appointmentId);
         $user = $request->user();
 
-        if (!$user->hasRole('admin') && $appointment->counselor_id !== $user->id) {
+        if (!$user->hasRole('admin') && (int) $appointment->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

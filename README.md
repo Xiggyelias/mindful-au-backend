@@ -2,7 +2,8 @@
 
 Laravel REST API for student, staff, peer counselor, and admin workflows, including secure chat attachments and appointment-gated call authorization.
 
-Full cross-repo manual: `../CMS_MANUAL.md`
+Full cross-repo manual: `../CMS_MANUAL.md`  
+If this repository sits next to `mindful-au-frontend` under a shared parent, see also `../README.md` for a workspace overview.
 
 ## Requirements
 
@@ -66,6 +67,18 @@ SECURITY_HSTS_PRELOAD=false
 - Notifications and admin management APIs
 - Daily wellness tip rotation, favorites, and in-app delivery tracking
 
+## Access control (IDs and roles)
+
+Database drivers may return numeric IDs as strings. Controllers that gate messaging, attachments, voice notes, and related session actions compare participants using **integer-normalized** user and session IDs so legitimate users are not denied with `403` by accident.
+
+**Peer counselors** only pass peer checks when they are the **assigned** peer on that thread: `peer_counselor_id` matches the viewer and `assigned_role` is `peer_counselor`. Admins retain full access where the route allows.
+
+## Crisis / panic alerts
+
+Panic logs and session panic escalation **notify approved professional counselors and admins**. **Peer counselors are not** included in that notification list, so crisis signals go to staff who can provide clinical follow-up.
+
+Related client copy should describe alerts as reaching **professional counselling staff**, not peer volunteers.
+
 ## Wellness Tips
 
 - Daily tip endpoint: `GET /api/wellness/tip`
@@ -108,7 +121,7 @@ Attachment rules:
 - Allowed document/image types: `jpg`, `jpeg`, `png`, `gif`, `pdf`, `docx`, `txt`
 - Allowed voice/audio types: `mp3`, `wav`, `webm`, `ogg`, `m4a`, `aac`
 - Executable uploads are rejected by extension and MIME validation
-- Peer-delegated sessions remain text-only by design
+- Optional guard: delegated peer threads can be restricted to text-only in `ChatAttachmentController` (disabled in the default codebase so peers can use the same upload rules as other participants unless you re-enable that check)
 
 Each uploaded file creates a `messages` row with `has_file = true` and a matching `chat_files` record linked by `message_id`.
 
