@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 class MentalHealthMlService
 {
     public const MODEL_VERSION = 'mindful-lightweight-ml-v1';
+    private const DEFAULT_ADMIN_ML_STUDENT_LIMIT = 2000;
+    private const MAX_TEXT_SIGNAL_ROWS = 20000;
 
     private const DISTRESS_TERMS = [
         'stress', 'stressed', 'anxious', 'anxiety', 'panic', 'overwhelmed',
@@ -320,6 +322,7 @@ class MentalHealthMlService
             ->whereHas('roles', function ($query) {
                 $query->where('role', 'student')->where('approved', true);
             })
+            ->limit($this->adminMlStudentLimit())
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
@@ -578,6 +581,7 @@ class MentalHealthMlService
             ->where('chat_messages.role', 'user')
             ->where('chat_messages.created_at', '>=', now()->subDays(30))
             ->orderBy('chat_messages.id')
+            ->limit(self::MAX_TEXT_SIGNAL_ROWS)
             ->get([
                 'chat_conversations.user_id as student_id',
                 'chat_messages.content',
@@ -625,6 +629,7 @@ class MentalHealthMlService
             ->where('messages.is_encrypted', false)
             ->where('messages.created_at', '>=', now()->subDays(30))
             ->orderBy('messages.id')
+            ->limit(self::MAX_TEXT_SIGNAL_ROWS)
             ->get([
                 'counseling_sessions.student_id',
                 'messages.content',
@@ -1304,5 +1309,11 @@ class MentalHealthMlService
                 'auditability' => 'Feature-derived scores with explicit thresholds and explainable match reasons.',
             ],
         ];
+    }
+
+    private function adminMlStudentLimit(): int
+    {
+        $limit = (int) config('services.ai.admin_ml_student_limit', self::DEFAULT_ADMIN_ML_STUDENT_LIMIT);
+        return max(100, min(10000, $limit));
     }
 }

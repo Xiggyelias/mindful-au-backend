@@ -84,21 +84,15 @@ class MlInsightsController extends Controller
         $windowStart = now()->subDay();
         $modelVersion = MentalHealthMlService::MODEL_VERSION;
 
-        $wellnessConversationIds = DB::table('chat_conversations')
-            ->where('model', 'wellness-assistant-v1')
-            ->pluck('id')
+        $assistantMessageIds = DB::table('chat_messages')
+            ->join('chat_conversations', 'chat_messages.conversation_id', '=', 'chat_conversations.id')
+            ->where('chat_conversations.model', 'wellness-assistant-v1')
+            ->where('chat_messages.role', 'assistant')
+            ->where('chat_messages.created_at', '>=', $windowStart)
+            ->limit(5000)
+            ->pluck('chat_messages.id')
             ->map(fn ($id) => (int) $id)
             ->all();
-
-        $assistantMessageIds = empty($wellnessConversationIds)
-            ? []
-            : DB::table('chat_messages')
-                ->whereIn('conversation_id', $wellnessConversationIds)
-                ->where('role', 'assistant')
-                ->where('created_at', '>=', $windowStart)
-                ->pluck('id')
-                ->map(fn ($id) => (int) $id)
-                ->all();
 
         $providerModes = [];
         $providerNames = [];

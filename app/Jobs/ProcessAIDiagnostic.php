@@ -15,6 +15,10 @@ class ProcessAIDiagnostic implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public int $tries = 3;
+    public int $timeout = 90;
+    public int $backoff = 60;
+
     public $session;
     public $messages;
 
@@ -43,8 +47,13 @@ class ProcessAIDiagnostic implements ShouldQueue
                     ]);
                 }
             }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('AI Diagnostic processing failed: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('AI Diagnostic processing failed.', [
+                'exception' => $e::class,
+                'session_id' => $this->session?->id ?? null,
+            ]);
+
+            throw $e;
         }
     }
 }

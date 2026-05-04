@@ -12,6 +12,8 @@ class Appointment extends Model
     protected $fillable = [
         'student_id',
         'counselor_id',
+        'is_anonymous',
+        'anonymous_id',
         'scheduled_at',
         'duration_minutes',
         'status',
@@ -21,6 +23,7 @@ class Appointment extends Model
 
     protected $casts = [
         'scheduled_at' => 'datetime',
+        'is_anonymous' => 'boolean',
     ];
 
     public function student()

@@ -15,6 +15,8 @@ class OpenRouterService
 {
     private const FALLBACK_MODEL = 'mindful/offline-assistant-v1';
     private const FALLBACK_RESPONSE = 'I am currently using local support mode. Share one specific concern, and I can suggest a short coping plan while you connect with a counselor.';
+    private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8;
+    private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
 
     private Client $client;
     private string $apiKey;
@@ -35,7 +37,8 @@ class OpenRouterService
                 'HTTP-Referer' => (string) config('services.openrouter.site_url', 'http://localhost'),
                 'X-Title' => (string) config('services.openrouter.site_name', 'AI Chat'),
             ],
-            'timeout' => 60,
+            'timeout' => $this->providerTimeoutSeconds(),
+            'connect_timeout' => $this->providerConnectTimeoutSeconds(),
         ]);
     }
 
@@ -426,6 +429,18 @@ class OpenRouterService
     private function hasConfiguredApiKey(): bool
     {
         return trim($this->apiKey) !== '';
+    }
+
+    private function providerTimeoutSeconds(): int
+    {
+        $timeout = (int) config('services.ai.provider_timeout_seconds', self::DEFAULT_PROVIDER_TIMEOUT_SECONDS);
+        return max(3, min(30, $timeout));
+    }
+
+    private function providerConnectTimeoutSeconds(): int
+    {
+        $timeout = (int) config('services.ai.provider_connect_timeout_seconds', self::DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS);
+        return max(1, min(10, $timeout));
     }
 
     private function fallbackResult(array $messages, string $requestedModel, ?int $conversationId, string $reason): array

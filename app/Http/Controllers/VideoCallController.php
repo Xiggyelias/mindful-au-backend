@@ -11,7 +11,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use App\Models\User;
 
 class VideoCallController extends Controller
 {
@@ -57,6 +56,7 @@ class VideoCallController extends Controller
                 ->where('student_id', $appointment->student_id)
                 ->where('counselor_id', $appointment->counselor_id)
                 ->where('session_type', 'video')
+                ->where('is_anonymous', (bool) $appointment->is_anonymous)
                 ->whereIn('status', ['pending', 'active'])
                 ->where('created_at', '>=', now()->subDay())
                 ->lockForUpdate()
@@ -64,10 +64,7 @@ class VideoCallController extends Controller
                 ->first();
 
             if (!$session) {
-                $isAnonymous = (bool) (User::query()
-                    ->whereKey($appointment->student_id)
-                    ->with('profile:id,user_id,anonymous_mode')
-                    ->first()?->profile?->anonymous_mode ?? false);
+                $isAnonymous = (bool) $appointment->is_anonymous;
                 $session = CounselingSession::create([
                     'student_id' => $appointment->student_id,
                     'counselor_id' => $appointment->counselor_id,
@@ -77,7 +74,7 @@ class VideoCallController extends Controller
                     'notes' => "Video appointment #{$appointment->id}",
                     'is_anonymous' => $isAnonymous,
                     'anonymous_id' => $isAnonymous
-                        ? ('User_' . str_pad((string) ((int) $appointment->student_id % 10000), 4, '0', STR_PAD_LEFT))
+                        ? ($appointment->anonymous_id ?: 'User_' . str_pad((string) ((int) $appointment->id % 10000), 4, '0', STR_PAD_LEFT))
                         : null,
                 ]);
             } elseif ($session->status !== 'active') {

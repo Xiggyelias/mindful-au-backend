@@ -95,18 +95,31 @@ class AIDiagnosticController extends Controller
 
         // Get messages from session
         $messages = Message::where('session_id', $sessionId)
+            ->where(function ($query) {
+                $query->where('is_encrypted', false)
+                    ->orWhereNull('is_encrypted');
+            })
             ->orderBy('created_at')
             ->get()
             ->map(function($msg) use ($session) {
+                $content = trim((string) ($msg->content ?? ''));
+                if ($content === '') {
+                    return null;
+                }
+
                 return [
                     'sender' => $msg->sender_id === $session->student_id ? 'student' : 'counselor',
-                    'content' => $msg->content,
+                    'content' => $content,
                 ];
             })
+            ->filter()
+            ->values()
             ->toArray();
 
         if (empty($messages)) {
-            return response()->json(['message' => 'No messages found in session'], 400);
+            return response()->json([
+                'message' => 'No plain-text messages are available for AI analysis. Encrypted conversations are not sent to diagnostics.',
+            ], 400);
         }
 
         // Dispatch job to process AI diagnostic

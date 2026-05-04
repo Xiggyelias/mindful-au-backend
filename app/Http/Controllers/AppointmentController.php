@@ -99,6 +99,7 @@ class AppointmentController extends Controller
             'scheduled_at' => 'required|date|after:now',
             'duration_minutes' => 'sometimes|integer|min:15|max:120',
             'notes' => 'sometimes|nullable|string|max:2000',
+            'is_anonymous' => 'sometimes|boolean',
         ]);
 
         if (!$this->isApprovedCounselor((int) $validated['counselor_id'])) {
@@ -114,12 +115,15 @@ class AppointmentController extends Controller
         $proposedEnd = (clone $proposedStart)->addMinutes($durationMinutes);
         $studentId = (int) $request->user()->id;
         $counselorId = (int) $validated['counselor_id'];
+        $isAnonymous = array_key_exists('is_anonymous', $validated)
+            ? (bool) $validated['is_anonymous']
+            : (bool) ($request->user()->profile?->anonymous_mode ?? false);
 
         $appointment = $this->withBookingLocks(
             $studentId,
             $counselorId,
-            function () use ($validated, $durationMinutes, $proposedStart, $proposedEnd, $studentId, $counselorId) {
-                return DB::transaction(function () use ($validated, $durationMinutes, $proposedStart, $proposedEnd, $studentId, $counselorId) {
+            function () use ($validated, $durationMinutes, $proposedStart, $proposedEnd, $studentId, $counselorId, $isAnonymous) {
+                return DB::transaction(function () use ($validated, $durationMinutes, $proposedStart, $proposedEnd, $studentId, $counselorId, $isAnonymous) {
                     // Keep row locks to ensure overlap checks are consistent for rows already present.
                     $candidateAppointments = Appointment::query()
                         ->whereIn('status', ['scheduled', 'confirmed'])
@@ -159,6 +163,8 @@ class AppointmentController extends Controller
                     return Appointment::query()->create([
                         'student_id' => $studentId,
                         'counselor_id' => $counselorId,
+                        'is_anonymous' => $isAnonymous,
+                        'anonymous_id' => $isAnonymous ? $this->generateAnonymousId() : null,
                         'scheduled_at' => $proposedStart,
                         'duration_minutes' => $durationMinutes,
                         'notes' => $validated['notes'] ?? null,
@@ -171,6 +177,7 @@ class AppointmentController extends Controller
         $appointment->load(['student.profile', 'counselor.profile']);
         $this->notifyCounselorOnAppointmentCreated($appointment);
         $this->flushDashboardCaches();
+        $this->applyAnonymousAppointmentProjection($appointment, $request->user());
 
         return response()->json($appointment, 201);
     }
@@ -208,6 +215,7 @@ class AppointmentController extends Controller
         }
 
         $this->flushDashboardCaches();
+        $this->applyAnonymousAppointmentProjection($appointment, $user);
 
         return response()->json($appointment);
     }
@@ -453,16 +461,21 @@ class AppointmentController extends Controller
 
     private function applyAnonymousAppointmentProjection(Appointment $appointment, User $viewer): void
     {
-        $isAnonymousStudent = (bool) ($appointment->student?->profile?->anonymous_mode ?? false);
-        if (!$isAnonymousStudent) {
+        if (!$appointment->is_anonymous) {
+            $appointment->setAttribute('identity_visible_to_viewer', true);
             return;
         }
 
         $isStudentViewer = (int) $appointment->student_id === (int) $viewer->id;
         $isAdminViewer = $viewer->hasRole('admin');
         if ($isStudentViewer || $isAdminViewer) {
+            $appointment->setAttribute('identity_visible_to_viewer', true);
             return;
         }
+
+        $appointment->setAttribute('student_id', 0);
+        $appointment->setAttribute('identity_visible_to_viewer', false);
+        $appointment->setAttribute('identity_masked', true);
 
         if ($appointment->relationLoaded('student') && $appointment->student) {
             $appointment->student->setAttribute('id', 0);
@@ -478,17 +491,31 @@ class AppointmentController extends Controller
 
     private function resolveAppointmentStudentAlias(Appointment $appointment): string
     {
-        return 'User_' . str_pad((string) ((int) $appointment->student_id % 10000), 4, '0', STR_PAD_LEFT);
+        $value = trim((string) ($appointment->anonymous_id ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+
+        return 'User_' . str_pad((string) ((int) $appointment->id % 10000), 4, '0', STR_PAD_LEFT);
     }
 
     private function resolveAppointmentStudentLabel(Appointment $appointment): string
     {
-        if ((bool) ($appointment->student?->profile?->anonymous_mode ?? false)) {
+        if ($appointment->is_anonymous) {
             return $this->resolveAppointmentStudentAlias($appointment);
         }
 
         return optional($appointment->student?->profile)->full_name
             ?: ($appointment->student?->email ? Str::before($appointment->student?->email, '@') : 'A student');
+    }
+
+    private function generateAnonymousId(): string
+    {
+        do {
+            $candidate = 'User_' . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+        } while (Appointment::query()->where('anonymous_id', $candidate)->exists());
+
+        return $candidate;
     }
 }
 

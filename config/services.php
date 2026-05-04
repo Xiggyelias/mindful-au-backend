@@ -49,4 +49,11 @@ return [
         'site_url' => env('OPENROUTER_SITE_URL', 'https://mindful-au.local'),
         'site_name' => env('OPENROUTER_SITE_NAME', 'Mindful AU'),
     ],
+
+    'ai' => [
+        'provider_timeout_seconds' => env('AI_PROVIDER_TIMEOUT_SECONDS', 8),
+        'provider_connect_timeout_seconds' => env('AI_PROVIDER_CONNECT_TIMEOUT_SECONDS', 5),
+        'external_diagnostics_enabled' => env('AI_EXTERNAL_DIAGNOSTICS_ENABLED', false),
+        'admin_ml_student_limit' => env('AI_ADMIN_ML_STUDENT_LIMIT', 2000),
+    ],
 ];

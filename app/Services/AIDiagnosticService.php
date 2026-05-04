@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Log;
 
 class AIDiagnosticService
 {
+    private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8;
+    private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
+
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService
     ) {
@@ -21,11 +24,13 @@ class AIDiagnosticService
         $promptContext = $this->mentalHealthMlService->buildPromptSafeStudentContext((int) $session->student_id);
         $localAnalysis = $this->analyzeLocally($conversationText);
         
-        // Try providers in order
-        $analysis = $this->analyzeWithOpenRouter($conversationText, $promptContext)
-            ?? $this->analyzeWithGemini($conversationText, $promptContext) 
-            ?? $this->analyzeWithEcoBot($conversationText)
-            ?? $localAnalysis;
+        $analysis = $localAnalysis;
+        if ($this->externalDiagnosticsEnabled()) {
+            $analysis = $this->analyzeWithOpenRouter($conversationText, $promptContext)
+                ?? $this->analyzeWithGemini($conversationText, $promptContext)
+                ?? $this->analyzeWithEcoBot($conversationText)
+                ?? $localAnalysis;
+        }
 
         if (!$analysis) {
             throw new \RuntimeException('AI provider unavailable for session diagnostics.');
@@ -81,7 +86,7 @@ class AIDiagnosticService
 
         try {
             $prompt = $this->buildDiagnosticPrompt($text, $context);
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $apiKey,
                     'Content-Type' => 'application/json',
@@ -137,7 +142,7 @@ class AIDiagnosticService
                 \"recommendations\": \"...\"
             }";
 
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $apiKey,
                     'Content-Type' => 'application/json',
@@ -196,7 +201,7 @@ class AIDiagnosticService
                 \"recommendations\": \"...\"
             }";
 
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->post(
                 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' . $apiKey,
                 [
@@ -234,7 +239,7 @@ class AIDiagnosticService
         }
 
         try {
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
                 ->post($endpoint . '/analyze', [
                     'text' => $prompt,
@@ -272,7 +277,7 @@ class AIDiagnosticService
         }
 
         try {
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->post(
                 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' . $apiKey,
                 [
@@ -302,7 +307,7 @@ class AIDiagnosticService
         }
 
         try {
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
                 ->post($endpoint . '/analyze', [
                     'text' => $text,
@@ -568,5 +573,28 @@ class AIDiagnosticService
         Log::error($message, [
             'exception' => $e::class,
         ]);
+    }
+
+    private function externalDiagnosticsEnabled(): bool
+    {
+        return (bool) config('services.ai.external_diagnostics_enabled', false);
+    }
+
+    private function providerHttp(): \Illuminate\Http\Client\PendingRequest
+    {
+        return Http::connectTimeout($this->providerConnectTimeoutSeconds())
+            ->timeout($this->providerTimeoutSeconds());
+    }
+
+    private function providerTimeoutSeconds(): int
+    {
+        $timeout = (int) config('services.ai.provider_timeout_seconds', self::DEFAULT_PROVIDER_TIMEOUT_SECONDS);
+        return max(3, min(30, $timeout));
+    }
+
+    private function providerConnectTimeoutSeconds(): int
+    {
+        $timeout = (int) config('services.ai.provider_connect_timeout_seconds', self::DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS);
+        return max(1, min(10, $timeout));
     }
 }

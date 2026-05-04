@@ -16,6 +16,8 @@ class AIWellnessChatController extends Controller
     private const WELLNESS_MODEL = 'wellness-assistant-v1';
     private const CONTEXT_WINDOW_MESSAGES = 10;
     private const HISTORY_LIMIT_MESSAGES = 100;
+    private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8;
+    private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
 
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService
@@ -441,7 +443,7 @@ Important guidelines:
 
             $baseUrl = config('services.kwaipilot.base_url', 'https://api.kwaipilot.com/v1');
 
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $apiKey,
                     'Content-Type' => 'application/json',
@@ -482,7 +484,7 @@ Important guidelines:
 
             $baseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
 
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $apiKey,
                     'Content-Type' => 'application/json',
@@ -562,7 +564,7 @@ Important guidelines:
                     $apiKey
                 );
 
-                $response = Http::timeout(30)->post($endpoint, $payload);
+                $response = $this->providerHttp()->post($endpoint, $payload);
 
                 if ($response->successful()) {
                     $content = $response->json();
@@ -613,7 +615,7 @@ Important guidelines:
         }
 
         try {
-            $response = Http::timeout(30)
+            $response = $this->providerHttp()
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $apiKey,
                     'Content-Type' => 'application/json',
@@ -1093,6 +1095,24 @@ Important guidelines:
         }
 
         return preg_match('/<\s*script\b/i', $value) === 1;
+    }
+
+    private function providerHttp(): \Illuminate\Http\Client\PendingRequest
+    {
+        return Http::connectTimeout($this->providerConnectTimeoutSeconds())
+            ->timeout($this->providerTimeoutSeconds());
+    }
+
+    private function providerTimeoutSeconds(): int
+    {
+        $timeout = (int) config('services.ai.provider_timeout_seconds', self::DEFAULT_PROVIDER_TIMEOUT_SECONDS);
+        return max(3, min(30, $timeout));
+    }
+
+    private function providerConnectTimeoutSeconds(): int
+    {
+        $timeout = (int) config('services.ai.provider_connect_timeout_seconds', self::DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS);
+        return max(1, min(10, $timeout));
     }
 }
 
