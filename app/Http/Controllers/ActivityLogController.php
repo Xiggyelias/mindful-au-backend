@@ -105,4 +105,56 @@ class ActivityLogController extends Controller
 
         return response()->json($stats);
     }
+
+    /**
+     * Live tail endpoint: returns logs newer than `since_id` (or last `limit`
+     * when not provided). Designed to be polled by the admin UI.
+     */
+    public function stream(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (!$user->hasRole('admin')) {
+            return response()->json(['message' => 'Admin access required'], 403);
+        }
+
+        $validated = $request->validate([
+            'since_id' => 'sometimes|integer|min:0',
+            'limit' => 'sometimes|integer|min:1|max:200',
+        ]);
+
+        $sinceId = (int) ($validated['since_id'] ?? 0);
+        $limit = (int) ($validated['limit'] ?? 50);
+
+        $query = ActivityLog::with('user.profile')
+            ->orderBy('id', 'desc')
+            ->limit($limit);
+
+        if ($sinceId > 0) {
+            $query->where('id', '>', $sinceId);
+        }
+
+        $logs = $query->get()->reverse()->values();
+
+        $transformed = $logs->map(function ($log) {
+            return [
+                'id' => $log->id,
+                'timestamp' => $log->created_at->format('Y-m-d H:i:s'),
+                'action' => $log->action,
+                'description' => $log->description,
+                'user' => $log->user?->profile?->full_name ?? $log->user?->email ?? 'System',
+                'type' => $log->type,
+                'ip_address' => $log->ip_address,
+                'metadata' => $log->metadata,
+            ];
+        })->values()->all();
+
+        $latestId = $logs->isNotEmpty() ? (int) $logs->last()['id'] : $sinceId;
+
+        return response()->json([
+            'logs' => $transformed,
+            'last_id' => $latestId,
+            'count' => count($transformed),
+        ]);
+    }
 }

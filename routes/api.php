@@ -103,6 +103,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
 
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications', [NotificationController::class, 'store'])->middleware('admin');
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 
@@ -206,4 +207,22 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/ai-reports/{id}', [\App\Http\Controllers\AIReportController::class, 'show'])->middleware('admin');
     Route::post('/ai-reports/generate', [\App\Http\Controllers\AIReportController::class, 'generate'])->middleware('admin');
     Route::delete('/ai-reports/{id}', [\App\Http\Controllers\AIReportController::class, 'destroy'])->middleware('admin');
+
+    // Academic Risk Integrations (Admin only - read endpoints)
+    Route::get('/integrations/academic-risk/events', [AcademicRiskWebhookController::class, 'events'])->middleware('admin');
+    Route::get('/integrations/academic-risk/runs', [AcademicRiskWebhookController::class, 'runs'])->middleware('admin');
+
+    // OpenRouter AI Chat (authenticated users)
+    Route::post('/openrouter/chat', [OpenRouterChatController::class, 'sendMessage'])->middleware('throttle:ai-chat');
+    Route::post('/openrouter/stream', [OpenRouterChatController::class, 'streamMessage'])->middleware('throttle:ai-chat');
+    Route::post('/openrouter/simple-chat', [OpenRouterChatController::class, 'simpleChat'])->middleware('throttle:ai-chat');
+    Route::get('/openrouter/models', [OpenRouterChatController::class, 'getModels'])->middleware('throttle:ai-read');
+    Route::get('/openrouter/conversations', [OpenRouterChatController::class, 'getConversations'])->middleware('throttle:ai-read');
+    Route::post('/openrouter/conversations', [OpenRouterChatController::class, 'createConversation'])->middleware('throttle:ai-chat');
+    Route::get('/openrouter/conversations/{conversationId}', [OpenRouterChatController::class, 'getConversationMessages'])
+        ->whereNumber('conversationId')
+        ->middleware('throttle:ai-read');
+    Route::delete('/openrouter/conversations/{conversationId}', [OpenRouterChatController::class, 'deleteConversation'])
+        ->whereNumber('conversationId')
+        ->middleware('throttle:ai-chat');
 });

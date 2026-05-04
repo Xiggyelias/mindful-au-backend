@@ -1337,19 +1337,57 @@ class SessionController extends Controller
         );
 
         if (SystemSettings::getBool('panic_alerts', true)) {
-            $recipients = User::query()
+            // Recipient set: approved counselors + approved peer counselors + all admins
+            // (admins always alerted regardless of `approved`).
+            $recipientIds = User::query()
                 ->whereHas('roles', function ($query) {
-                    $query->whereIn('role', ['counselor', 'admin'])->where('approved', true);
+                    $query->where(function ($inner) {
+                        $inner->where(function ($scoped) {
+                            $scoped->whereIn('role', ['counselor', 'peer_counselor'])
+                                ->where('approved', true);
+                        })->orWhere('role', 'admin');
+                    });
                 })
-                ->get(['id']);
+                ->pluck('id')
+                ->unique()
+                ->values();
 
-            foreach ($recipients as $recipient) {
-                Notification::query()->create([
-                    'user_id' => $recipient->id,
-                    'title' => 'Emergency escalation',
-                    'message' => $this->buildEmergencyMessage($session, $reason),
-                    'type' => 'panic',
-                ]);
+            $emergencyMessage = $this->buildEmergencyMessage($session, $reason);
+
+            foreach ($recipientIds as $recipientId) {
+                try {
+                    $notification = Notification::query()->create([
+                        'user_id' => (int) $recipientId,
+                        'title' => 'Emergency escalation',
+                        'message' => $emergencyMessage,
+                        'type' => 'panic',
+                        'read' => false,
+                    ]);
+
+                    try {
+                        event(new \App\Events\NotificationCreated($notification));
+                    } catch (\Throwable $broadcastException) {
+                        \Illuminate\Support\Facades\Log::warning(
+                            'Session panic notification broadcast failed',
+                            [
+                                'session_id' => $session->id,
+                                'panic_log_id' => $panicLog->id,
+                                'recipient_id' => (int) $recipientId,
+                                'error' => $broadcastException->getMessage(),
+                            ]
+                        );
+                    }
+                } catch (\Throwable $createException) {
+                    \Illuminate\Support\Facades\Log::error(
+                        'Failed to create session panic notification',
+                        [
+                            'session_id' => $session->id,
+                            'panic_log_id' => $panicLog->id,
+                            'recipient_id' => (int) $recipientId,
+                            'error' => $createException->getMessage(),
+                        ]
+                    );
+                }
             }
         }
 

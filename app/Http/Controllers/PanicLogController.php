@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\PanicLog;
+use App\Events\NotificationCreated;
 use App\Models\Notification;
+use App\Models\PanicLog;
+use App\Models\User;
 use App\Support\SystemSettings;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class PanicLogController extends Controller
 {
@@ -17,8 +20,12 @@ class PanicLogController extends Controller
 
         if ($user->hasRole('student')) {
             $query->where('student_id', $user->id);
-        } elseif ($user->hasRole('counselor') || $user->hasRole('admin')) {
-            // Counselors and admins can see all panic logs
+        } elseif (
+            $user->hasRole('counselor')
+            || $user->hasRole('admin')
+            || $user->hasRole('peer_counselor')
+        ) {
+            // Counselors, admins and peer counselors can see all panic logs.
         } else {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -36,52 +43,126 @@ class PanicLogController extends Controller
 
         $validated = $request->validate([
             'location' => 'nullable|string',
+            'session_id' => 'nullable|integer|exists:counseling_sessions,id',
+            'notes' => 'nullable|string|max:2000',
         ]);
+
+        // Combine optional notes / session reference into the location field so
+        // they aren't silently dropped (PanicLog has no dedicated columns for
+        // these yet). If/when columns are added, callers can use them directly.
+        $locationParts = [];
+        if (!empty($validated['location'])) {
+            $locationParts[] = $validated['location'];
+        }
+        if (!empty($validated['session_id'])) {
+            $locationParts[] = 'session:' . $validated['session_id'];
+        }
+        if (!empty($validated['notes'])) {
+            $locationParts[] = 'notes: ' . $validated['notes'];
+        }
+        $combinedLocation = $locationParts !== [] ? implode(' | ', $locationParts) : null;
 
         $panicLog = PanicLog::create([
             'student_id' => $request->user()->id,
-            'location' => $validated['location'] ?? null,
+            'location' => $combinedLocation,
             'resolved' => false,
         ]);
 
+        $recipientsNotified = 0;
+        $recipientsFailed = 0;
+
         if (SystemSettings::getBool('panic_alerts', true)) {
-            $user = $request->user();
-            $user->loadMissing('profile');
-            $studentName = $user->profile?->full_name ?? $user->email;
-            $rawLocation = $validated['location'] ?? null;
-            
+            $student = $request->user();
+            $student->loadMissing('profile');
+            $studentName = $student->profile?->full_name ?? $student->email ?? ('Student #' . $student->id);
+
             $locationDisplay = 'Location not provided';
-            if ($rawLocation) {
-                // If it looks like coordinates (lat, lng), provide a map link in the message if possible
-                // or just keep it as a clear string for the counselor to see.
-                $locationDisplay = $rawLocation;
-                if (preg_match('/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/', $rawLocation)) {
-                    $locationDisplay .= " (https://www.google.com/maps/search/?api=1&query=" . urlencode($rawLocation) . ")";
+            if ($combinedLocation) {
+                $locationDisplay = $combinedLocation;
+                if (preg_match('/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/', trim($combinedLocation))) {
+                    $locationDisplay .= ' (https://www.google.com/maps/search/?api=1&query='
+                        . urlencode(trim($combinedLocation)) . ')';
                 }
             }
 
             $alertMessage = sprintf(
-                "EMERGENCY: %s triggered the panic button. Location: %s. Please respond immediately.",
+                'EMERGENCY: %s triggered the panic button. Location: %s. Please respond immediately.',
                 $studentName,
                 $locationDisplay
             );
 
-            // Create notifications for all approved counselors and admins.
-            $counselors = \App\Models\User::whereHas('roles', function($query) {
-                $query->whereIn('role', ['counselor', 'admin'])->where('approved', true);
-            })->get();
+            // Recipient set: approved counselors + approved peer counselors + all admins
+            // (admins are auto-approved on creation but we don't filter on `approved` for
+            // them so a misconfiguration cannot silently mute admin alerts).
+            $recipientIds = User::query()
+                ->whereHas('roles', function ($query) {
+                    $query->where(function ($inner) {
+                        $inner->where(function ($scoped) {
+                            $scoped->whereIn('role', ['counselor', 'peer_counselor'])
+                                ->where('approved', true);
+                        })->orWhere('role', 'admin');
+                    });
+                })
+                ->pluck('id')
+                ->unique()
+                ->values();
 
-            foreach ($counselors as $counselor) {
-                Notification::create([
-                    'user_id' => $counselor->id,
-                    'title' => 'Panic Button Triggered!',
-                    'message' => $alertMessage,
-                    'type' => 'panic',
-                ]);
+            foreach ($recipientIds as $recipientId) {
+                try {
+                    $notification = Notification::create([
+                        'user_id' => (int) $recipientId,
+                        'title' => 'Panic Button Triggered!',
+                        'message' => $alertMessage,
+                        'type' => 'panic',
+                        'read' => false,
+                    ]);
+
+                    // Real-time push so dashboards/toasts update without waiting
+                    // for the 15-second polling interval.
+                    try {
+                        event(new NotificationCreated($notification));
+                    } catch (\Throwable $broadcastException) {
+                        // Broadcasting can fail if the broadcaster is misconfigured
+                        // (e.g. no Pusher / Reverb in dev). The DB notification is
+                        // already persisted, so polling will still surface it.
+                        Log::warning('Panic notification broadcast failed', [
+                            'panic_log_id' => $panicLog->id,
+                            'recipient_id' => (int) $recipientId,
+                            'error' => $broadcastException->getMessage(),
+                        ]);
+                    }
+
+                    $recipientsNotified++;
+                } catch (\Throwable $createException) {
+                    $recipientsFailed++;
+                    Log::error('Failed to create panic notification', [
+                        'panic_log_id' => $panicLog->id,
+                        'recipient_id' => (int) $recipientId,
+                        'error' => $createException->getMessage(),
+                    ]);
+                }
             }
+
+            Log::info('Panic alert dispatched', [
+                'panic_log_id' => $panicLog->id,
+                'student_id' => $student->id,
+                'recipients_notified' => $recipientsNotified,
+                'recipients_failed' => $recipientsFailed,
+                'has_location' => $combinedLocation !== null,
+            ]);
+        } else {
+            Log::warning('Panic alert created but panic_alerts setting is disabled', [
+                'panic_log_id' => $panicLog->id,
+                'student_id' => $request->user()->id,
+            ]);
         }
 
-        return response()->json($panicLog, 201);
+        return response()->json([
+            'panic_log' => $panicLog,
+            'recipients_notified' => $recipientsNotified,
+            'recipients_failed' => $recipientsFailed,
+            'alerts_enabled' => SystemSettings::getBool('panic_alerts', true),
+        ], 201);
     }
 
     public function update(Request $request, string $id): JsonResponse

@@ -9,6 +9,15 @@ class Message extends Model
 {
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::created(function (self $message): void {
+            CounselingSession::query()->whereKey((int) $message->session_id)->update([
+                'updated_at' => now(),
+            ]);
+        });
+    }
+
     protected $fillable = [
         'session_id',
         'sender_id',

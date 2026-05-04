@@ -137,6 +137,7 @@ class VideoCallController extends Controller
                 ->where('student_id', $lockedAppointment->student_id)
                 ->where('counselor_id', $lockedAppointment->counselor_id)
                 ->where('session_type', 'video')
+                ->where('is_anonymous', (bool) $lockedAppointment->is_anonymous)
                 ->whereIn('status', ['pending', 'active'])
                 ->lockForUpdate()
                 ->latest('id')
@@ -151,7 +152,7 @@ class VideoCallController extends Controller
                     'ended_at' => now(),
                 ]);
 
-                if ($this->shouldMarkAppointmentCompleted($lockedAppointment, $session->fresh())) {
+                if ($this->shouldMarkAppointmentCompleted($lockedAppointment, $session->fresh(), true)) {
                     $lockedAppointment->update([
                         'status' => 'completed',
                     ]);
@@ -170,10 +171,11 @@ class VideoCallController extends Controller
                 ->where('student_id', $lockedAppointment->student_id)
                 ->where('counselor_id', $lockedAppointment->counselor_id)
                 ->where('session_type', 'video')
+                ->where('is_anonymous', (bool) $lockedAppointment->is_anonymous)
                 ->latest('id')
                 ->first();
 
-            if ($this->shouldMarkAppointmentCompleted($lockedAppointment, $latestSession)) {
+            if ($this->shouldMarkAppointmentCompleted($lockedAppointment, $latestSession, false)) {
                 $lockedAppointment->update([
                     'status' => 'completed',
                 ]);
@@ -216,7 +218,8 @@ class VideoCallController extends Controller
 
     private function shouldMarkAppointmentCompleted(
         Appointment $appointment,
-        ?CounselingSession $session
+        ?CounselingSession $session,
+        bool $allowInferenceWithoutAppointmentNote = false
     ): bool {
         if (!$session) {
             return false;
@@ -230,16 +233,72 @@ class VideoCallController extends Controller
             return false;
         }
 
+        if (!$this->counselingSessionMatchesAppointmentParticipants($appointment, $session)) {
+            return false;
+        }
+
         if (!$session->started_at && !$session->ended_at) {
             return false;
         }
 
         $sessionNotes = trim((string) ($session->notes ?? ''));
-        if ($sessionNotes !== '') {
-            return Str::contains($sessionNotes, "Video appointment #{$appointment->id}");
+
+        if ($this->counselingSessionNotesReferenceAppointment($appointment, $sessionNotes)) {
+            return true;
+        }
+
+        if (!$allowInferenceWithoutAppointmentNote) {
+            return false;
+        }
+
+        if ($sessionNotes !== '' && $this->counselingSessionNotesExplicitlyReferToAnotherAppointmentId($appointment, $sessionNotes)) {
+            return false;
         }
 
         return true;
+    }
+
+    private function counselingSessionMatchesAppointmentParticipants(
+        Appointment $appointment,
+        CounselingSession $session
+    ): bool {
+        return (int) $session->student_id === (int) $appointment->student_id
+            && (int) $session->counselor_id === (int) $appointment->counselor_id
+            && (string) $session->session_type === 'video'
+            && (bool) $session->is_anonymous === (bool) $appointment->is_anonymous;
+    }
+
+    private function counselingSessionNotesReferenceAppointment(Appointment $appointment, string $sessionNotes): bool
+    {
+        if ($sessionNotes === '') {
+            return false;
+        }
+
+        $id = (int) $appointment->id;
+        $idPattern = preg_quote((string) $id, '/');
+
+        return (bool) preg_match('/video\s+appointment\s*#\s*' . $idPattern . '(?!\d)/iu', $sessionNotes)
+            || (bool) preg_match('/appointment\s*#\s*' . $idPattern . '(?!\d)/iu', $sessionNotes);
+    }
+
+    private function counselingSessionNotesExplicitlyReferToAnotherAppointmentId(
+        Appointment $appointment,
+        string $sessionNotes
+    ): bool {
+        $myId = (int) $appointment->id;
+        $pattern = '/(?:video\s+)?appointment\s*#\s*(\d+)(?!\d)/iu';
+
+        if (!preg_match_all($pattern, $sessionNotes, $matches)) {
+            return false;
+        }
+
+        foreach ($matches[1] as $digits) {
+            if ((int) $digits !== $myId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function normalizeDurationMinutes(?int $durationMinutes): int
