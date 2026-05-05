@@ -98,6 +98,19 @@ class DiagnosticController extends Controller
             $scoreData['category_scores']
         );
 
+        if (! empty($scoreData['counselor_summary'])) {
+            $recommendations['counselor_summary'] = $scoreData['counselor_summary'];
+        }
+        if (! empty($scoreData['focus_areas'])) {
+            $recommendations['focus_areas'] = $scoreData['focus_areas'];
+        }
+        if (! empty($scoreData['risk_flags'])) {
+            $recommendations['risk_flags'] = $scoreData['risk_flags'];
+        }
+        if (! empty($scoreData['scoring_model'])) {
+            $recommendations['scoring_model'] = $scoreData['scoring_model'];
+        }
+
         // Create diagnostic record
         $diagnostic = new Diagnostic([
             'student_id' => $user->id,
@@ -115,9 +128,9 @@ class DiagnosticController extends Controller
 
         $diagnostic->save();
 
-        // Log for counselors if high risk
-        if (in_array($scoreData['risk_level'], ['high', 'critical'])) {
-            $this->notifyCounselors($user, $diagnostic);
+        // Log for counselors if elevated risk / safety concerns
+        if (! empty($scoreData['notify_counselors'])) {
+            $this->notifyCounselors($user, $diagnostic, $scoreData['risk_flags'] ?? []);
         }
 
         return response()->json([
@@ -291,7 +304,8 @@ class DiagnosticController extends Controller
         ]);
     }
 
-    private function notifyCounselors(User $user, Diagnostic $diagnostic): void
+    /** @param  list<string>  $riskFlags */
+    private function notifyCounselors(User $user, Diagnostic $diagnostic, array $riskFlags = []): void
     {
         if (!SystemSettings::getBool('ai_risk_alerts', true)) {
             return;
@@ -301,11 +315,16 @@ class DiagnosticController extends Controller
             ?: ($user->email ? Str::before($user->email, '@') : "Student #{$user->id}");
 
         $riskLevel = (string) $diagnostic->risk_level;
+        $flagSummary = '';
+        if ($riskFlags !== []) {
+            $flagSummary = ' Flags: '.implode(', ', $riskFlags).'.';
+        }
         $title = $riskLevel === 'critical' ? 'Critical AI Risk Alert' : 'High AI Risk Alert';
         $message = sprintf(
-            'Diagnostic submission flagged %s risk for %s.',
+            'Diagnostic submission flagged %s risk for %s.%s',
             strtoupper($riskLevel),
-            $studentName
+            $studentName,
+            $flagSummary
         );
 
         $recipients = User::query()

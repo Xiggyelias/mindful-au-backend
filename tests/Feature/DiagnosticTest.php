@@ -54,6 +54,8 @@ class DiagnosticTest extends TestCase
             'status' => 'active',
             'version' => 1,
         ]);
+
+        DiagnosticQuestionnaire::where('id', '!=', $this->questionnaire->id)->update(['status' => 'inactive']);
     }
 
     /** @test */

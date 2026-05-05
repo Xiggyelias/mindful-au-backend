@@ -3,13 +3,50 @@
 namespace Database\Seeders;
 
 use App\Models\DiagnosticQuestionnaire;
+use App\Support\PreCounsellingQuestionnaire;
 use Illuminate\Database\Seeder;
 
 class DiagnosticQuestionnaireSeeder extends Seeder
 {
     public function run(): void
     {
-        $questions = [
+        $legacyQuestions = self::legacyQuestionsForReference();
+
+        $payload = PreCounsellingQuestionnaire::payload();
+
+        if (($payload['meta']['scoring_model'] ?? '') !== 'pre_counselling_v1' || empty($payload['questions'])) {
+            // Fallback: preserve original bundled questionnaire if data file is missing
+            DiagnosticQuestionnaire::create([
+                'title' => 'Comprehensive Mental Health Assessment',
+                'description' => 'A comprehensive questionnaire to assess your mental health, stress levels, and overall well-being.',
+                'questions' => ['questions' => $legacyQuestions],
+                'status' => 'active',
+                'version' => 1,
+            ]);
+
+            return;
+        }
+
+        DiagnosticQuestionnaire::where('status', 'active')->update(['status' => 'inactive']);
+
+        DiagnosticQuestionnaire::updateOrCreate(
+            ['title' => 'Pre-Counselling Wellness Intake', 'version' => 2],
+            [
+                'description' => 'An advanced pre-counselling questionnaire covering context, emotional patterns, coping, support, and session goals. Estimated 12–18 minutes. Skip optional items if you prefer.',
+                'questions' => [
+                    'meta' => $payload['meta'],
+                    'questions' => $payload['questions'],
+                ],
+                'status' => 'active',
+                'version' => 2,
+            ]
+        );
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private static function legacyQuestionsForReference(): array
+    {
+        return [
             [
                 'id' => 'q1',
                 'category' => 'anxiety',
@@ -137,13 +174,5 @@ class DiagnosticQuestionnaireSeeder extends Seeder
                 'options' => null,
             ],
         ];
-
-        DiagnosticQuestionnaire::create([
-            'title' => 'Comprehensive Mental Health Assessment',
-            'description' => 'A comprehensive questionnaire to assess your mental health, stress levels, and overall well-being. This assessment takes approximately 10-15 minutes to complete.',
-            'questions' => ['questions' => $questions],
-            'status' => 'active',
-            'version' => 1,
-        ]);
     }
 }
