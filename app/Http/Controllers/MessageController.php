@@ -298,13 +298,11 @@ class MessageController extends Controller
                 ], 422);
             }
 
-            /*
             if ($messageType !== 'text') {
                 return response()->json([
                     'message' => 'Peer counselors can only send text messages in supervised chat.',
                 ], 422);
             }
-            */
         }
 
         $isEncrypted = array_key_exists('is_encrypted', $validated)

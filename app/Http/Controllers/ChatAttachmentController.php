@@ -70,13 +70,15 @@ class ChatAttachmentController extends Controller
 
         $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor'
             && (int) $session->peer_counselor_id > 0;
-        /*
-        if (!$user->hasRole('admin') && $isDelegatedPeerThread) {
+        if (
+            ! $user->hasRole('admin')
+            && $isDelegatedPeerThread
+            && $isAssignedPeerCounselor
+        ) {
             return response()->json([
-                'message' => 'Peer delegated cases support text chat only.',
+                'message' => 'Peer counselors cannot upload attachments in supervised chat.',
             ], 422);
         }
-        */
 
         $request->validate([
             'file' => [
