@@ -424,6 +424,10 @@ class SessionController extends Controller
             return [
                 'id' => (int) $row->id,
                 'student_id' => $visibleStudentId,
+                // Real DB student id for WebCrypto routing when viewer sees student_id = 0 (anonymous masked).
+                'chat_peer_student_id' => $isAnonymous && (int) $row->student_id > 0
+                    ? (int) $row->student_id
+                    : null,
                 'counselor_id' => $row->counselor_id ? (int) $row->counselor_id : null,
                 'peer_counselor_id' => $row->peer_counselor_id ? (int) $row->peer_counselor_id : null,
                 'assigned_role' => $row->assigned_role,
