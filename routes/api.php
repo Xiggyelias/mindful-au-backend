@@ -67,6 +67,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/sessions/{id}/messages', [MessageController::class, 'index'])->middleware('throttle:messages-read');
     Route::get('/chat/messages', [MessageController::class, 'indexBySession'])->middleware('throttle:messages-read');
     Route::post('/sessions/{id}/messages', [MessageController::class, 'store'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/crisis-signal', [MessageController::class, 'reportCrisisSignal'])->middleware('throttle:20,1');
     Route::delete('/sessions/{id}/messages/{messageId}', [MessageController::class, 'destroy'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/typing', [MessageController::class, 'setTyping'])->middleware('throttle:messages-write');
     Route::get('/sessions/{id}/typing', [MessageController::class, 'typingStatus'])->middleware('throttle:messages-read');

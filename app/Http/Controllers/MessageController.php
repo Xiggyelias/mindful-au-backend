@@ -99,17 +99,26 @@ class MessageController extends Controller
             || (int) $session->counselor_id === (int) $user->id
             || $isAssignedPeerCounselor;
 
-        if (!$user->hasRole('admin') && $isDelegatedPeerThread && $isParticipantViewer) {
+        if (! $user->hasRole('admin') && $isDelegatedPeerThread && $isParticipantViewer) {
             $targetPeerId = (int) $session->peer_counselor_id;
-            $assignedAt = PeerAssignment::query()
+            $assignment = PeerAssignment::query()
                 ->where('session_id', $session->id)
                 ->where('peer_counselor_id', $targetPeerId)
                 ->where('status', 'active')
                 ->latest('assigned_at')
-                ->value('assigned_at');
+                ->first(['assigned_at', 'created_at']);
 
-            if ($assignedAt) {
-                $query->where('created_at', '>=', $assignedAt);
+            if ($assignment === null) {
+                $assignment = PeerAssignment::query()
+                    ->where('session_id', $session->id)
+                    ->where('peer_counselor_id', $targetPeerId)
+                    ->latest('assigned_at')
+                    ->first(['assigned_at', 'created_at']);
+            }
+
+            $windowStart = $assignment?->assigned_at ?? $assignment?->created_at;
+            if ($windowStart) {
+                $query->where('created_at', '>=', $windowStart);
             }
         }
 
@@ -360,6 +369,60 @@ class MessageController extends Controller
         }
 
         return response()->json(ChatMessageData::make($message), 201);
+    }
+
+    /**
+     * Student-only: verify keyword hints from the client (matched on plaintext before encryption)
+     * and raise the same staff notifications as plaintext message crisis detection.
+     */
+    public function reportCrisisSignal(Request $request, string $sessionId): JsonResponse
+    {
+        $session = CounselingSession::query()
+            ->select([
+                'id',
+                'student_id',
+                'counselor_id',
+                'peer_counselor_id',
+                'assigned_role',
+                'status',
+                'session_type',
+                'is_anonymous',
+                'anonymous_id',
+                'identity_revealed_at',
+                'updated_at',
+            ])
+            ->findOrFail($sessionId);
+        $user = $request->user();
+
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
+        }
+
+        if ((int) $session->student_id !== (int) $user->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'keywords' => 'required|array|min:1|max:25',
+            'keywords.*' => 'string|max:200',
+        ]);
+
+        $joined = implode(' ', $validated['keywords']);
+        $matches = $this->mlService->detectCrisisInText($joined);
+
+        if ($matches === []) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'No crisis keywords verified',
+            ], 422);
+        }
+
+        $this->triggerCrisisAlert($session, $user, $matches);
+
+        return response()->json([
+            'ok' => true,
+            'matched' => $matches,
+        ]);
     }
 
     public function destroy(Request $request, string $sessionId, string $messageId): JsonResponse
