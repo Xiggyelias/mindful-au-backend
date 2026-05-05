@@ -329,4 +329,21 @@ class DiagnosticTest extends TestCase
         $this->assertArrayHasKey('anxiety', $categoryScores);
         $this->assertArrayHasKey('depression', $categoryScores);
     }
+
+    /** @test */
+    public function questionnaire_endpoint_bootstraps_default_when_missing(): void
+    {
+        DiagnosticQuestionnaire::query()->delete();
+
+        $response = $this->actingAs($this->student)->getJson('/api/diagnostics/questionnaire');
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'id',
+                'title',
+                'questions',
+                'status',
+            ]);
+        $this->assertGreaterThan(0, DiagnosticQuestionnaire::query()->count());
+    }
 }

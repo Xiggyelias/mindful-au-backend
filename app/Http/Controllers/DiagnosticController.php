@@ -32,9 +32,33 @@ class DiagnosticController extends Controller
         $this->mlService = $mlService;
     }
 
+    /**
+     * Scoring expects ['questions' => [...]]; legacy rows may store only a list.
+     */
+    private function normalizeQuestionnaireForScoring(array $questions): array
+    {
+        if (isset($questions['questions']) && is_array($questions['questions'])) {
+            return $questions;
+        }
+
+        return ['questions' => $questions];
+    }
+
     public function getQuestionnaire(): JsonResponse
     {
-        $questionnaire = DiagnosticQuestionnaire::where('status', 'active')->latest()->first();
+        if (!DiagnosticQuestionnaire::query()->exists()) {
+            try {
+                \Illuminate\Support\Facades\Artisan::call('db:seed', [
+                    '--class' => \Database\Seeders\DiagnosticQuestionnaireSeeder::class,
+                    '--force' => true,
+                ]);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        $questionnaire = DiagnosticQuestionnaire::where('status', 'active')->latest()->first()
+            ?? DiagnosticQuestionnaire::query()->latest()->first();
 
         if (!$questionnaire) {
             return response()->json(['message' => 'No active questionnaire available'], 404);
@@ -58,10 +82,14 @@ class DiagnosticController extends Controller
         $questionnaire = DiagnosticQuestionnaire::findOrFail($validated['questionnaire_id']);
         $user = $request->user();
 
+        $questionsForScoring = $this->normalizeQuestionnaireForScoring(
+            is_array($questionnaire->questions) ? $questionnaire->questions : []
+        );
+
         // Calculate scores
         $scoreData = $this->scoringService->calculateScore(
             $validated['responses'],
-            $questionnaire->questions
+            $questionsForScoring
         );
 
         // Generate recommendations
