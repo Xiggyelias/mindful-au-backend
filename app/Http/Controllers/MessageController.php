@@ -214,6 +214,8 @@ class MessageController extends Controller
                 ->values();
         }
 
+        // Bulk read marking runs before this query; a message can still land between that
+        // UPDATE and the SELECT above. Patch seen_at for any inbound rows still null in this page.
         $viewerId = (int) $user->id;
         $unseenMessageIds = $messages
             ->filter(
