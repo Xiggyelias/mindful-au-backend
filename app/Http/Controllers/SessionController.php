@@ -327,9 +327,13 @@ class SessionController extends Controller
             $scopedSessionQuery->whereNotIn('s.status', ['completed', 'cancelled']);
         }
 
+        $viewerId = (int) $user->id;
+
         $queryStart = microtime(true);
         $total = null;
         $rowsPaginator = null;
+
+        $unreadSql = '(select count(*) from messages where messages.session_id = s.id and messages.recipient_id = ? and messages.seen_at is null) as unread_count';
 
         $orderedQuery = (clone $scopedSessionQuery)
             ->leftJoin('users as student', 'student.id', '=', 's.student_id')
@@ -355,6 +359,7 @@ class SessionController extends Controller
                 'peer.email as peer_email',
                 'peer_profile.full_name as peer_full_name',
             ])
+            ->selectRaw($unreadSql, [$viewerId])
             ->orderByDesc('s.updated_at')
             ->orderByDesc('s.id');
 
@@ -374,7 +379,6 @@ class SessionController extends Controller
         $queryDurationMs = (microtime(true) - $queryStart) * 1000;
 
         $viewerIsAdmin = $isAdmin;
-        $viewerId = (int) $user->id;
         $studentOnlineThreshold = now()->subMinutes(
             max(1, (int) env('CHAT_PARTICIPANT_ONLINE_WINDOW_MINUTES', 10))
         );
@@ -382,10 +386,7 @@ class SessionController extends Controller
         $transformStart = microtime(true);
         $sessions = $rows->map(function ($row) use ($viewerId, $viewerIsAdmin, $studentOnlineThreshold) {
             $isAnonymous = (bool) $row->is_anonymous;
-            $anonymousDisplayId = trim((string) ($row->anonymous_id ?? ''));
-            if ($anonymousDisplayId === '') {
-                $anonymousDisplayId = 'ANON-' . str_pad((string) $row->id, 4, '0', STR_PAD_LEFT);
-            }
+            $dbAnonymousId = trim((string) ($row->anonymous_id ?? ''));
 
             $identityVisible = !$isAnonymous
                 || (int) $row->student_id === $viewerId
@@ -408,7 +409,11 @@ class SessionController extends Controller
                         : 'Student #' . (int) $row->student_id
                     )
                 )
-                : $anonymousDisplayId;
+                : 'Anonymous User';
+
+            $anonymousIdForPayload = ($isAnonymous && $identityVisible && $dbAnonymousId !== '')
+                ? $dbAnonymousId
+                : null;
 
             $studentLastSeenAt = null;
             if (!empty($row->student_last_seen_at)) {
@@ -434,10 +439,15 @@ class SessionController extends Controller
                 'session_type' => $row->session_type,
                 'status' => $row->status,
                 'is_anonymous' => $isAnonymous,
-                'anonymous_id' => $anonymousDisplayId,
+                'anonymous_id' => $anonymousIdForPayload,
                 'identity_visible_to_viewer' => $identityVisible,
-                'created_at' => $row->created_at,
-                'updated_at' => $row->updated_at,
+                'created_at' => ! empty($row->created_at)
+                    ? Carbon::parse((string) $row->created_at)->toIso8601String()
+                    : null,
+                'updated_at' => ! empty($row->updated_at)
+                    ? Carbon::parse((string) $row->updated_at)->toIso8601String()
+                    : null,
+                'unread_count' => max(0, (int) ($row->unread_count ?? 0)),
                 'student' => [
                     'id' => $visibleStudentId,
                     'email' => $identityVisible ? $row->student_email : null,
@@ -577,6 +587,60 @@ class SessionController extends Controller
         $this->appendRiskSignals($session, $request->user(), $request);
 
         return response()->json($session, 201);
+    }
+
+    /**
+     * Student: update anonymity for one open chat session (chat-level flag).
+     * Also aligns profile anonymous_mode so dashboard and new chats stay consistent.
+     */
+    public function updateChatAnonymity(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasRole('student')) {
+            return response()->json(['message' => 'Only students can update chat anonymity'], 403);
+        }
+
+        $session = CounselingSession::query()->findOrFail($id);
+
+        if ((int) $session->student_id !== (int) $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($session->session_type !== 'chat') {
+            return response()->json(['message' => 'Only chat sessions support anonymity settings'], 422);
+        }
+
+        if (! in_array((string) $session->status, ['pending', 'active'], true)) {
+            return response()->json(['message' => 'This conversation is closed and cannot be edited'], 422);
+        }
+
+        $validated = $request->validate([
+            'is_anonymous' => 'required|boolean',
+        ]);
+
+        $isAnonymous = (bool) $validated['is_anonymous'];
+
+        $session->is_anonymous = $isAnonymous;
+        if ($isAnonymous) {
+            if ($session->anonymous_id === null || trim((string) $session->anonymous_id) === '') {
+                $session->anonymous_id = CounselingSession::generateUniqueAnonymousId();
+            }
+        } else {
+            $session->anonymous_id = null;
+        }
+        $session->save();
+
+        $profile = $user->profile;
+        if ($profile) {
+            $profile->forceFill(['anonymous_mode' => $isAnonymous])->save();
+        }
+
+        CounselingSession::syncOpenStudentChatsAnonymity((int) $user->id, $isAnonymous);
+
+        $session->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
+        $this->appendRiskSignals($session, $user, $request);
+
+        return response()->json($session);
     }
 
     public function storeAsCounselor(Request $request): JsonResponse
@@ -1531,6 +1595,9 @@ class SessionController extends Controller
                 $session->setAttribute('chat_peer_student_id', (int) $session->student_id);
             }
             $this->applyAnonymousProjection($session, $viewer, $identityVisible);
+            if ($session->is_anonymous && !$identityVisible) {
+                $session->setAttribute('anonymous_id', null);
+            }
             $this->redactConfidentialNotesForViewer($session, $viewer);
         } else {
             $session->setAttribute('identity_visible_to_viewer', true);
@@ -1551,6 +1618,9 @@ class SessionController extends Controller
                 $session->setAttribute('chat_peer_student_id', (int) $session->student_id);
             }
             $this->applyAnonymousProjection($session, $viewer, $identityVisible);
+            if ($session->is_anonymous && !$identityVisible) {
+                $session->setAttribute('anonymous_id', null);
+            }
             $this->redactConfidentialNotesForViewer($session, $viewer);
         } else {
             $session->setAttribute('identity_visible_to_viewer', true);
@@ -1696,12 +1766,11 @@ class SessionController extends Controller
 
     private function resolveAnonymousDisplayId(CounselingSession $session): string
     {
-        $value = trim((string) ($session->anonymous_id ?? ''));
-        if ($value !== '') {
-            return $value;
+        if (!$session->is_anonymous) {
+            return '';
         }
 
-        return 'User_' . str_pad((string) ((int) $session->id % 10000), 4, '0', STR_PAD_LEFT);
+        return 'Anonymous User';
     }
 
     private function latestRiskLevel(CounselingSession $session): ?string
@@ -1862,13 +1931,7 @@ class SessionController extends Controller
 
     private function generateAnonymousId(): string
     {
-        do {
-            $candidate = 'User_' . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
-        } while (
-            CounselingSession::query()->where('anonymous_id', $candidate)->exists()
-        );
-
-        return $candidate;
+        return CounselingSession::generateUniqueAnonymousId();
     }
 
     private function buildEmergencyMessage(CounselingSession $session, string $reason): string

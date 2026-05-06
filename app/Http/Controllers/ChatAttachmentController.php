@@ -362,13 +362,8 @@ class ChatAttachmentController extends Controller
         return true;
     }
 
-    private function resolveAnonymousLabel(CounselingSession $session): string
+    private function resolveAnonymousLabel(CounselingSession $_session): string
     {
-        $value = trim((string) ($session->anonymous_id ?? ''));
-        if ($value !== '') {
-            return $value;
-        }
-
-        return 'User_' . str_pad((string) ((int) $session->id % 10000), 4, '0', STR_PAD_LEFT);
+        return 'Anonymous User';
     }
 }

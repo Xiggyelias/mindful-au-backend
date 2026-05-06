@@ -218,6 +218,171 @@ class MessageController extends Controller
         return $this->index($request, (string) $validated['session_id']);
     }
 
+    /**
+     * Lightweight poll for new unread inbound messages (does not mark as read).
+     * Clients call with after_id=0 once to obtain a cursor, then with the last cursor
+     * to receive only new messages.
+     */
+    public function incomingDigest(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (
+            ! $user->hasRole('counselor')
+            && ! $user->hasRole('peer_counselor')
+            && ! $user->hasRole('student')
+            && ! $user->hasRole('admin')
+        ) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'after_id' => 'nullable|integer|min:0',
+        ]);
+        $afterId = (int) ($validated['after_id'] ?? 0);
+        $viewerId = (int) $user->id;
+
+        $sessionExists = function ($sub) use ($user): void {
+            $sub->from('counseling_sessions as s')
+                ->whereColumn('s.id', 'messages.session_id')
+                ->where('s.session_type', 'chat')
+                ->whereNotIn('s.status', ['completed', 'cancelled']);
+
+            if ($user->hasRole('admin')) {
+                return;
+            }
+            if ($user->hasRole('counselor')) {
+                $sub->where('s.counselor_id', $user->id);
+            } elseif ($user->hasRole('peer_counselor')) {
+                $sub->where('s.peer_counselor_id', $user->id)
+                    ->where('s.assigned_role', 'peer_counselor');
+            } elseif ($user->hasRole('student')) {
+                $sub->where('s.student_id', $user->id);
+            } else {
+                $sub->whereRaw('1 = 0');
+            }
+        };
+
+        $cursorBase = Message::query()
+            ->where('recipient_id', $viewerId)
+            ->whereExists(function ($sub) use ($sessionExists): void {
+                $sub->selectRaw('1');
+                $sessionExists($sub);
+            });
+
+        if ($afterId === 0) {
+            $maxId = (int) ((clone $cursorBase)->max('id'));
+
+            return response()->json([
+                'after_id' => $maxId,
+                'messages' => [],
+            ]);
+        }
+
+        $rows = Message::query()
+            ->where('recipient_id', $viewerId)
+            ->whereNull('seen_at')
+            ->where('id', '>', $afterId)
+            ->whereExists(function ($sub) use ($sessionExists): void {
+                $sub->selectRaw('1');
+                $sessionExists($sub);
+            })
+            ->orderBy('id')
+            ->limit(40)
+            ->get([
+                'id',
+                'session_id',
+                'sender_id',
+                'content',
+                'message_type',
+                'is_encrypted',
+                'created_at',
+            ]);
+
+        if ($rows->isEmpty()) {
+            return response()->json([
+                'after_id' => $afterId,
+                'messages' => [],
+            ]);
+        }
+
+        $maxRowId = (int) $rows->max('id');
+
+        $sessionIds = $rows->pluck('session_id')->unique()->filter()->all();
+        $sessions = CounselingSession::query()
+            ->whereIn('id', $sessionIds)
+            ->get([
+                'id',
+                'student_id',
+                'counselor_id',
+                'peer_counselor_id',
+                'assigned_role',
+                'is_anonymous',
+                'identity_revealed_at',
+            ])
+            ->keyBy('id');
+
+        $senderIds = $rows->pluck('sender_id')->unique()->filter()->all();
+        $senders = User::query()
+            ->with('profile')
+            ->whereIn('id', $senderIds)
+            ->get()
+            ->keyBy('id');
+
+        $payload = [];
+
+        foreach ($rows as $message) {
+            /** @var Message $message */
+            if ($this->isHandshakeEnvelope((string) $message->message_type, (string) $message->content)) {
+                continue;
+            }
+
+            $session = $sessions->get((int) $message->session_id);
+            if ($session === null) {
+                continue;
+            }
+
+            $isAssignedPeer = $this->isAssignedPeerCounselor($user, $session);
+            if (! $this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeer)) {
+                continue;
+            }
+
+            $senderId = (int) $message->sender_id;
+            $sender = $senders->get($senderId);
+
+            $senderName = optional(optional($sender)->profile)->full_name
+                ?: ($sender?->email ? Str::before((string) $sender->email, '@') : 'Someone');
+
+            if (
+                (int) $session->student_id === $senderId
+                && $this->shouldMaskStudentIdentityForRecipient($session, $viewerId)
+            ) {
+                $senderName = $this->resolveAnonymousLabel($session);
+            }
+
+            $isEncrypted = (bool) $message->is_encrypted;
+            $preview = $this->buildMessagePreview(
+                (string) $message->message_type,
+                (string) $message->content,
+                $isEncrypted
+            );
+
+            $payload[] = [
+                'id' => (int) $message->id,
+                'session_id' => (int) $message->session_id,
+                'sender_label' => $senderName,
+                'preview' => $preview,
+                'created_at' => $message->created_at instanceof Carbon
+                    ? $message->created_at->toIso8601String()
+                    : Carbon::parse((string) $message->created_at)->toIso8601String(),
+            ];
+        }
+
+        return response()->json([
+            'after_id' => max($afterId, $maxRowId),
+            'messages' => $payload,
+        ]);
+    }
+
     public function store(Request $request, string $sessionId): JsonResponse
     {
         $session = CounselingSession::query()
@@ -752,14 +917,9 @@ class MessageController extends Controller
         return true;
     }
 
-    private function resolveAnonymousLabel(CounselingSession $session): string
+    private function resolveAnonymousLabel(CounselingSession $_session): string
     {
-        $value = trim((string) ($session->anonymous_id ?? ''));
-        if ($value !== '') {
-            return $value;
-        }
-
-        return 'User_' . str_pad((string) ((int) $session->id % 10000), 4, '0', STR_PAD_LEFT);
+        return 'Anonymous User';
     }
 
     private function isAnonymousSessionExpired(CounselingSession $session): bool

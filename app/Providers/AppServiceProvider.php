@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\PersonalAccessToken;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -20,6 +21,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
         $this->enforceProductionSecurityDefaults();
+        $this->registerSlowQueryLogging();
 
         $shouldPreventLazyLoading = filter_var(
             env('PREVENT_LAZY_LOADING', false),
@@ -35,6 +37,31 @@ class AppServiceProvider extends ServiceProvider
             Log::warning('Lazy loading detected', [
                 'model' => $model::class,
                 'relation' => $relation,
+            ]);
+        });
+    }
+
+    private function registerSlowQueryLogging(): void
+    {
+        $thresholdMs = max(0, (int) env('DB_SLOW_QUERY_MS', 1000));
+        if ($thresholdMs <= 0) {
+            return;
+        }
+
+        DB::listen(function ($query) use ($thresholdMs): void {
+            $duration = (float) ($query->time ?? 0);
+            if ($duration < $thresholdMs) {
+                return;
+            }
+
+            $sql = $query->sql;
+            if (strlen($sql) > 2000) {
+                $sql = substr($sql, 0, 2000) . '…';
+            }
+
+            Log::warning('Slow database query', [
+                'duration_ms' => $duration,
+                'sql' => $sql,
             ]);
         });
     }

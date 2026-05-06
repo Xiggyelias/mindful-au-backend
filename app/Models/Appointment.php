@@ -17,13 +17,18 @@ class Appointment extends Model
         'scheduled_at',
         'duration_minutes',
         'status',
+        'cancelled_at',
+        'reminder_sent',
         'notes',
+        'call_type',
         'cancellation_reason',
     ];
 
     protected $casts = [
         'scheduled_at' => 'datetime',
+        'cancelled_at' => 'datetime',
         'is_anonymous' => 'boolean',
+        'reminder_sent' => 'boolean',
     ];
 
     public function student()

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Models\CounselingCall;
 use App\Models\CounselingSession;
 use App\Models\Notification;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +25,7 @@ class VideoCallController extends Controller
     {
         $validated = $request->validate([
             'appointment_id' => 'required|integer|exists:appointments,id',
+            'call_type' => 'sometimes|in:video,audio',
         ]);
 
         $user = $request->user();
@@ -104,6 +106,33 @@ class VideoCallController extends Controller
                 (int) floor(((int) $window['ends_in_seconds']) / 60)
             )
         );
+
+        if ((int) $appointment->student_id === (int) $user->id && $user->hasRole('student')) {
+            $callType = (string) ($validated['call_type'] ?? 'video');
+            if (!in_array($callType, ['video', 'audio'], true)) {
+                $callType = 'video';
+            }
+            if ($appointment->is_anonymous) {
+                $callType = 'audio';
+            } elseif (($appointment->call_type ?? '') === 'audio' && $callType === 'video') {
+                return response()->json([
+                    'message' => 'This appointment is booked as audio-only.',
+                ], 422);
+            } elseif (($appointment->call_type ?? '') === 'audio') {
+                $callType = 'audio';
+            }
+            CounselingCall::query()
+                ->where('appointment_id', $appointment->id)
+                ->where('status', CounselingCall::STATUS_PENDING)
+                ->delete();
+            CounselingCall::create([
+                'appointment_id' => $appointment->id,
+                'student_id' => $appointment->student_id,
+                'counselor_id' => $appointment->counselor_id,
+                'status' => CounselingCall::STATUS_PENDING,
+                'call_type' => $callType,
+            ]);
+        }
 
         return response()->json([
             'appointment_id' => (int) $appointment->id,

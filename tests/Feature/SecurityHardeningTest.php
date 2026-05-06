@@ -64,6 +64,7 @@ class SecurityHardeningTest extends TestCase
         $showResponse->assertStatus(200);
         $this->assertSame(0, (int) $showResponse->json('student_id'));
         $this->assertFalse((bool) $showResponse->json('identity_visible_to_viewer'));
+        $this->assertNull($showResponse->json('anonymous_id'));
         $this->assertSame($student->id, (int) $showResponse->json('chat_peer_student_id'));
 
         $listResponse = $this->actingAs($counselor)->getJson('/api/sessions/chat-list?limit=50&open_only=1');
@@ -73,6 +74,8 @@ class SecurityHardeningTest extends TestCase
         $row = collect($list)->first(fn ($item) => (int) ($item['id'] ?? 0) === $sessionId);
         $this->assertNotNull($row);
         $this->assertSame(0, (int) ($row['student_id'] ?? -1));
+        $this->assertNull($row['anonymous_id'] ?? null);
+        $this->assertSame('Anonymous User', (string) ($row['student']['profile']['full_name'] ?? ''));
         $this->assertSame($student->id, (int) ($row['chat_peer_student_id'] ?? 0));
     }
 

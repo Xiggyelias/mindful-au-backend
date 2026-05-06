@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Models\ActivityLog;
 use App\Models\Notification;
 use App\Support\PaginationPayload;
 use App\Models\User;
@@ -100,6 +101,7 @@ class AppointmentController extends Controller
             'duration_minutes' => 'sometimes|integer|min:15|max:120',
             'notes' => 'sometimes|nullable|string|max:2000',
             'is_anonymous' => 'sometimes|boolean',
+            'call_type' => 'sometimes|in:audio,video',
         ]);
 
         if (!$this->isApprovedCounselor((int) $validated['counselor_id'])) {
@@ -119,11 +121,48 @@ class AppointmentController extends Controller
             ? (bool) $validated['is_anonymous']
             : (bool) ($request->user()->profile?->anonymous_mode ?? false);
 
+        $notesRaw = trim((string) ($validated['notes'] ?? ''));
+        $isPhysical = str_starts_with(strtolower($notesRaw), 'physical');
+
+        if ($isAnonymous && !$isPhysical) {
+            $finalNotes = 'Online audio';
+            $callType = 'audio';
+        } elseif ($isPhysical) {
+            $finalNotes = $notesRaw !== '' ? $notesRaw : 'Physical';
+            $callType = 'video';
+        } else {
+            $callType = $validated['call_type'] ?? $this->inferCallTypeFromNotes($notesRaw);
+            if (!in_array($callType, ['audio', 'video'], true)) {
+                $callType = 'video';
+            }
+            $finalNotes = $callType === 'audio' ? 'Online audio' : 'Online';
+        }
+
         $appointment = $this->withBookingLocks(
             $studentId,
             $counselorId,
-            function () use ($validated, $durationMinutes, $proposedStart, $proposedEnd, $studentId, $counselorId, $isAnonymous) {
-                return DB::transaction(function () use ($validated, $durationMinutes, $proposedStart, $proposedEnd, $studentId, $counselorId, $isAnonymous) {
+            function () use (
+                $validated,
+                $durationMinutes,
+                $proposedStart,
+                $proposedEnd,
+                $studentId,
+                $counselorId,
+                $isAnonymous,
+                $finalNotes,
+                $callType
+            ) {
+                return DB::transaction(function () use (
+                    $validated,
+                    $durationMinutes,
+                    $proposedStart,
+                    $proposedEnd,
+                    $studentId,
+                    $counselorId,
+                    $isAnonymous,
+                    $finalNotes,
+                    $callType
+                ) {
                     // Keep row locks to ensure overlap checks are consistent for rows already present.
                     $candidateAppointments = Appointment::query()
                         ->whereIn('status', ['scheduled', 'confirmed'])
@@ -167,7 +206,8 @@ class AppointmentController extends Controller
                         'anonymous_id' => $isAnonymous ? $this->generateAnonymousId() : null,
                         'scheduled_at' => $proposedStart,
                         'duration_minutes' => $durationMinutes,
-                        'notes' => $validated['notes'] ?? null,
+                        'notes' => $finalNotes,
+                        'call_type' => $callType,
                         'status' => 'scheduled',
                     ]);
                 });
@@ -197,10 +237,27 @@ class AppointmentController extends Controller
             'notes' => 'sometimes|string|max:2000',
         ]);
 
+        if (isset($validated['notes']) && $appointment->is_anonymous) {
+            $trim = strtolower(trim($validated['notes']));
+            if (!str_starts_with($trim, 'physical') && $trim === 'online') {
+                throw ValidationException::withMessages([
+                    'notes' => ['Anonymous online appointments are audio-only.'],
+                ]);
+            }
+        }
+
+        $payload = $validated;
+        if ($appointment->is_anonymous && isset($validated['notes'])) {
+            $trim = strtolower(trim($validated['notes']));
+            if (!str_starts_with($trim, 'physical')) {
+                $payload['call_type'] = 'audio';
+            }
+        }
+
         $previousStatus = $appointment->status;
         $previousScheduledAt = $appointment->scheduled_at?->toISOString();
 
-        $appointment->update($validated);
+        $appointment->update($payload);
         $appointment->refresh()->load(['student.profile', 'counselor.profile']);
 
         if (isset($validated['status']) && $validated['status'] !== $previousStatus) {
@@ -218,6 +275,98 @@ class AppointmentController extends Controller
         $this->applyAnonymousAppointmentProjection($appointment, $user);
 
         return response()->json($appointment);
+    }
+
+    /**
+     * Counselor: cancel many appointments in one action (pending / scheduled / confirmed only).
+     * scope=all: every cancellable row for this counselor.
+     * scope=remaining: only those with scheduled_at in the future.
+     */
+    public function bulkCancel(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user->hasRole('counselor')) {
+            return response()->json(['message' => 'Only counselors can bulk-cancel appointments.'], 403);
+        }
+
+        $validated = $request->validate([
+            'scope' => 'required|in:all,remaining',
+            'reason' => 'sometimes|nullable|string|max:1000',
+        ]);
+
+        $counselorId = (int) $user->id;
+        $reason = isset($validated['reason']) ? trim((string) $validated['reason']) : '';
+        $reasonStored = $reason !== '' ? $reason : null;
+        $now = now();
+
+        $result = DB::transaction(function () use ($validated, $counselorId, $now, $reasonStored, $user, $request) {
+            $query = Appointment::query()
+                ->where('counselor_id', $counselorId)
+                ->whereIn('status', ['pending', 'scheduled', 'confirmed']);
+
+            if ($validated['scope'] === 'remaining') {
+                $query->where('scheduled_at', '>', $now);
+            }
+
+            $ids = $query->lockForUpdate()->pluck('id');
+
+            if ($ids->isEmpty()) {
+                return ['cancelled_count' => 0, 'appointment_ids' => []];
+            }
+
+            Appointment::query()
+                ->whereIn('id', $ids)
+                ->update([
+                    'status' => 'cancelled',
+                    'cancellation_reason' => $reasonStored,
+                    'cancelled_at' => $now,
+                ]);
+
+            $affected = Appointment::query()
+                ->whereIn('id', $ids)
+                ->with(['student', 'counselor.profile'])
+                ->get();
+
+            foreach ($affected as $appointment) {
+                $this->notifyStudentOnCounselorCancelledAppointment($appointment, $reasonStored);
+            }
+
+            ActivityLog::query()->create([
+                'user_id' => $user->id,
+                'action' => 'appointments_bulk_cancel',
+                'description' => sprintf(
+                    'Counselor bulk-cancelled %d appointment(s) (scope: %s).',
+                    $ids->count(),
+                    $validated['scope']
+                ),
+                'type' => 'audit',
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'metadata' => [
+                    'scope' => $validated['scope'],
+                    'cancelled_count' => $ids->count(),
+                    'appointment_ids' => $ids->take(200)->values()->all(),
+                    'reason' => $reasonStored,
+                ],
+            ]);
+
+            return [
+                'cancelled_count' => $ids->count(),
+                'appointment_ids' => $ids->values()->all(),
+            ];
+        });
+
+        $this->flushDashboardCaches();
+
+        $count = (int) ($result['cancelled_count'] ?? 0);
+
+        return response()->json([
+            'message' => $count === 0
+                ? 'No matching appointments to cancel.'
+                : 'Sessions successfully cancelled.',
+            'cancelled_count' => $count,
+            'appointment_ids' => $result['appointment_ids'] ?? [],
+        ]);
     }
 
     public function destroy(Request $request, string $id): JsonResponse
@@ -350,6 +499,26 @@ class AppointmentController extends Controller
         $query->where('scheduled_at', '>=', (clone $proposedStart)->subDay());
     }
 
+    private function notifyStudentOnCounselorCancelledAppointment(Appointment $appointment, ?string $reason): void
+    {
+        if (!$appointment->student_id) {
+            return;
+        }
+
+        $message = 'Your session with the counselor has been cancelled.';
+
+        if ($reason !== null && trim($reason) !== '') {
+            $message .= ' Reason: ' . trim($reason);
+        }
+
+        Notification::create([
+            'user_id' => $appointment->student_id,
+            'title' => 'Session cancelled',
+            'message' => $message,
+            'type' => 'warning',
+        ]);
+    }
+
     private function notifyCounselorOnAppointmentCreated(Appointment $appointment): void
     {
         if (!$appointment->counselor_id) {
@@ -476,6 +645,8 @@ class AppointmentController extends Controller
         $appointment->setAttribute('student_id', 0);
         $appointment->setAttribute('identity_visible_to_viewer', false);
         $appointment->setAttribute('identity_masked', true);
+        // Never expose internal anonymous correlators (e.g. User_####) to counselors/peers over the API.
+        $appointment->setAttribute('anonymous_id', null);
 
         if ($appointment->relationLoaded('student') && $appointment->student) {
             $appointment->student->setAttribute('id', 0);
@@ -489,14 +660,19 @@ class AppointmentController extends Controller
         }
     }
 
-    private function resolveAppointmentStudentAlias(Appointment $appointment): string
+    private function resolveAppointmentStudentAlias(Appointment $_appointment): string
     {
-        $value = trim((string) ($appointment->anonymous_id ?? ''));
-        if ($value !== '') {
-            return $value;
+        return 'Anonymous User';
+    }
+
+    private function inferCallTypeFromNotes(string $notes): string
+    {
+        $n = strtolower(trim($notes));
+        if (str_starts_with($n, 'online audio')) {
+            return 'audio';
         }
 
-        return 'User_' . str_pad((string) ((int) $appointment->id % 10000), 4, '0', STR_PAD_LEFT);
+        return 'video';
     }
 
     private function resolveAppointmentStudentLabel(Appointment $appointment): string
