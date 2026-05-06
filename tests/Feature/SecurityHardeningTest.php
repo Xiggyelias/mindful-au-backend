@@ -80,6 +80,83 @@ class SecurityHardeningTest extends TestCase
     }
 
     /** @test */
+    public function student_can_update_chat_anonymity_and_profile_syncs(): void
+    {
+        $counselor = $this->createPortalUser('counselor', 'counselor-chat-anon-toggle@test.com', 'Counselor Chat Anon');
+        $student = $this->createPortalUser('student', 'student-chat-anon-toggle@test.com', 'Student Chat Anon');
+
+        $created = $this->actingAs($student)->postJson('/api/sessions', [
+            'counselor_id' => $counselor->id,
+            'session_type' => 'chat',
+            'is_anonymous' => true,
+        ]);
+        $created->assertStatus(201);
+        $sessionId = (int) $created->json('id');
+        $this->assertTrue((bool) $created->json('is_anonymous'));
+
+        $reveal = $this->actingAs($student)->patchJson("/api/sessions/{$sessionId}/chat-anonymity", [
+            'is_anonymous' => false,
+        ]);
+        $reveal->assertStatus(200)
+            ->assertJsonPath('is_anonymous', false)
+            ->assertJsonPath('anonymous_id', null);
+
+        $student->refresh();
+        $student->load('profile');
+        $this->assertFalse((bool) ($student->profile?->anonymous_mode));
+
+        $hideAgain = $this->actingAs($student)->patchJson("/api/sessions/{$sessionId}/chat-anonymity", [
+            'is_anonymous' => true,
+        ]);
+        $hideAgain->assertStatus(200)
+            ->assertJsonPath('is_anonymous', true);
+        $this->assertNotNull($hideAgain->json('anonymous_id'));
+
+        $student->refresh();
+        $student->load('profile');
+        $this->assertTrue((bool) ($student->profile?->anonymous_mode));
+    }
+
+    /** @test */
+    public function counselor_cannot_patch_chat_anonymity(): void
+    {
+        $counselor = $this->createPortalUser('counselor', 'counselor-no-anon-patch@test.com', 'Counselor No Anon Patch');
+        $student = $this->createPortalUser('student', 'student-no-anon-patch@test.com', 'Student No Anon Patch');
+
+        $created = $this->actingAs($student)->postJson('/api/sessions', [
+            'counselor_id' => $counselor->id,
+            'session_type' => 'chat',
+            'is_anonymous' => false,
+        ]);
+        $created->assertStatus(201);
+        $sessionId = (int) $created->json('id');
+
+        $this->actingAs($counselor)->patchJson("/api/sessions/{$sessionId}/chat-anonymity", [
+            'is_anonymous' => true,
+        ])->assertStatus(403);
+    }
+
+    /** @test */
+    public function student_cannot_patch_chat_anonymity_for_closed_session(): void
+    {
+        $counselor = $this->createPortalUser('counselor', 'counselor-closed-anon@test.com', 'Counselor Closed Anon');
+        $student = $this->createPortalUser('student', 'student-closed-anon@test.com', 'Student Closed Anon');
+
+        $session = CounselingSession::query()->create([
+            'student_id' => $student->id,
+            'counselor_id' => $counselor->id,
+            'status' => 'completed',
+            'session_type' => 'chat',
+            'is_anonymous' => false,
+            'assigned_role' => 'counselor',
+        ]);
+
+        $this->actingAs($student)->patchJson("/api/sessions/{$session->id}/chat-anonymity", [
+            'is_anonymous' => true,
+        ])->assertStatus(422);
+    }
+
+    /** @test */
     public function voice_note_upload_rejects_invalid_file_types(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-voice@test.com', 'Counselor Voice');
