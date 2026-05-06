@@ -68,6 +68,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::patch('/sessions/{id}/chat-anonymity', [SessionController::class, 'updateChatAnonymity'])->middleware('throttle:30,1');
     Route::apiResource('sessions', SessionController::class);
     Route::get('/sessions/{id}/messages', [MessageController::class, 'index'])->middleware('throttle:messages-read');
+    Route::post('/sessions/{id}/messages/read', [MessageController::class, 'markInboundRead'])->middleware('throttle:messages-read');
     Route::get('/chat/messages', [MessageController::class, 'indexBySession'])->middleware('throttle:messages-read');
     Route::get('/chat/incoming-digest', [MessageController::class, 'incomingDigest'])->middleware('throttle:90,1');
     Route::post('/sessions/{id}/messages', [MessageController::class, 'store'])->middleware('throttle:messages-write');

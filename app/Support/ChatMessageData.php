@@ -28,6 +28,8 @@ class ChatMessageData
             'attachment' => $attachment,
             'is_encrypted' => (bool) $message->is_encrypted,
             'seen_at' => $message->seen_at?->toISOString(),
+            /** Same as DB `seen_at IS NOT NULL` (this API uses nullable timestamps, not a separate is_read column). */
+            'is_read' => $message->seen_at !== null,
             'created_at' => $message->created_at?->toISOString(),
             'updated_at' => $message->updated_at?->toISOString(),
         ];

@@ -30,6 +30,63 @@ class MessageController extends Controller
         $this->mlService = $mlService;
     }
 
+    /**
+     * Mark every inbound message in this thread as read for the current user.
+     * Unread badges use seen_at IS NULL (equivalent to is_read = 0); this must run for the
+     * whole session, not only the paginated messages slice, or badges stay nonzero when
+     * older unread rows fall outside the default limit.
+     */
+    private function markInboundMessagesReadForViewer(int $sessionId, int $viewerId): void
+    {
+        if ($sessionId <= 0 || $viewerId <= 0) {
+            return;
+        }
+
+        $seenAt = now();
+        Message::query()
+            ->where('session_id', $sessionId)
+            ->where('recipient_id', $viewerId)
+            ->whereNull('seen_at')
+            ->update(['seen_at' => $seenAt]);
+    }
+
+    public function markInboundRead(Request $request, string $sessionId): JsonResponse
+    {
+        $session = CounselingSession::query()->select([
+            'id',
+            'student_id',
+            'counselor_id',
+            'peer_counselor_id',
+            'assigned_role',
+            'status',
+            'is_anonymous',
+            'identity_revealed_at',
+            'updated_at',
+        ])
+            ->findOrFail($sessionId);
+        $user = $request->user();
+        $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
+
+        if (! $this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if (
+            $session->is_anonymous
+            && in_array((string) $session->status, ['pending', 'active'], true)
+        ) {
+            CounselingSession::query()->whereKey((int) $session->id)->update(['updated_at' => now()]);
+        }
+
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
+        }
+
+        $this->markInboundMessagesReadForViewer((int) $session->id, (int) $user->id);
+
+        return response()->json(null, 204);
+    }
+
     public function index(Request $request, string $sessionId): JsonResponse
     {
                 $session = CounselingSession::query()->select(['id',
@@ -64,6 +121,8 @@ class MessageController extends Controller
         if ($this->isAnonymousSessionExpired($session)) {
             return response()->json(['message' => 'This anonymous session has expired.'], 410);
         }
+
+        $this->markInboundMessagesReadForViewer((int) $session->id, (int) $user->id);
 
         $this->touchPresenceIfStale($user);
 
