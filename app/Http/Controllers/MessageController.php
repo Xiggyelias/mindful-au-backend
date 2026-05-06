@@ -46,15 +46,25 @@ class MessageController extends Controller
         $user = $request->user();
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
 
+        if (
+            ! $this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
+        ) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // Reading/polling counts as activity for anonymous TTL (based on session.updated_at).
+        if (
+            $session->is_anonymous
+            && in_array((string) $session->status, ['pending', 'active'], true)
+        ) {
+            CounselingSession::query()->whereKey((int) $session->id)->update(['updated_at' => now()]);
+            $session->setAttribute('updated_at', now());
+        }
+
         if ($this->isAnonymousSessionExpired($session)) {
             return response()->json(['message' => 'This anonymous session has expired.'], 410);
         }
 
-        if (
-            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
-        ) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
         $this->touchPresenceIfStale($user);
 
         $validated = $request->validate([
