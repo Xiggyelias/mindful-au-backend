@@ -9,6 +9,8 @@ touch storage/logs/laravel.log 2>/dev/null || true
 chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
 chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 
+php /app/artisan package:discover --ansi 2>/dev/null || true
+
 # Cache config (non-fatal - worker will load config at runtime if this fails)
 php /app/artisan config:cache 2>/dev/null || true
 

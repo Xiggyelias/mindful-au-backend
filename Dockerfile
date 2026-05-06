@@ -14,7 +14,9 @@ RUN composer install \
     --optimize-autoloader
 
 COPY . .
-RUN composer dump-autoload --optimize
+# dump-autoload must not run Laravel scripts: .env is not in the image (see .dockerignore),
+# so `artisan package:discover` would fail during the image build.
+RUN composer dump-autoload --optimize --no-scripts
 
 # ----------- App Stage -----------
 FROM php:8.2-apache
