@@ -88,6 +88,7 @@ Related client copy should describe alerts as reaching **professional counsellin
 - Updating a student’s **profile** `anonymous_mode` **does not** overwrite `is_anonymous` on all open chat sessions (each session keeps its own flag).
 - Patching **`PATCH /api/sessions/{id}/chat-anonymity`** updates **that** session only (and may still sync the student’s profile preference to match that action, depending on product flow).
 - Chat messages include **`sent_as_anonymous`** (nullable for legacy rows): counselor-facing list endpoints mask student participant ids per **message** using that snapshot so history matches how messages were sent.
+- Anonymous session activity bumps are throttled to reduce write churn; tune via `ANONYMOUS_SESSION_ACTIVITY_TOUCH_SECONDS` in `.env`.
 
 Run `php artisan migrate` after pulling to apply the `sent_as_anonymous` column on `messages`.
 
@@ -160,6 +161,10 @@ Role resolution for OAuth:
 Canonical schema snapshot: `database/schema.sql`
 
 Chat privacy: `messages.sent_as_anonymous` records whether the session was anonymous **when the message was created**; listing endpoints use it (with `NULL` falling back to the session flag for legacy rows) so counselor-side identity masking stays consistent after mid-session mode changes.
+
+Unread performance: add and keep the composite index from migration `2026_05_08_000000_add_messages_recipient_seen_session_index.php` (`recipient_id`, `seen_at`, `session_id`) to support unread count aggregation at scale.
+
+Message list behavior: API message pagination now uses tighter bounds to protect latency under load (`40` default, `50` max).
 
 ## Tests
 
