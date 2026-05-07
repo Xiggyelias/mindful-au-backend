@@ -33,6 +33,7 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'last_seen_at' => 'datetime',
         'password' => 'hashed',
+        'web_push_enabled' => 'boolean',
     ];
 
     public function profile()
@@ -112,6 +113,11 @@ class User extends Authenticatable
     public function notifications()
     {
         return $this->hasMany(Notification::class);
+    }
+
+    public function pushSubscriptions()
+    {
+        return $this->hasMany(PushSubscription::class);
     }
 
     public function twoFactorMethods()

@@ -27,6 +27,7 @@ use App\Http\Controllers\DataAccessLogController;
 use App\Http\Controllers\InstitutionAccountController;
 use App\Http\Controllers\PeerSupportController;
 use App\Http\Controllers\TipController;
+use App\Http\Controllers\PushSubscriptionController;
 
 // Authentication routes
 Route::get('/health', [HealthController::class, 'health']);
@@ -44,6 +45,8 @@ Route::get('/auth/google/callback', [OAuthController::class, 'handleGoogleCallba
 Route::post('/auth/google/exchange-ticket', [OAuthController::class, 'exchangeLoginTicket'])->middleware('throttle:oauth-ticket-exchange');
 Route::post('/integrations/academic-risk/webhook', [AcademicRiskWebhookController::class, 'ingest'])
     ->middleware(['verify.integration.signature', 'throttle:120,1']);
+
+Route::get('/push/vapid-public-key', [PushSubscriptionController::class, 'vapidPublicKey']);
 
 // Protected routes (Sanctum)
 Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'audit.admin', 'audit.access', 'counselor.2fa'])->group(function () {
@@ -113,6 +116,10 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/notifications', [NotificationController::class, 'store'])->middleware('admin');
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+
+    Route::post('/push/subscribe', [PushSubscriptionController::class, 'subscribe'])->middleware('throttle:60,1');
+    Route::post('/push/unsubscribe', [PushSubscriptionController::class, 'unsubscribe'])->middleware('throttle:60,1');
+    Route::patch('/push/preferences', [PushSubscriptionController::class, 'preferences'])->middleware('throttle:30,1');
 
     // Analytics (Admin only)
     Route::get('/analytics/overview', [AnalyticsController::class, 'overview'])->middleware('admin');

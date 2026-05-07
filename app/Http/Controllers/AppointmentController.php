@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\Notification;
 use App\Support\PaginationPayload;
 use App\Models\User;
+use App\Services\WebPushService;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -19,6 +20,10 @@ use Illuminate\Validation\ValidationException;
 
 class AppointmentController extends Controller
 {
+    public function __construct(
+        private readonly WebPushService $webPush,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -517,6 +522,14 @@ class AppointmentController extends Controller
             'message' => $message,
             'type' => 'warning',
         ]);
+
+        $this->webPush->sendToUser(
+            (int) $appointment->student_id,
+            'Session cancelled',
+            $message,
+            '/student/appointments',
+            ['tag' => 'cms-appt-cancel-stu-'.(int) $appointment->id]
+        );
     }
 
     private function notifyCounselorOnAppointmentCreated(Appointment $appointment): void
@@ -537,6 +550,14 @@ class AppointmentController extends Controller
             ),
             'type' => 'info',
         ]);
+
+        $this->webPush->sendToUser(
+            (int) $appointment->counselor_id,
+            'New appointment request',
+            sprintf('%s requested an appointment.', $studentName),
+            '/counselor/appointments',
+            ['tag' => 'cms-appt-new-'.(int) $appointment->id]
+        );
     }
 
     private function notifyStudentOnAppointmentStatusChanged(Appointment $appointment, string $newStatus): void
@@ -561,6 +582,16 @@ class AppointmentController extends Controller
             ),
             'type' => $type,
         ]);
+
+        if ($newStatus === 'cancelled') {
+            $this->webPush->sendToUser(
+                (int) $appointment->student_id,
+                'Appointment cancelled',
+                sprintf('Your appointment with %s was cancelled.', $counselorName),
+                '/student/appointments',
+                ['tag' => 'cms-appt-status-'.(int) $appointment->id]
+            );
+        }
     }
 
     private function notifyStudentOnAppointmentRescheduled(Appointment $appointment): void
@@ -578,6 +609,14 @@ class AppointmentController extends Controller
             ),
             'type' => 'info',
         ]);
+
+        $this->webPush->sendToUser(
+            (int) $appointment->student_id,
+            'Appointment rescheduled',
+            sprintf('New time: %s.', $this->formatAppointmentTime($appointment->scheduled_at)),
+            '/student/appointments',
+            ['tag' => 'cms-appt-resched-'.(int) $appointment->id]
+        );
     }
 
     private function notifyCounselorOnAppointmentCancelled(
@@ -607,6 +646,14 @@ class AppointmentController extends Controller
             'message' => $message,
             'type' => 'warning',
         ]);
+
+        $this->webPush->sendToUser(
+            (int) $appointment->counselor_id,
+            'Appointment cancelled',
+            Str::limit($message, 180),
+            '/counselor/appointments',
+            ['tag' => 'cms-appt-cancel-coun-'.(int) $appointment->id]
+        );
     }
 
     private function formatAppointmentTime(mixed $scheduledAt): string

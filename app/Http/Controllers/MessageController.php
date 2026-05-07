@@ -10,6 +10,7 @@ use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\ChatMessageData;
 use App\Support\SystemSettings;
+use App\Services\WebPushService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
@@ -25,8 +26,10 @@ class MessageController extends Controller
 
     protected $mlService;
 
-    public function __construct(\App\Services\MentalHealthMlService $mlService)
-    {
+    public function __construct(
+        \App\Services\MentalHealthMlService $mlService,
+        protected WebPushService $webPush,
+    ) {
         $this->mlService = $mlService;
     }
 
@@ -155,6 +158,7 @@ class MessageController extends Controller
                 'file_url',
                 'has_file',
                 'is_encrypted',
+                'sent_as_anonymous',
                 'seen_at',
                 'created_at',
                 'updated_at',
@@ -250,32 +254,38 @@ class MessageController extends Controller
             );
         }
 
-        $maskStudentIdentityForViewer = $this->shouldMaskStudentIdentityForRecipient($session, $viewerId);
-        if ($maskStudentIdentityForViewer) {
-            $studentId = (int) $session->student_id;
-            $messages->transform(
-                function (Message $message) use ($studentId): Message {
-                    // Keep participant IDs on WebCrypto envelopes so counselors/peers can
-                    // correlate sender with envelope.from / envelope.to (masking broke E2E).
-                    if (
-                        $this->isHandshakeEnvelope(
-                            (string) $message->message_type,
-                            (string) $message->content
-                        )
-                    ) {
-                        return $message;
-                    }
-                    if ((int) $message->sender_id === $studentId) {
-                        $message->sender_id = 0;
-                    }
-                    if ((int) $message->recipient_id === $studentId) {
-                        $message->recipient_id = 0;
-                    }
-
+        $studentId = (int) $session->student_id;
+        $messages->transform(
+            function (Message $message) use ($studentId, $session, $viewerId): Message {
+                if (
+                    ! $this->shouldMaskStudentIdentityForRecipient(
+                        $session,
+                        $viewerId,
+                        $message->sent_as_anonymous
+                    )
+                ) {
                     return $message;
                 }
-            );
-        }
+                // Keep participant IDs on WebCrypto envelopes so counselors/peers can
+                // correlate sender with envelope.from / envelope.to (masking broke E2E).
+                if (
+                    $this->isHandshakeEnvelope(
+                        (string) $message->message_type,
+                        (string) $message->content
+                    )
+                ) {
+                    return $message;
+                }
+                if ((int) $message->sender_id === $studentId) {
+                    $message->sender_id = 0;
+                }
+                if ((int) $message->recipient_id === $studentId) {
+                    $message->recipient_id = 0;
+                }
+
+                return $message;
+            }
+        );
 
         return response()->json(ChatMessageData::collection($messages));
     }
@@ -366,6 +376,7 @@ class MessageController extends Controller
                 'content',
                 'message_type',
                 'is_encrypted',
+                'sent_as_anonymous',
                 'created_at',
             ]);
 
@@ -425,7 +436,7 @@ class MessageController extends Controller
 
             if (
                 (int) $session->student_id === $senderId
-                && $this->shouldMaskStudentIdentityForRecipient($session, $viewerId)
+                && $this->shouldMaskStudentIdentityForRecipient($session, $viewerId, $message->sent_as_anonymous)
             ) {
                 $senderName = $this->resolveAnonymousLabel($session);
             }
@@ -568,6 +579,7 @@ class MessageController extends Controller
             'file_url' => $validated['file_url'] ?? null,
             'has_file' => !empty($validated['file_url']),
             'is_encrypted' => $isEncrypted,
+            'sent_as_anonymous' => (bool) $session->is_anonymous,
             'seen_at' => null,
         ]);
 
@@ -597,7 +609,7 @@ class MessageController extends Controller
         }
 
         try {
-            $this->notifyMessageRecipient($session, $user->id, $validated, $isEncrypted);
+            $this->notifyMessageRecipient($session, $user->id, $validated, $isEncrypted, $message);
         } catch (\Throwable $_) {
             // no-op
         }
@@ -825,7 +837,8 @@ class MessageController extends Controller
         CounselingSession $session,
         int $senderId,
         array $validated,
-        bool $isEncrypted
+        bool $isEncrypted,
+        Message $message
     ): void {
         $recipientId = $this->resolveRecipientId($session, $senderId);
 
@@ -845,12 +858,18 @@ class MessageController extends Controller
         $senderName = optional(optional($sender)->profile)->full_name
             ?: ($sender?->email ? Str::before($sender->email, '@') : 'Someone');
 
+        $isAnonymousToRecipient = false;
         if (
             (int) $session->student_id === (int) $senderId
-            && $this->shouldMaskStudentIdentityForRecipient($session, (int) $recipientId)
+            && $this->shouldMaskStudentIdentityForRecipient($session, (int) $recipientId, $message->sent_as_anonymous)
         ) {
             $senderName = $this->resolveAnonymousLabel($session);
+            $isAnonymousToRecipient = true;
         }
+
+        $preview = $this->buildMessagePreview($messageType, $content, $isEncrypted);
+        $pushTitle = $isAnonymousToRecipient ? 'New anonymous message' : 'New message';
+        $pushBody = sprintf('%s: %s', $senderName, $preview);
 
         Notification::create([
             'user_id' => $recipientId,
@@ -858,10 +877,47 @@ class MessageController extends Controller
             'message' => sprintf(
                 '%s: %s',
                 $senderName,
-                $this->buildMessagePreview($messageType, $content, $isEncrypted)
+                $preview
             ),
             'type' => 'info',
         ]);
+
+        $this->webPush->sendToUser(
+            (int) $recipientId,
+            $pushTitle,
+            $pushBody,
+            $this->chatUrlForUserId((int) $recipientId, (int) $session->id),
+            [
+                'tag' => 'cms-chat-'.(int) $session->id.'-msg-'.(int) $message->id,
+                'urgency' => 'high',
+            ]
+        );
+    }
+
+    private function chatUrlForUserId(int $userId, int $sessionId): string
+    {
+        $user = User::query()->find($userId);
+        if (! $user) {
+            return '/';
+        }
+
+        if ($user->hasRole('admin')) {
+            return '/admin/alerts';
+        }
+
+        if ($user->hasRole('counselor')) {
+            return '/counselor/messages?session='.$sessionId;
+        }
+
+        if ($user->hasRole('peer_counselor')) {
+            return '/peer/chats?session='.$sessionId;
+        }
+
+        if ($user->hasRole('student')) {
+            return '/student/chat?session='.$sessionId;
+        }
+
+        return '/';
     }
 
     private function isHandshakeEnvelope(string $messageType, string $content): bool
@@ -960,9 +1016,12 @@ class MessageController extends Controller
 
     private function shouldMaskStudentIdentityForRecipient(
         CounselingSession $session,
-        int $recipientId
+        int $recipientId,
+        ?bool $sentAsAnonymousSnapshot = null,
     ): bool {
-        if (!$session->is_anonymous) {
+        $effectiveAnonymous = $sentAsAnonymousSnapshot ?? (bool) $session->is_anonymous;
+
+        if (! $effectiveAnonymous) {
             return false;
         }
 
@@ -1148,6 +1207,22 @@ class MessageController extends Controller
                 ),
                 'type' => 'error', // High priority
             ]);
+
+            $this->webPush->sendToUser(
+                (int) $recipientId,
+                'Emergency: crisis keywords detected',
+                sprintf(
+                    '%s — terms: %s. Open the session immediately.',
+                    $viewerName,
+                    $wordList
+                ),
+                $this->chatUrlForUserId((int) $recipientId, (int) $session->id),
+                [
+                    'tag' => 'cms-crisis-'.(int) $session->id.'-'.time(),
+                    'urgency' => 'high',
+                    'requireInteraction' => true,
+                ]
+            );
         }
     }
 

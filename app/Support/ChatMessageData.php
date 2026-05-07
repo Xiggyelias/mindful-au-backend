@@ -27,6 +27,9 @@ class ChatMessageData
             'has_file' => $attachment !== null || (bool) $message->has_file,
             'attachment' => $attachment,
             'is_encrypted' => (bool) $message->is_encrypted,
+            'sent_as_anonymous' => $message->sent_as_anonymous === null
+                ? null
+                : (bool) $message->sent_as_anonymous,
             'seen_at' => $message->seen_at?->toISOString(),
             /** Same as DB `seen_at IS NOT NULL` (this API uses nullable timestamps, not a separate is_read column). */
             'is_read' => $message->seen_at !== null,

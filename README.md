@@ -77,7 +77,19 @@ Database drivers may return numeric IDs as strings. Controllers that gate messag
 
 Panic logs and session panic escalation **notify approved professional counselors and admins**. **Peer counselors are not** included in that notification list, so crisis signals go to staff who can provide clinical follow-up.
 
+**Notification content:** panic-related notifications include a **student display line** (preferred: profile `full_name`, else email, else `Student #id`) plus **identifiers** where available: **user id**, **email**, and **institution id** (`profiles.id_number`) when set. Session-based panic escalation uses the same idea for named sessions; **anonymous** sessions continue to use the anonymous display rules until identity is revealed per policy.
+
+**Admin UI:** the web app’s alerts surface shows those details and a **Student profile** action that deep-links to **`/admin/students?open={userId}`** (roster opens the student detail dialog).
+
 Related client copy should describe alerts as reaching **professional counselling staff**, not peer volunteers.
+
+## Anonymous chat and messages
+
+- Updating a student’s **profile** `anonymous_mode` **does not** overwrite `is_anonymous` on all open chat sessions (each session keeps its own flag).
+- Patching **`PATCH /api/sessions/{id}/chat-anonymity`** updates **that** session only (and may still sync the student’s profile preference to match that action, depending on product flow).
+- Chat messages include **`sent_as_anonymous`** (nullable for legacy rows): counselor-facing list endpoints mask student participant ids per **message** using that snapshot so history matches how messages were sent.
+
+Run `php artisan migrate` after pulling to apply the `sent_as_anonymous` column on `messages`.
 
 ## Wellness Tips
 
@@ -146,6 +158,8 @@ Role resolution for OAuth:
 ## Schema
 
 Canonical schema snapshot: `database/schema.sql`
+
+Chat privacy: `messages.sent_as_anonymous` records whether the session was anonymous **when the message was created**; listing endpoints use it (with `NULL` falling back to the session flag for legacy rows) so counselor-side identity masking stays consistent after mid-session mode changes.
 
 ## Tests
 

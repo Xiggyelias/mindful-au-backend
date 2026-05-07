@@ -16,7 +16,7 @@ class PanicLogController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = PanicLog::with(['student', 'resolver']);
+        $query = PanicLog::with(['student.profile', 'student.roles', 'resolver']);
 
         if ($user->hasRole('student')) {
             $query->where('student_id', $user->id);
@@ -74,20 +74,39 @@ class PanicLogController extends Controller
         if (SystemSettings::getBool('panic_alerts', true)) {
             $student = $request->user();
             $student->loadMissing('profile');
-            $studentName = $student->profile?->full_name ?? $student->email ?? ('Student #' . $student->id);
+            $studentName = trim((string) ($student->profile?->full_name ?? ''));
+            if ($studentName === '') {
+                $studentName = $student->email
+                    ? (string) $student->email
+                    : ('Student #' . $student->id);
+            }
+
+            $idNumber = trim((string) ($student->profile?->id_number ?? ''));
+            $detailParts = ['User ID ' . (int) $student->id];
+            if ($student->email) {
+                $detailParts[] = (string) $student->email;
+            }
+            if ($idNumber !== '') {
+                $detailParts[] = 'Institution ID ' . $idNumber;
+            }
+            $studentDetailLine = implode(' · ', $detailParts);
 
             $locationDisplay = 'Location not provided';
             if ($combinedLocation) {
                 $locationDisplay = $combinedLocation;
-                if (preg_match('/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/', trim($combinedLocation))) {
-                    $locationDisplay .= ' (https://www.google.com/maps/search/?api=1&query='
-                        . urlencode(trim($combinedLocation)) . ')';
+                if (preg_match('/-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?/', $combinedLocation, $coordMatch)) {
+                    $coord = preg_replace('/\s*,\s*/', ', ', trim($coordMatch[0] ?? ''));
+                    if ($coord !== '') {
+                        $locationDisplay .= ' (https://www.google.com/maps/search/?api=1&query='
+                            . urlencode($coord) . ')';
+                    }
                 }
             }
 
             $alertMessage = sprintf(
-                'EMERGENCY: %s triggered the panic button. Location: %s. Please respond immediately.',
+                'EMERGENCY: %s triggered the panic button. %s. Location: %s. Please respond immediately.',
                 $studentName,
+                $studentDetailLine,
                 $locationDisplay
             );
 

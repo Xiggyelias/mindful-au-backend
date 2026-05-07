@@ -125,6 +125,7 @@ class ChatAttachmentController extends Controller
                 'file_url' => null,
                 'has_file' => true,
                 'is_encrypted' => false,
+                'sent_as_anonymous' => (bool) $session->is_anonymous,
                 'seen_at' => null,
             ]);
 
@@ -159,7 +160,7 @@ class ChatAttachmentController extends Controller
         }
 
         try {
-            $this->notifyRecipient($session, (int) $user->id, $messageType);
+            $this->notifyRecipient($session, (int) $user->id, $messageType, $message->sent_as_anonymous);
         } catch (\Throwable $_) {
             // no-op
         }
@@ -277,8 +278,12 @@ class ChatAttachmentController extends Controller
             && $session->assigned_role === 'peer_counselor';
     }
 
-    private function notifyRecipient(CounselingSession $session, int $senderId, string $messageType): void
-    {
+    private function notifyRecipient(
+        CounselingSession $session,
+        int $senderId,
+        string $messageType,
+        ?bool $sentAsAnonymousSnapshot = null,
+    ): void {
         $recipientId = $this->resolveRecipientId($session, $senderId);
         if (!$recipientId || $recipientId === $senderId) {
             return;
@@ -290,7 +295,7 @@ class ChatAttachmentController extends Controller
 
         if (
             (int) $session->student_id === $senderId
-            && $this->shouldMaskStudentIdentityForRecipient($session, $recipientId)
+            && $this->shouldMaskStudentIdentityForRecipient($session, $recipientId, $sentAsAnonymousSnapshot)
         ) {
             $senderName = $this->resolveAnonymousLabel($session);
         }
@@ -334,9 +339,12 @@ class ChatAttachmentController extends Controller
 
     private function shouldMaskStudentIdentityForRecipient(
         CounselingSession $session,
-        int $recipientId
+        int $recipientId,
+        ?bool $sentAsAnonymousSnapshot = null,
     ): bool {
-        if (!$session->is_anonymous) {
+        $effectiveAnonymous = $sentAsAnonymousSnapshot ?? (bool) $session->is_anonymous;
+
+        if (! $effectiveAnonymous) {
             return false;
         }
 

@@ -21,6 +21,10 @@ class VideoCallController extends Controller
     private const JOIN_EARLY_MINUTES = 0;
     private const JOIN_LATE_GRACE_MINUTES = 0;
 
+    public function __construct(
+        private readonly \App\Services\WebPushService $webPush,
+    ) {}
+
     public function authorizeCall(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -132,6 +136,22 @@ class VideoCallController extends Controller
                 'status' => CounselingCall::STATUS_PENDING,
                 'call_type' => $callType,
             ]);
+
+            $isAudio = $callType === 'audio';
+            $this->webPush->sendToUser(
+                (int) $appointment->counselor_id,
+                $isAudio ? 'Incoming audio call' : 'Incoming video call',
+                sprintf(
+                    'A student is calling you for %s.',
+                    $isAudio ? 'an audio session' : 'a video session'
+                ),
+                '/counselor/video',
+                [
+                    'tag' => 'cms-call-apt-'.(int) $appointment->id,
+                    'urgency' => 'high',
+                    'requireInteraction' => true,
+                ]
+            );
         }
 
         return response()->json([

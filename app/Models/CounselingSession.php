@@ -36,27 +36,6 @@ class CounselingSession extends Model
         'ended_at' => 'datetime',
     ];
 
-    public static function syncOpenStudentChatsAnonymity(int $studentUserId, bool $isAnonymous): void
-    {
-        $sessions = static::query()
-            ->where('student_id', $studentUserId)
-            ->where('session_type', 'chat')
-            ->whereIn('status', ['pending', 'active'])
-            ->get();
-
-        foreach ($sessions as $session) {
-            $session->is_anonymous = $isAnonymous;
-            if ($isAnonymous) {
-                if ($session->anonymous_id === null || trim((string) $session->anonymous_id) === '') {
-                    $session->anonymous_id = static::generateUniqueAnonymousId();
-                }
-            } else {
-                $session->anonymous_id = null;
-            }
-            $session->save();
-        }
-    }
-
     /**
      * Unique handle shown to counselors for anonymous threads (matches SessionController semantics).
      */

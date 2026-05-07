@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\CounselingSession;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
@@ -50,10 +49,6 @@ class ProfileController extends Controller
 
         if (!empty($profileData)) {
             $profile->update($profileData);
-        }
-
-        if ($user->hasRole('student') && array_key_exists('anonymous_mode', $profileData)) {
-            CounselingSession::syncOpenStudentChatsAnonymity((int) $user->id, (bool) $profileData['anonymous_mode']);
         }
 
         if (array_key_exists('email', $validated)) {

@@ -635,8 +635,6 @@ class SessionController extends Controller
             $profile->forceFill(['anonymous_mode' => $isAnonymous])->save();
         }
 
-        CounselingSession::syncOpenStudentChatsAnonymity((int) $user->id, $isAnonymous);
-
         $session->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
         $this->appendRiskSignals($session, $user, $request);
 
@@ -1936,9 +1934,29 @@ class SessionController extends Controller
 
     private function buildEmergencyMessage(CounselingSession $session, string $reason): string
     {
-        $label = $session->is_anonymous
-            ? $this->resolveAnonymousDisplayId($session)
-            : "Student #{$session->student_id}";
+        if ($session->is_anonymous) {
+            $label = $this->resolveAnonymousDisplayId($session);
+        } else {
+            $student = $session->student;
+            $student?->loadMissing('profile');
+            $name = trim((string) ($student?->profile?->full_name ?? ''));
+            $idNumber = trim((string) ($student?->profile?->id_number ?? ''));
+            if ($name !== '') {
+                $label = $name;
+            } elseif ($student?->email) {
+                $label = (string) $student->email;
+            } else {
+                $label = 'Student #' . (int) $session->student_id;
+            }
+            $bits = ['user ID ' . (int) $session->student_id];
+            if ($student?->email) {
+                $bits[] = (string) $student->email;
+            }
+            if ($idNumber !== '') {
+                $bits[] = 'Institution ID ' . $idNumber;
+            }
+            $label .= ' (' . implode(' · ', $bits) . ')';
+        }
 
         if ($reason !== '') {
             return "{$label} triggered emergency escalation. Reason: {$reason}";

@@ -10,6 +10,10 @@ use Illuminate\Support\Facades\DB;
 
 class CounselorSessionReminderController extends Controller
 {
+    public function __construct(
+        private readonly \App\Services\WebPushService $webPush,
+    ) {}
+
     /**
      * Appointments starting within the next 10 minutes (exclusive of past starts),
      * counselor-scoped, reminder not yet sent.
@@ -76,6 +80,22 @@ class CounselorSessionReminderController extends Controller
 
             return $data;
         });
+
+        foreach ($payload as $row) {
+            $this->webPush->sendToUser(
+                (int) $user->id,
+                'Session starts in 10 minutes',
+                sprintf(
+                    'Your session with %s is coming up.',
+                    (string) ($row['student_name'] ?? 'your student')
+                ),
+                '/counselor/video',
+                [
+                    'tag' => 'cms-reminder-'.(int) ($row['appointment_id'] ?? 0),
+                    'urgency' => 'normal',
+                ]
+            );
+        }
 
         return response()->json(['data' => $payload]);
     }

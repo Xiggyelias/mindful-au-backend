@@ -27,6 +27,7 @@ class Message extends Model
         'file_url',
         'has_file',
         'is_encrypted',
+        'sent_as_anonymous',
         'seen_at',
     ];
 
@@ -49,5 +50,23 @@ class Message extends Model
     public function chatFile()
     {
         return $this->hasOne(ChatFile::class, 'message_id');
+    }
+
+    public function getSentAsAnonymousAttribute(mixed $value): ?bool
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        $normalized = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
+        if ($normalized !== null) {
+            return $normalized;
+        }
+
+        return (bool) (int) $value;
     }
 }

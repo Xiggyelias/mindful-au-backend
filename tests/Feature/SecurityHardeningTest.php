@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CounselingSession;
+use App\Models\Message;
 use App\Models\Referral;
 use App\Models\SystemSetting;
 use App\Models\User;
@@ -115,6 +116,124 @@ class SecurityHardeningTest extends TestCase
         $student->refresh();
         $student->load('profile');
         $this->assertTrue((bool) ($student->profile?->anonymous_mode));
+    }
+
+    /** @test */
+    public function counselor_sees_historical_anonymous_messages_masked_after_session_named(): void
+    {
+        $counselor = $this->createPortalUser('counselor', 'counselor-hist-a@test.com', 'Counselor Hist A');
+        $student = $this->createPortalUser('student', 'student-hist-a@test.com', 'Student Hist A');
+
+        $session = CounselingSession::query()->create([
+            'student_id' => $student->id,
+            'counselor_id' => $counselor->id,
+            'status' => 'active',
+            'session_type' => 'chat',
+            'is_anonymous' => true,
+            'anonymous_id' => CounselingSession::generateUniqueAnonymousId(),
+            'assigned_role' => 'counselor',
+        ]);
+
+        Message::query()->create([
+            'session_id' => $session->id,
+            'sender_id' => $student->id,
+            'recipient_id' => $counselor->id,
+            'content' => 'encrypted-payload-test',
+            'message_type' => 'text',
+            'is_encrypted' => true,
+            'sent_as_anonymous' => true,
+        ]);
+
+        $this->actingAs($student)->patchJson("/api/sessions/{$session->id}/chat-anonymity", [
+            'is_anonymous' => false,
+        ])->assertStatus(200);
+
+        $list = $this->actingAs($counselor)->getJson("/api/sessions/{$session->id}/messages?limit=10");
+        $list->assertStatus(200);
+        $rows = $list->json();
+        $this->assertIsArray($rows);
+        $this->assertNotEmpty($rows);
+        $first = $rows[0];
+        $this->assertSame(0, (int) ($first['sender_id'] ?? -1));
+    }
+
+    /** @test */
+    public function counselor_sees_historical_named_messages_unmasked_after_session_anonymous(): void
+    {
+        $counselor = $this->createPortalUser('counselor', 'counselor-hist-b@test.com', 'Counselor Hist B');
+        $student = $this->createPortalUser('student', 'student-hist-b@test.com', 'Student Hist B');
+
+        $session = CounselingSession::query()->create([
+            'student_id' => $student->id,
+            'counselor_id' => $counselor->id,
+            'status' => 'active',
+            'session_type' => 'chat',
+            'is_anonymous' => false,
+            'anonymous_id' => null,
+            'assigned_role' => 'counselor',
+        ]);
+
+        Message::query()->create([
+            'session_id' => $session->id,
+            'sender_id' => $student->id,
+            'recipient_id' => $counselor->id,
+            'content' => 'hello-named-era',
+            'message_type' => 'text',
+            'is_encrypted' => true,
+            'sent_as_anonymous' => false,
+        ]);
+
+        $this->actingAs($student)->patchJson("/api/sessions/{$session->id}/chat-anonymity", [
+            'is_anonymous' => true,
+        ])->assertStatus(200);
+
+        $list = $this->actingAs($counselor)->getJson("/api/sessions/{$session->id}/messages?limit=10");
+        $list->assertStatus(200);
+        $rows = $list->json();
+        $this->assertNotEmpty($rows);
+        $first = $rows[0];
+        $this->assertSame((int) $student->id, (int) ($first['sender_id'] ?? 0));
+    }
+
+    /** @test */
+    public function student_profile_anonymous_default_change_does_not_sync_open_chat_sessions(): void
+    {
+        $c1 = $this->createPortalUser('counselor', 'counselor-dup1@test.com', 'C1');
+        $c2 = $this->createPortalUser('counselor', 'counselor-dup2@test.com', 'C2');
+        $student = $this->createPortalUser('student', 'student-dup@test.com', 'Student Dup');
+
+        $anonId1 = CounselingSession::generateUniqueAnonymousId();
+        $anonId2 = CounselingSession::generateUniqueAnonymousId();
+
+        $s1 = CounselingSession::query()->create([
+            'student_id' => $student->id,
+            'counselor_id' => $c1->id,
+            'status' => 'active',
+            'session_type' => 'chat',
+            'is_anonymous' => true,
+            'anonymous_id' => $anonId1,
+            'assigned_role' => 'counselor',
+        ]);
+        $s2 = CounselingSession::query()->create([
+            'student_id' => $student->id,
+            'counselor_id' => $c2->id,
+            'status' => 'active',
+            'session_type' => 'chat',
+            'is_anonymous' => true,
+            'anonymous_id' => $anonId2,
+            'assigned_role' => 'counselor',
+        ]);
+
+        $this->actingAs($student)->putJson('/api/profile', [
+            'anonymous_mode' => false,
+        ])->assertSuccessful();
+
+        $s1->refresh();
+        $s2->refresh();
+        $this->assertTrue((bool) $s1->is_anonymous);
+        $this->assertTrue((bool) $s2->is_anonymous);
+        $this->assertSame($anonId1, $s1->anonymous_id);
+        $this->assertSame($anonId2, $s2->anonymous_id);
     }
 
     /** @test */

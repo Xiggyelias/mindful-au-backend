@@ -55,6 +55,7 @@ class VoiceNotesController extends Controller
             'message_type' => 'voice',
             'file_url' => $url,
             'is_encrypted' => false,
+            'sent_as_anonymous' => (bool) $session->is_anonymous,
         ]);
 
         return response()->json($message->load('sender'), 201);
