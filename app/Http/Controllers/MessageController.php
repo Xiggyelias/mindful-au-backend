@@ -74,12 +74,7 @@ class MessageController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (
-            $session->is_anonymous
-            && in_array((string) $session->status, ['pending', 'active'], true)
-        ) {
-            CounselingSession::query()->whereKey((int) $session->id)->update(['updated_at' => now()]);
-        }
+        $this->maybeBumpAnonymousSessionActivity($session);
 
         if ($this->isAnonymousSessionExpired($session)) {
             return response()->json(['message' => 'This anonymous session has expired.'], 410);
@@ -112,14 +107,8 @@ class MessageController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // Reading/polling counts as activity for anonymous TTL (based on session.updated_at).
-        if (
-            $session->is_anonymous
-            && in_array((string) $session->status, ['pending', 'active'], true)
-        ) {
-            CounselingSession::query()->whereKey((int) $session->id)->update(['updated_at' => now()]);
-            $session->setAttribute('updated_at', now());
-        }
+        // Throttled: avoid writing counseling_sessions on every poll while keeping 24h TTL alive.
+        $this->maybeBumpAnonymousSessionActivity($session);
 
         if ($this->isAnonymousSessionExpired($session)) {
             return response()->json(['message' => 'This anonymous session has expired.'], 410);
@@ -128,7 +117,7 @@ class MessageController extends Controller
         $validated = $request->validate([
             'after_id' => 'nullable|integer|min:0',
             'before_id' => 'nullable|integer|min:1',
-            'limit' => 'nullable|integer|min:1|max:30',
+            'limit' => 'nullable|integer|min:1|max:50',
             'mark_read' => 'sometimes|boolean',
         ]);
 
@@ -139,7 +128,7 @@ class MessageController extends Controller
 
         $this->touchPresenceIfStale($user);
 
-        $limit = (int) ($validated['limit'] ?? 30);
+        $limit = (int) ($validated['limit'] ?? 40);
         $afterId = (int) ($validated['after_id'] ?? 0);
         $beforeId = (int) ($validated['before_id'] ?? 0);
 
@@ -181,17 +170,10 @@ class MessageController extends Controller
             $assignment = PeerAssignment::query()
                 ->where('session_id', $session->id)
                 ->where('peer_counselor_id', $targetPeerId)
-                ->where('status', 'active')
-                ->latest('assigned_at')
+                ->orderByRaw("CASE WHEN status = 'active' THEN 0 ELSE 1 END")
+                ->orderByDesc('assigned_at')
+                ->orderByDesc('created_at')
                 ->first(['assigned_at', 'created_at']);
-
-            if ($assignment === null) {
-                $assignment = PeerAssignment::query()
-                    ->where('session_id', $session->id)
-                    ->where('peer_counselor_id', $targetPeerId)
-                    ->latest('assigned_at')
-                    ->first(['assigned_at', 'created_at']);
-            }
 
             $windowStart = $assignment?->assigned_at ?? $assignment?->created_at;
             if ($windowStart) {
@@ -1162,6 +1144,34 @@ class MessageController extends Controller
     private function typingCacheKey(int $sessionId, int $userId): string
     {
         return sprintf('session:%d:typing:%d', $sessionId, $userId);
+    }
+
+    /**
+     * Refresh anonymous chat session activity for TTL without updating on every HTTP poll.
+     */
+    private function maybeBumpAnonymousSessionActivity(CounselingSession $session): void
+    {
+        if (
+            ! $session->is_anonymous
+            || ! in_array((string) $session->status, ['pending', 'active'], true)
+        ) {
+            return;
+        }
+
+        $minSeconds = max(30, (int) env('ANONYMOUS_SESSION_ACTIVITY_TOUCH_SECONDS', 60));
+        $updatedAt = $session->updated_at instanceof \DateTimeInterface
+            ? Carbon::instance($session->updated_at)
+            : null;
+
+        if (
+            $updatedAt instanceof Carbon
+            && $updatedAt->greaterThanOrEqualTo(now()->subSeconds($minSeconds))
+        ) {
+            return;
+        }
+
+        CounselingSession::query()->whereKey((int) $session->id)->update(['updated_at' => now()]);
+        $session->setAttribute('updated_at', now());
     }
 
     private function touchPresenceIfStale(User $user): void

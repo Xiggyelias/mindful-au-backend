@@ -333,9 +333,18 @@ class SessionController extends Controller
         $total = null;
         $rowsPaginator = null;
 
-        $unreadSql = '(select count(*) from messages where messages.session_id = s.id and messages.recipient_id = ? and messages.seen_at is null) as unread_count';
+        // Single aggregated scan for unread counts instead of a correlated subquery per row
+        // (N sessions × messages count-subquery was a major latency source on counselor chat list).
+        $unreadAggregates = DB::table('messages')
+            ->select('session_id', DB::raw('COUNT(*) as unread_count'))
+            ->where('recipient_id', $viewerId)
+            ->whereNull('seen_at')
+            ->groupBy('session_id');
 
         $orderedQuery = (clone $scopedSessionQuery)
+            ->leftJoinSub($unreadAggregates, 'unread_agg', function ($join): void {
+                $join->on('unread_agg.session_id', '=', 's.id');
+            })
             ->leftJoin('users as student', 'student.id', '=', 's.student_id')
             ->leftJoin('profiles as student_profile', 'student_profile.user_id', '=', 's.student_id')
             ->leftJoin('users as peer', 'peer.id', '=', 's.peer_counselor_id')
@@ -358,8 +367,8 @@ class SessionController extends Controller
                 'student_profile.full_name as student_full_name',
                 'peer.email as peer_email',
                 'peer_profile.full_name as peer_full_name',
+                DB::raw('COALESCE(unread_agg.unread_count, 0) as unread_count'),
             ])
-            ->selectRaw($unreadSql, [$viewerId])
             ->orderByDesc('s.updated_at')
             ->orderByDesc('s.id');
 
