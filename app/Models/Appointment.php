@@ -9,6 +9,24 @@ class Appointment extends Model
 {
     use HasFactory;
 
+    /**
+     * Anonymous online bookings must never be stored as video — counselors only receive audio calls.
+     * In-person (notes start with "physical") is exempt.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Appointment $appointment): void {
+            if (! $appointment->is_anonymous) {
+                return;
+            }
+            $notes = strtolower(trim((string) ($appointment->notes ?? '')));
+            if (str_starts_with($notes, 'physical')) {
+                return;
+            }
+            $appointment->call_type = 'audio';
+        });
+    }
+
     protected $fillable = [
         'student_id',
         'counselor_id',

@@ -130,6 +130,12 @@ class AppointmentController extends Controller
         $notesRaw = trim((string) ($validated['notes'] ?? ''));
         $isPhysical = str_starts_with(strtolower($notesRaw), 'physical');
 
+        if ($isAnonymous && ! $isPhysical && (($validated['call_type'] ?? null) === 'video')) {
+            throw ValidationException::withMessages([
+                'call_type' => ['Anonymous online appointments are audio-only.'],
+            ]);
+        }
+
         if ($isAnonymous && !$isPhysical) {
             $finalNotes = 'Online audio';
             $callType = 'audio';
