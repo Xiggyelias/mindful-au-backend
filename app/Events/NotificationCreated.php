@@ -35,7 +35,7 @@ class NotificationCreated implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return [
+        $payload = [
             'id' => $this->notification->id,
             'title' => $this->notification->title,
             'message' => $this->notification->message,
@@ -43,6 +43,12 @@ class NotificationCreated implements ShouldBroadcast
             'read' => $this->notification->read,
             'created_at' => $this->notification->created_at->toISOString(),
         ];
+        $meta = $this->notification->meta;
+        if (is_array($meta) && $meta !== []) {
+            $payload['meta'] = $meta;
+        }
+
+        return $payload;
     }
 }
 

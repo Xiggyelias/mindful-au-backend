@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Appointment;
 use App\Models\ActivityLog;
 use App\Models\Notification;
+use App\Events\NotificationCreated;
 use App\Support\PaginationPayload;
 use App\Models\User;
 use App\Services\WebPushService;
@@ -516,12 +517,13 @@ class AppointmentController extends Controller
             $message .= ' Reason: ' . trim($reason);
         }
 
-        Notification::create([
+        $notification = Notification::create([
             'user_id' => $appointment->student_id,
             'title' => 'Session cancelled',
             'message' => $message,
             'type' => 'warning',
         ]);
+        event(new NotificationCreated($notification));
 
         $this->webPush->sendToUser(
             (int) $appointment->student_id,
@@ -540,7 +542,7 @@ class AppointmentController extends Controller
 
         $studentName = $this->resolveAppointmentStudentLabel($appointment);
 
-        Notification::create([
+        $notification = Notification::create([
             'user_id' => $appointment->counselor_id,
             'title' => 'New appointment request',
             'message' => sprintf(
@@ -549,7 +551,11 @@ class AppointmentController extends Controller
                 $this->formatAppointmentTime($appointment->scheduled_at)
             ),
             'type' => 'info',
+            'meta' => [
+                'appointment_id' => (int) $appointment->id,
+            ],
         ]);
+        event(new NotificationCreated($notification));
 
         $this->webPush->sendToUser(
             (int) $appointment->counselor_id,
@@ -572,7 +578,7 @@ class AppointmentController extends Controller
         $statusLabel = Str::headline($newStatus);
         $type = $newStatus === 'confirmed' || $newStatus === 'completed' ? 'success' : ($newStatus === 'cancelled' ? 'warning' : 'info');
 
-        Notification::create([
+        $notification = Notification::create([
             'user_id' => $appointment->student_id,
             'title' => "Appointment {$statusLabel}",
             'message' => sprintf(
@@ -581,7 +587,11 @@ class AppointmentController extends Controller
                 strtolower($statusLabel)
             ),
             'type' => $type,
+            'meta' => [
+                'appointment_id' => (int) $appointment->id,
+            ],
         ]);
+        event(new NotificationCreated($notification));
 
         if ($newStatus === 'cancelled') {
             $this->webPush->sendToUser(
@@ -600,7 +610,7 @@ class AppointmentController extends Controller
             return;
         }
 
-        Notification::create([
+        $notification = Notification::create([
             'user_id' => $appointment->student_id,
             'title' => 'Appointment rescheduled',
             'message' => sprintf(
@@ -608,7 +618,11 @@ class AppointmentController extends Controller
                 $this->formatAppointmentTime($appointment->scheduled_at)
             ),
             'type' => 'info',
+            'meta' => [
+                'appointment_id' => (int) $appointment->id,
+            ],
         ]);
+        event(new NotificationCreated($notification));
 
         $this->webPush->sendToUser(
             (int) $appointment->student_id,
@@ -640,12 +654,16 @@ class AppointmentController extends Controller
             $message .= sprintf(' Reason: %s', trim($reason));
         }
 
-        Notification::create([
+        $notification = Notification::create([
             'user_id' => $appointment->counselor_id,
             'title' => 'Appointment cancelled',
             'message' => $message,
             'type' => 'warning',
+            'meta' => [
+                'appointment_id' => (int) $appointment->id,
+            ],
         ]);
+        event(new NotificationCreated($notification));
 
         $this->webPush->sendToUser(
             (int) $appointment->counselor_id,

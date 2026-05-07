@@ -348,12 +348,25 @@ class DiagnosticController extends Controller
     private function resolveObservedStudentIds(int $userId, bool $isAdmin): Collection
     {
         if ($isAdmin) {
-            return User::query()
-                ->whereHas('roles', function (Builder $query) {
-                    $query->where('role', 'student');
-                })
-                ->pluck('id')
+            // Unbounded "all students" caused timeouts; prioritize students with recent signals.
+            $fromDiagnostics = Diagnostic::query()
+                ->where('created_at', '>=', now()->subDays(365))
+                ->orderByDesc('created_at')
+                ->limit(600)
+                ->pluck('student_id');
+
+            $fromSessions = CounselingSession::query()
+                ->where('updated_at', '>=', now()->subDays(180))
+                ->orderByDesc('updated_at')
+                ->limit(400)
+                ->pluck('student_id');
+
+            return $fromDiagnostics
+                ->merge($fromSessions)
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
                 ->unique()
+                ->take(350)
                 ->values();
         }
 
@@ -376,30 +389,65 @@ class DiagnosticController extends Controller
     {
         return $studentIds
             ->map(function (int $studentId) {
-                $insights = $this->mlService->buildStudentMlInsights($studentId);
-                $snapshot = $insights['feature_snapshot'] ?? [];
-                
-                $student = User::with('profile')->find($studentId);
-                if (!$student) return null;
+                try {
+                    $insights = $this->mlService->buildStudentMlInsights($studentId);
+                } catch (\Throwable $e) {
+                    report($e);
 
-                $riskLevel = (string) ($insights['risk_forecast']['level'] ?? 'low');
+                    return null;
+                }
+                $snapshot = $insights['feature_snapshot'] ?? [];
+
+                $student = User::with('profile')->find($studentId);
+                if (! $student) {
+                    return null;
+                }
+
+                $riskLevel = strtolower((string) ($insights['risk_forecast']['level'] ?? 'low'));
+                if (! in_array($riskLevel, ['low', 'medium', 'high', 'critical'], true)) {
+                    $riskLevel = 'low';
+                }
                 $riskScore = (int) ($insights['risk_forecast']['score'] ?? 0);
-                
+
                 $riskIndicators = $insights['risk_indicators'] ?? [];
                 $protectiveFactors = $insights['protective_factors'] ?? [];
+                if (! is_array($riskIndicators)) {
+                    $riskIndicators = [];
+                }
+                if (! is_array($protectiveFactors)) {
+                    $protectiveFactors = [];
+                }
+
+                $trend = $insights['trend'] ?? ['label' => 'stable', 'delta' => 0];
+                if (! is_array($trend)) {
+                    $trend = ['label' => 'stable', 'delta' => 0];
+                }
+                $trendLabelRaw = (string) ($trend['label'] ?? 'stable');
+                $allowedTrends = ['improving', 'stable', 'worsening', 'insufficient_data'];
+                if (! in_array($trendLabelRaw, $allowedTrends, true)) {
+                    $trend['label'] = 'insufficient_data';
+                }
+
+                $recommendedActions = $insights['recommended_actions'] ?? [];
+                $primaryAction = is_array($recommendedActions) && $recommendedActions !== []
+                    ? (string) $recommendedActions[0]
+                    : 'Continue routine monitoring.';
 
                 return [
                     'student_id' => (int) $studentId,
                     'student' => [
                         'id' => (int) $studentId,
-                        'name' => $student->profile?->full_name 
+                        'name' => $student->profile?->full_name
                             ?: ($student->email ? Str::before($student->email, '@') : "Student #{$studentId}"),
-                        'email' => $student->email,
+                        'email' => (string) ($student->email ?? ''),
                     ],
                     'risk_level' => $riskLevel,
                     'risk_score' => $riskScore,
                     'confidence' => (int) ($insights['risk_forecast']['confidence'] ?? 75),
-                    'trend' => $insights['trend'] ?? ['label' => 'stable', 'delta' => 0],
+                    'trend' => [
+                        'label' => (string) ($trend['label'] ?? 'stable'),
+                        'delta' => (int) ($trend['delta'] ?? 0),
+                    ],
                     'signals' => [
                         'distress_hits' => (int) ($snapshot['distress_messages_30d'] ?? 0),
                         'crisis_hits' => (int) ($snapshot['crisis_messages_30d'] ?? 0),
@@ -410,7 +458,7 @@ class DiagnosticController extends Controller
                         'appointments_30d' => (int) ($snapshot['upcoming_appointments'] ?? 0),
                     ],
                     'reasons' => array_values(array_unique(array_merge($riskIndicators, $protectiveFactors))),
-                    'recommended_action' => $insights['recommended_actions'][0] ?? 'Continue routine monitoring.',
+                    'recommended_action' => $primaryAction,
                     'updated_at' => now(),
                 ];
             })

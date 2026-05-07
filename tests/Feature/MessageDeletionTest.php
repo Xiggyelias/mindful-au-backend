@@ -57,11 +57,30 @@ class MessageDeletionTest extends TestCase
     }
 
     /** @test */
-    public function participant_cannot_delete_someone_elses_message(): void
+    public function counselor_can_delete_student_message(): void
     {
         $message = $this->createMessage($this->student->id, $this->counselor->id);
 
         $response = $this->actingAs($this->counselor)->deleteJson(
+            "/api/sessions/{$this->session->id}/messages/{$message->id}"
+        );
+
+        $response
+            ->assertStatus(200)
+            ->assertJson([
+                'ok' => true,
+                'id' => $message->id,
+            ]);
+
+        $this->assertDatabaseMissing('messages', ['id' => $message->id]);
+    }
+
+    /** @test */
+    public function student_cannot_delete_counselor_message(): void
+    {
+        $message = $this->createMessage($this->counselor->id, $this->student->id);
+
+        $response = $this->actingAs($this->student)->deleteJson(
             "/api/sessions/{$this->session->id}/messages/{$message->id}"
         );
 

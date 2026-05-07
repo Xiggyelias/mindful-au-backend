@@ -15,12 +15,19 @@ class CounselingCall extends Model
 
     public const STATUS_DECLINED = 'declined';
 
+    /** Student placed the call (counselor sees incoming). */
+    public const CALLER_STUDENT = 'student';
+
+    /** Counselor placed the call (student sees incoming). */
+    public const CALLER_COUNSELOR = 'counselor';
+
     protected $fillable = [
         'appointment_id',
         'student_id',
         'counselor_id',
         'status',
         'call_type',
+        'caller_role',
     ];
 
     public function appointment(): BelongsTo

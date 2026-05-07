@@ -125,15 +125,19 @@ class MessageController extends Controller
             return response()->json(['message' => 'This anonymous session has expired.'], 410);
         }
 
-        $this->markInboundMessagesReadForViewer((int) $session->id, (int) $user->id);
-
-        $this->touchPresenceIfStale($user);
-
         $validated = $request->validate([
             'after_id' => 'nullable|integer|min:0',
             'before_id' => 'nullable|integer|min:1',
             'limit' => 'nullable|integer|min:1|max:30',
+            'mark_read' => 'sometimes|boolean',
         ]);
+
+        $markRead = $request->boolean('mark_read', true);
+        if ($markRead) {
+            $this->markInboundMessagesReadForViewer((int) $session->id, (int) $user->id);
+        }
+
+        $this->touchPresenceIfStale($user);
 
         $limit = (int) ($validated['limit'] ?? 30);
         $afterId = (int) ($validated['after_id'] ?? 0);
@@ -453,6 +457,9 @@ class MessageController extends Controller
                 'session_id' => (int) $message->session_id,
                 'sender_label' => $senderName,
                 'preview' => $preview,
+                'message_id' => (int) $message->id,
+                'is_encrypted' => $isEncrypted,
+                'message_type' => (string) $message->message_type,
                 'created_at' => $message->created_at instanceof Carbon
                     ? $message->created_at->toIso8601String()
                     : Carbon::parse((string) $message->created_at)->toIso8601String(),
@@ -698,10 +705,7 @@ class MessageController extends Controller
             return response()->json(['message' => 'Message not found'], 404);
         }
 
-        if (
-            !$user->hasRole('admin')
-            && (int) $message->sender_id !== (int) $user->id
-        ) {
+        if (! $this->viewerCanDeleteMessage($user, $session, $message, $isAssignedPeerCounselor)) {
             return response()->json([
                 'message' => 'You can only delete messages you sent.',
             ], 403);
@@ -879,6 +883,12 @@ class MessageController extends Controller
                 $senderName,
                 $preview
             ),
+            'meta' => [
+                'chat_session_id' => (int) $session->id,
+                'chat_message_id' => (int) $message->id,
+                'is_encrypted' => $isEncrypted,
+                'message_type' => $messageType,
+            ],
             'type' => 'info',
         ]);
 
@@ -980,6 +990,35 @@ class MessageController extends Controller
         return (int) $session->student_id === $viewerId
             || (int) $session->counselor_id === $viewerId
             || $isAssignedPeerCounselor;
+    }
+
+    /**
+     * Students may delete only their own messages. Session counselor or assigned peer
+     * counselor may delete any message in the thread (moderation). Admins may delete any.
+     */
+    private function viewerCanDeleteMessage(
+        User $user,
+        CounselingSession $session,
+        Message $message,
+        bool $isAssignedPeerCounselor
+    ): bool {
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        if ((int) $message->sender_id === (int) $user->id) {
+            return true;
+        }
+
+        if ($user->hasRole('counselor') && (int) $session->counselor_id === (int) $user->id) {
+            return true;
+        }
+
+        if ($isAssignedPeerCounselor) {
+            return true;
+        }
+
+        return false;
     }
 
     private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool

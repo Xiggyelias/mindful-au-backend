@@ -104,6 +104,7 @@ class NotificationController extends Controller
             'title' => 'required|string',
             'message' => 'required|string',
             'type' => 'sometimes|in:info,warning,success,error,panic',
+            'meta' => 'sometimes|array',
         ]);
 
         $notification = Notification::create($validated);

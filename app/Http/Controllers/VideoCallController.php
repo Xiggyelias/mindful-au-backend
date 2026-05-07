@@ -135,6 +135,7 @@ class VideoCallController extends Controller
                 'counselor_id' => $appointment->counselor_id,
                 'status' => CounselingCall::STATUS_PENDING,
                 'call_type' => $callType,
+                'caller_role' => CounselingCall::CALLER_STUDENT,
             ]);
 
             $isAudio = $callType === 'audio';
@@ -146,6 +147,48 @@ class VideoCallController extends Controller
                     $isAudio ? 'an audio session' : 'a video session'
                 ),
                 '/counselor/video',
+                [
+                    'tag' => 'cms-call-apt-'.(int) $appointment->id,
+                    'urgency' => 'high',
+                    'requireInteraction' => true,
+                ]
+            );
+        } elseif ($user->hasRole('counselor') && (int) $appointment->counselor_id === (int) $user->id) {
+            $callType = (string) ($validated['call_type'] ?? 'video');
+            if (!in_array($callType, ['video', 'audio'], true)) {
+                $callType = 'video';
+            }
+            if ($appointment->is_anonymous) {
+                $callType = 'audio';
+            } elseif (($appointment->call_type ?? '') === 'audio' && $callType === 'video') {
+                return response()->json([
+                    'message' => 'This appointment is booked as audio-only.',
+                ], 422);
+            } elseif (($appointment->call_type ?? '') === 'audio') {
+                $callType = 'audio';
+            }
+            CounselingCall::query()
+                ->where('appointment_id', $appointment->id)
+                ->where('status', CounselingCall::STATUS_PENDING)
+                ->delete();
+            CounselingCall::create([
+                'appointment_id' => $appointment->id,
+                'student_id' => $appointment->student_id,
+                'counselor_id' => $appointment->counselor_id,
+                'status' => CounselingCall::STATUS_PENDING,
+                'call_type' => $callType,
+                'caller_role' => CounselingCall::CALLER_COUNSELOR,
+            ]);
+
+            $isAudio = $callType === 'audio';
+            $this->webPush->sendToUser(
+                (int) $appointment->student_id,
+                $isAudio ? 'Incoming audio call' : 'Incoming video call',
+                sprintf(
+                    'Your counselor is calling you for %s.',
+                    $isAudio ? 'an audio session' : 'a video session'
+                ),
+                '/student/video-call',
                 [
                     'tag' => 'cms-call-apt-'.(int) $appointment->id,
                     'urgency' => 'high',

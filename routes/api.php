@@ -14,6 +14,7 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\VoiceNotesController;
 use App\Http\Controllers\VideoCallController;
 use App\Http\Controllers\CounselorIncomingCallController;
+use App\Http\Controllers\StudentIncomingCallController;
 use App\Http\Controllers\CounselorSessionReminderController;
 use App\Http\Controllers\OpenRouterChatController;
 use App\Http\Controllers\IntakeController;
@@ -135,6 +136,8 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/video-calls/end', [VideoCallController::class, 'end'])->middleware('throttle:20,1');
     Route::get('/counselor/incoming-calls', [CounselorIncomingCallController::class, 'index'])->middleware(['counselor', 'throttle:120,1']);
     Route::patch('/counselor/incoming-calls/{counselingCall}', [CounselorIncomingCallController::class, 'update'])->middleware(['counselor', 'throttle:60,1']);
+    Route::get('/student/incoming-calls', [StudentIncomingCallController::class, 'index'])->middleware(['student', 'throttle:120,1']);
+    Route::patch('/student/incoming-calls/{counselingCall}', [StudentIncomingCallController::class, 'update'])->middleware(['student', 'throttle:60,1']);
     Route::get('/counselor/session-reminders', [CounselorSessionReminderController::class, 'index'])->middleware(['counselor', 'throttle:90,1']);
 
     // Users

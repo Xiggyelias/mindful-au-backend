@@ -160,7 +160,7 @@ class ChatAttachmentController extends Controller
         }
 
         try {
-            $this->notifyRecipient($session, (int) $user->id, $messageType, $message->sent_as_anonymous);
+            $this->notifyRecipient($session, (int) $user->id, $message, $messageType);
         } catch (\Throwable $_) {
             // no-op
         }
@@ -281,8 +281,8 @@ class ChatAttachmentController extends Controller
     private function notifyRecipient(
         CounselingSession $session,
         int $senderId,
+        Message $message,
         string $messageType,
-        ?bool $sentAsAnonymousSnapshot = null,
     ): void {
         $recipientId = $this->resolveRecipientId($session, $senderId);
         if (!$recipientId || $recipientId === $senderId) {
@@ -295,10 +295,12 @@ class ChatAttachmentController extends Controller
 
         if (
             (int) $session->student_id === $senderId
-            && $this->shouldMaskStudentIdentityForRecipient($session, $recipientId, $sentAsAnonymousSnapshot)
+            && $this->shouldMaskStudentIdentityForRecipient($session, $recipientId, $message->sent_as_anonymous)
         ) {
             $senderName = $this->resolveAnonymousLabel($session);
         }
+
+        $preview = $messageType === 'voice' ? 'sent a voice note' : 'sent an attachment';
 
         Notification::create([
             'user_id' => $recipientId,
@@ -306,8 +308,14 @@ class ChatAttachmentController extends Controller
             'message' => sprintf(
                 '%s: %s',
                 $senderName,
-                $messageType === 'voice' ? 'sent a voice note' : 'sent an attachment'
+                $preview
             ),
+            'meta' => [
+                'chat_session_id' => (int) $session->id,
+                'chat_message_id' => (int) $message->id,
+                'is_encrypted' => (bool) $message->is_encrypted,
+                'message_type' => $messageType,
+            ],
             'type' => 'info',
         ]);
     }
