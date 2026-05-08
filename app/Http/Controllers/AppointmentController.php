@@ -16,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -211,7 +212,7 @@ class AppointmentController extends Controller
                         }
                     }
 
-                    return Appointment::query()->create([
+                    $payload = [
                         'student_id' => $studentId,
                         'counselor_id' => $counselorId,
                         'is_anonymous' => $isAnonymous,
@@ -219,16 +220,27 @@ class AppointmentController extends Controller
                         'scheduled_at' => $proposedStart,
                         'duration_minutes' => $durationMinutes,
                         'notes' => $finalNotes,
-                        'call_type' => $callType,
                         'status' => 'scheduled',
-                    ]);
+                    ];
+                    if ($this->supportsCallTypeColumn()) {
+                        $payload['call_type'] = $callType;
+                    }
+                    return Appointment::query()->create($payload);
                 });
             }
         );
 
         $appointment->load(['student.profile', 'counselor.profile']);
-        $this->notifyCounselorOnAppointmentCreated($appointment);
-        $this->flushDashboardCaches();
+        try {
+            $this->notifyCounselorOnAppointmentCreated($appointment);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+        try {
+            $this->flushDashboardCaches();
+        } catch (\Throwable $e) {
+            report($e);
+        }
         $this->applyAnonymousAppointmentProjection($appointment, $request->user());
 
         return response()->json($appointment, 201);
@@ -259,7 +271,7 @@ class AppointmentController extends Controller
         }
 
         $payload = $validated;
-        if ($appointment->is_anonymous && isset($validated['notes'])) {
+        if ($this->supportsCallTypeColumn() && $appointment->is_anonymous && isset($validated['notes'])) {
             $trim = strtolower(trim($validated['notes']));
             if (!str_starts_with($trim, 'physical')) {
                 $payload['call_type'] = 'audio';
@@ -273,17 +285,29 @@ class AppointmentController extends Controller
         $appointment->refresh()->load(['student.profile', 'counselor.profile']);
 
         if (isset($validated['status']) && $validated['status'] !== $previousStatus) {
-            $this->notifyStudentOnAppointmentStatusChanged($appointment, $validated['status']);
+            try {
+                $this->notifyStudentOnAppointmentStatusChanged($appointment, $validated['status']);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         if (isset($validated['scheduled_at'])) {
             $nextScheduledAt = Carbon::parse($validated['scheduled_at'])->toISOString();
             if ($nextScheduledAt !== $previousScheduledAt) {
-                $this->notifyStudentOnAppointmentRescheduled($appointment);
+                try {
+                    $this->notifyStudentOnAppointmentRescheduled($appointment);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
             }
         }
 
-        $this->flushDashboardCaches();
+        try {
+            $this->flushDashboardCaches();
+        } catch (\Throwable $e) {
+            report($e);
+        }
         $this->applyAnonymousAppointmentProjection($appointment, $user);
 
         return response()->json($appointment);
@@ -340,27 +364,35 @@ class AppointmentController extends Controller
                 ->get();
 
             foreach ($affected as $appointment) {
-                $this->notifyStudentOnCounselorCancelledAppointment($appointment, $reasonStored);
+                try {
+                    $this->notifyStudentOnCounselorCancelledAppointment($appointment, $reasonStored);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
             }
 
-            ActivityLog::query()->create([
-                'user_id' => $user->id,
-                'action' => 'appointments_bulk_cancel',
-                'description' => sprintf(
-                    'Counselor bulk-cancelled %d appointment(s) (scope: %s).',
-                    $ids->count(),
-                    $validated['scope']
-                ),
-                'type' => 'audit',
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'metadata' => [
-                    'scope' => $validated['scope'],
-                    'cancelled_count' => $ids->count(),
-                    'appointment_ids' => $ids->take(200)->values()->all(),
-                    'reason' => $reasonStored,
-                ],
-            ]);
+            try {
+                ActivityLog::query()->create([
+                    'user_id' => $user->id,
+                    'action' => 'appointments_bulk_cancel',
+                    'description' => sprintf(
+                        'Counselor bulk-cancelled %d appointment(s) (scope: %s).',
+                        $ids->count(),
+                        $validated['scope']
+                    ),
+                    'type' => 'audit',
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'metadata' => [
+                        'scope' => $validated['scope'],
+                        'cancelled_count' => $ids->count(),
+                        'appointment_ids' => $ids->take(200)->values()->all(),
+                        'reason' => $reasonStored,
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                report($e);
+            }
 
             return [
                 'cancelled_count' => $ids->count(),
@@ -368,7 +400,11 @@ class AppointmentController extends Controller
             ];
         });
 
-        $this->flushDashboardCaches();
+        try {
+            $this->flushDashboardCaches();
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         $count = (int) ($result['cancelled_count'] ?? 0);
 
@@ -413,8 +449,16 @@ class AppointmentController extends Controller
             ]);
 
             $appointment->refresh()->load(['student.profile', 'counselor.profile']);
-            $this->notifyCounselorOnAppointmentCancelled($appointment, (int) $user->id, $reason);
-            $this->flushDashboardCaches();
+            try {
+                $this->notifyCounselorOnAppointmentCancelled($appointment, (int) $user->id, $reason);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+            try {
+                $this->flushDashboardCaches();
+            } catch (\Throwable $e) {
+                report($e);
+            }
 
             return response()->json([
                 'message' => 'Appointment cancelled successfully.',
@@ -422,9 +466,17 @@ class AppointmentController extends Controller
             ]);
         }
 
-        $this->notifyCounselorOnAppointmentCancelled($appointment, (int) $user->id);
+        try {
+            $this->notifyCounselorOnAppointmentCancelled($appointment, (int) $user->id);
+        } catch (\Throwable $e) {
+            report($e);
+        }
         $appointment->delete();
-        $this->flushDashboardCaches();
+        try {
+            $this->flushDashboardCaches();
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return response()->json(['message' => 'Appointment deleted successfully']);
     }
@@ -744,6 +796,20 @@ class AppointmentController extends Controller
         }
 
         return 'video';
+    }
+
+    private function supportsCallTypeColumn(): bool
+    {
+        static $hasCallTypeColumn = null;
+        if ($hasCallTypeColumn !== null) {
+            return $hasCallTypeColumn;
+        }
+        try {
+            $hasCallTypeColumn = Schema::hasColumn('appointments', 'call_type');
+        } catch (\Throwable) {
+            $hasCallTypeColumn = false;
+        }
+        return $hasCallTypeColumn;
     }
 
     private function resolveAppointmentStudentLabel(Appointment $appointment): string

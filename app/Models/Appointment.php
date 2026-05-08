@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class Appointment extends Model
 {
     use HasFactory;
+    private static ?bool $hasCallTypeColumnCache = null;
 
     /**
      * Anonymous online bookings must never be stored as video — counselors only receive audio calls.
@@ -16,6 +18,9 @@ class Appointment extends Model
     protected static function booted(): void
     {
         static::saving(function (Appointment $appointment): void {
+            if (!self::supportsCallTypeColumn()) {
+                return;
+            }
             if (! $appointment->is_anonymous) {
                 return;
             }
@@ -25,6 +30,19 @@ class Appointment extends Model
             }
             $appointment->call_type = 'audio';
         });
+    }
+
+    private static function supportsCallTypeColumn(): bool
+    {
+        if (self::$hasCallTypeColumnCache !== null) {
+            return self::$hasCallTypeColumnCache;
+        }
+        try {
+            self::$hasCallTypeColumnCache = Schema::hasColumn('appointments', 'call_type');
+        } catch (\Throwable) {
+            self::$hasCallTypeColumnCache = false;
+        }
+        return self::$hasCallTypeColumnCache;
     }
 
     protected $fillable = [
