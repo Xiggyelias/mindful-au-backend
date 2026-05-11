@@ -114,102 +114,61 @@ class VideoCallController extends Controller
             )
         );
 
-        if ((int) $appointment->student_id === (int) $user->id && $user->hasRole('student')) {
-            $callType = (string) ($validated['call_type'] ?? 'video');
-            if (!in_array($callType, ['video', 'audio'], true)) {
-                $callType = 'video';
-            }
-            if ($appointment->is_anonymous) {
-                $callType = 'audio';
-            } elseif (($appointment->call_type ?? '') === 'audio' && $callType === 'video') {
+        $isStudent  = (int) $appointment->student_id  === (int) $user->id && $user->hasRole('student');
+        $isCounselor = $user->hasRole('counselor') && (int) $appointment->counselor_id === (int) $user->id;
+
+        if ($isStudent || $isCounselor) {
+            $callTypeResult = $this->resolveCallType(
+                (string) ($validated['call_type'] ?? 'video'),
+                $appointment
+            );
+
+            if ($callTypeResult === null) {
                 return response()->json([
                     'message' => 'This appointment is booked as audio-only.',
                 ], 422);
-            } elseif (($appointment->call_type ?? '') === 'audio') {
-                $callType = 'audio';
             }
+
+            $callerRole = $isStudent ? CounselingCall::CALLER_STUDENT : CounselingCall::CALLER_COUNSELOR;
+
             CounselingCall::query()
                 ->where('appointment_id', $appointment->id)
                 ->where('status', CounselingCall::STATUS_PENDING)
                 ->delete();
+
             CounselingCall::create([
                 'appointment_id' => $appointment->id,
-                'student_id' => $appointment->student_id,
-                'counselor_id' => $appointment->counselor_id,
-                'status' => CounselingCall::STATUS_PENDING,
-                'call_type' => $callType,
-                'caller_role' => CounselingCall::CALLER_STUDENT,
+                'student_id'     => $appointment->student_id,
+                'counselor_id'   => $appointment->counselor_id,
+                'status'         => CounselingCall::STATUS_PENDING,
+                'call_type'      => $callTypeResult,
+                'caller_role'    => $callerRole,
             ]);
 
-            $isAudio = $callType === 'audio';
+            $isAudio      = $callTypeResult === 'audio';
+            $notifyUserId = $isStudent ? (int) $appointment->counselor_id : (int) $appointment->student_id;
+            $notifyRoute  = $isStudent ? '/counselor/video' : '/student/video-call';
+            $notifyBody   = $isStudent
+                ? sprintf('A student is calling you for %s.', $isAudio ? 'an audio session' : 'a video session')
+                : sprintf('Your counselor is calling you for %s.', $isAudio ? 'an audio session' : 'a video session');
+
             try {
                 $this->webPush->sendToUser(
-                    (int) $appointment->counselor_id,
+                    $notifyUserId,
                     $isAudio ? 'Incoming audio call' : 'Incoming video call',
-                    sprintf(
-                        'A student is calling you for %s.',
-                        $isAudio ? 'an audio session' : 'a video session'
-                    ),
-                    '/counselor/video',
+                    $notifyBody,
+                    $notifyRoute,
                     [
-                        'tag' => 'cms-call-apt-'.(int) $appointment->id,
-                        'urgency' => 'high',
+                        'tag'                => 'cms-call-apt-' . (int) $appointment->id,
+                        'urgency'            => 'high',
                         'requireInteraction' => true,
                     ]
                 );
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('[VideoCall] web push failed (student caller)', [
+                \Illuminate\Support\Facades\Log::warning('[VideoCall] web push failed', [
                     'appointment_id' => $appointment->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        } elseif ($user->hasRole('counselor') && (int) $appointment->counselor_id === (int) $user->id) {
-            $callType = (string) ($validated['call_type'] ?? 'video');
-            if (!in_array($callType, ['video', 'audio'], true)) {
-                $callType = 'video';
-            }
-            if ($appointment->is_anonymous) {
-                $callType = 'audio';
-            } elseif (($appointment->call_type ?? '') === 'audio' && $callType === 'video') {
-                return response()->json([
-                    'message' => 'This appointment is booked as audio-only.',
-                ], 422);
-            } elseif (($appointment->call_type ?? '') === 'audio') {
-                $callType = 'audio';
-            }
-            CounselingCall::query()
-                ->where('appointment_id', $appointment->id)
-                ->where('status', CounselingCall::STATUS_PENDING)
-                ->delete();
-            CounselingCall::create([
-                'appointment_id' => $appointment->id,
-                'student_id' => $appointment->student_id,
-                'counselor_id' => $appointment->counselor_id,
-                'status' => CounselingCall::STATUS_PENDING,
-                'call_type' => $callType,
-                'caller_role' => CounselingCall::CALLER_COUNSELOR,
-            ]);
-
-            $isAudio = $callType === 'audio';
-            try {
-                $this->webPush->sendToUser(
-                    (int) $appointment->student_id,
-                    $isAudio ? 'Incoming audio call' : 'Incoming video call',
-                    sprintf(
-                        'Your counselor is calling you for %s.',
-                        $isAudio ? 'an audio session' : 'a video session'
-                    ),
-                    '/student/video-call',
-                    [
-                        'tag' => 'cms-call-apt-'.(int) $appointment->id,
-                        'urgency' => 'high',
-                        'requireInteraction' => true,
-                    ]
-                );
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('[VideoCall] web push failed (counselor caller)', [
-                    'appointment_id' => $appointment->id,
-                    'error' => $e->getMessage(),
+                    'caller_role'    => $callerRole,
+                    'error'          => $e->getMessage(),
                 ]);
             }
         }
@@ -323,6 +282,38 @@ class VideoCallController extends Controller
     {
         $normalized = Str::lower(trim($notes));
         return !Str::startsWith($normalized, 'physical');
+    }
+
+    /**
+     * Resolve the effective call type for an appointment, enforcing anonymous→audio
+     * and audio-only booking rules.
+     *
+     * Returns the resolved call type string ('video'|'audio'), or null if the
+     * requested type conflicts with an audio-only booking (caller should 422).
+     */
+    private function resolveCallType(string $requested, Appointment $appointment): ?string
+    {
+        if (!in_array($requested, ['video', 'audio'], true)) {
+            $requested = 'video';
+        }
+
+        // Anonymous appointments are always audio-only.
+        if ($appointment->is_anonymous) {
+            return 'audio';
+        }
+
+        $booked = (string) ($appointment->call_type ?? '');
+
+        if ($booked === 'audio' && $requested === 'video') {
+            // Signal to the caller that they should return a 422.
+            return null;
+        }
+
+        if ($booked === 'audio') {
+            return 'audio';
+        }
+
+        return $requested;
     }
 
     private function shouldMarkAppointmentCompleted(
