@@ -705,6 +705,39 @@ class SessionController extends Controller
 
     public function show(Request $request, string $id): JsonResponse
     {
+        // ?minimal=1 is a fast-path used by the E2E chat bootstrap to resolve peer IDs only.
+        // It skips the expensive anonymous-session expiry scan and all relation eager loads.
+        if ($request->boolean('minimal')) {
+            $session = CounselingSession::query()
+                ->select([
+                    'id',
+                    'student_id',
+                    'counselor_id',
+                    'peer_counselor_id',
+                    'assigned_role',
+                    'is_anonymous',
+                    'status',
+                ])
+                ->findOrFail($id);
+
+            if (!$this->canViewSession($request->user(), $session)) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            // chat_peer_student_id mirrors the chatList projection so the E2E hook can
+            // resolve the real student DB id even when student_id is masked (anonymous mode).
+            return response()->json([
+                'id'                    => (int) $session->id,
+                'student_id'            => (int) $session->student_id,
+                'chat_peer_student_id'  => (int) $session->student_id > 0 ? (int) $session->student_id : null,
+                'counselor_id'          => $session->counselor_id ? (int) $session->counselor_id : null,
+                'peer_counselor_id'     => $session->peer_counselor_id ? (int) $session->peer_counselor_id : null,
+                'assigned_role'         => $session->assigned_role,
+                'is_anonymous'          => (bool) $session->is_anonymous,
+                'status'                => $session->status,
+            ]);
+        }
+
         $this->expireStaleAnonymousSessions();
         $session = CounselingSession::with([
             'student.profile',
