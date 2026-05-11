@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class VideoCallController extends Controller
@@ -36,7 +37,7 @@ class VideoCallController extends Controller
         $appointment = Appointment::findOrFail($validated['appointment_id']);
 
         if (!$this->isParticipant($appointment, (int) $user->id)) {
-            \Illuminate\Support\Facades\Log::warning('[VideoCall] User not participant', ['user_id' => $user->id, 'appointment_id' => $appointment->id]);
+            Log::warning('[VideoCall] User not participant', ['user_id' => $user->id, 'appointment_id' => $appointment->id]);
             return response()->json(['message' => 'Unauthorized for this video call.'], 403);
         }
 
@@ -45,7 +46,7 @@ class VideoCallController extends Controller
         }
 
         if (!in_array($appointment->status, ['scheduled', 'confirmed'], true)) {
-            \Illuminate\Support\Facades\Log::info('[VideoCall] Appointment status invalid', ['status' => $appointment->status, 'id' => $appointment->id]);
+            Log::info('[VideoCall] Appointment status invalid', ['status' => $appointment->status, 'id' => $appointment->id]);
             return response()->json([
                 'message' => 'Only scheduled or confirmed appointments can start a video call. Current status: ' . $appointment->status,
             ], 422);
@@ -53,7 +54,7 @@ class VideoCallController extends Controller
 
         $window = $this->getWindow($appointment);
         if (!$window['can_start']) {
-            \Illuminate\Support\Facades\Log::info('[VideoCall] Window closed', ['window' => $window, 'id' => $appointment->id]);
+            Log::info('[VideoCall] Window closed', ['window' => $window, 'id' => $appointment->id]);
             return response()->json([
                 'message' => $window['message'],
                 'window' => $window,
@@ -65,6 +66,7 @@ class VideoCallController extends Controller
                 ->where('student_id', $appointment->student_id)
                 ->where('counselor_id', $appointment->counselor_id)
                 ->where('session_type', 'video')
+                ->whereIn('assigned_role', ['counselor', null])
                 ->where('is_anonymous', (bool) $appointment->is_anonymous)
                 ->whereIn('status', ['pending', 'active'])
                 ->where('created_at', '>=', now()->subDay())
@@ -75,14 +77,16 @@ class VideoCallController extends Controller
             if (!$session) {
                 $isAnonymous = (bool) $appointment->is_anonymous;
                 $session = CounselingSession::create([
-                    'student_id' => $appointment->student_id,
-                    'counselor_id' => $appointment->counselor_id,
-                    'session_type' => 'video',
-                    'status' => 'active',
-                    'started_at' => now(),
-                    'notes' => "Video appointment #{$appointment->id}",
-                    'is_anonymous' => $isAnonymous,
-                    'anonymous_id' => $isAnonymous
+                    'student_id'    => $appointment->student_id,
+                    'counselor_id'  => $appointment->counselor_id,
+                    'session_type'  => 'video',
+                    'status'        => 'active',
+                    'assigned_role' => 'counselor',
+                    'assigned_by'   => null,
+                    'started_at'    => now(),
+                    'notes'         => "Video appointment #{$appointment->id}",
+                    'is_anonymous'  => $isAnonymous,
+                    'anonymous_id'  => $isAnonymous
                         ? ($appointment->anonymous_id ?: 'User_' . str_pad((string) ((int) $appointment->id % 10000), 4, '0', STR_PAD_LEFT))
                         : null,
                 ]);
@@ -165,7 +169,7 @@ class VideoCallController extends Controller
                     ]
                 );
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('[VideoCall] web push failed', [
+                Log::warning('[VideoCall] web push failed', [
                     'appointment_id' => $appointment->id,
                     'caller_role'    => $callerRole,
                     'error'          => $e->getMessage(),
