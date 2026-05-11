@@ -48,7 +48,17 @@ class ProfileController extends Controller
         }
 
         if (!empty($profileData)) {
+            $oldMode = (bool) $profile->anonymous_mode;
             $profile->update($profileData);
+            $newMode = (bool) $profile->anonymous_mode;
+
+            if ($oldMode !== $newMode && $user->hasRole('student')) {
+                \App\Models\Appointment::query()
+                    ->where('student_id', $user->id)
+                    ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
+                    ->where('scheduled_at', '>=', now()->subMinutes(30))
+                    ->update(['is_anonymous' => $newMode]);
+            }
         }
 
         if (array_key_exists('email', $validated)) {
