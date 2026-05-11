@@ -18,8 +18,8 @@ class VideoCallController extends Controller
     private const MIN_DURATION_MINUTES = 15;
     private const MAX_DURATION_MINUTES = 120;
     private const DEFAULT_DURATION_MINUTES = 60;
-    private const JOIN_EARLY_MINUTES = 0;
-    private const JOIN_LATE_GRACE_MINUTES = 0;
+    private const JOIN_EARLY_MINUTES = 15;
+    private const JOIN_LATE_GRACE_MINUTES = 15;
 
     public function __construct(
         private readonly \App\Services\WebPushService $webPush,
@@ -36,6 +36,7 @@ class VideoCallController extends Controller
         $appointment = Appointment::findOrFail($validated['appointment_id']);
 
         if (!$this->isParticipant($appointment, (int) $user->id)) {
+            \Illuminate\Support\Facades\Log::warning('[VideoCall] User not participant', ['user_id' => $user->id, 'appointment_id' => $appointment->id]);
             return response()->json(['message' => 'Unauthorized for this video call.'], 403);
         }
 
@@ -44,13 +45,15 @@ class VideoCallController extends Controller
         }
 
         if (!in_array($appointment->status, ['scheduled', 'confirmed'], true)) {
+            \Illuminate\Support\Facades\Log::info('[VideoCall] Appointment status invalid', ['status' => $appointment->status, 'id' => $appointment->id]);
             return response()->json([
-                'message' => 'Only scheduled or confirmed appointments can start a video call.',
+                'message' => 'Only scheduled or confirmed appointments can start a video call. Current status: ' . $appointment->status,
             ], 422);
         }
 
         $window = $this->getWindow($appointment);
         if (!$window['can_start']) {
+            \Illuminate\Support\Facades\Log::info('[VideoCall] Window closed', ['window' => $window, 'id' => $appointment->id]);
             return response()->json([
                 'message' => $window['message'],
                 'window' => $window,
@@ -139,20 +142,27 @@ class VideoCallController extends Controller
             ]);
 
             $isAudio = $callType === 'audio';
-            $this->webPush->sendToUser(
-                (int) $appointment->counselor_id,
-                $isAudio ? 'Incoming audio call' : 'Incoming video call',
-                sprintf(
-                    'A student is calling you for %s.',
-                    $isAudio ? 'an audio session' : 'a video session'
-                ),
-                '/counselor/video',
-                [
-                    'tag' => 'cms-call-apt-'.(int) $appointment->id,
-                    'urgency' => 'high',
-                    'requireInteraction' => true,
-                ]
-            );
+            try {
+                $this->webPush->sendToUser(
+                    (int) $appointment->counselor_id,
+                    $isAudio ? 'Incoming audio call' : 'Incoming video call',
+                    sprintf(
+                        'A student is calling you for %s.',
+                        $isAudio ? 'an audio session' : 'a video session'
+                    ),
+                    '/counselor/video',
+                    [
+                        'tag' => 'cms-call-apt-'.(int) $appointment->id,
+                        'urgency' => 'high',
+                        'requireInteraction' => true,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[VideoCall] web push failed (student caller)', [
+                    'appointment_id' => $appointment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         } elseif ($user->hasRole('counselor') && (int) $appointment->counselor_id === (int) $user->id) {
             $callType = (string) ($validated['call_type'] ?? 'video');
             if (!in_array($callType, ['video', 'audio'], true)) {
@@ -181,20 +191,27 @@ class VideoCallController extends Controller
             ]);
 
             $isAudio = $callType === 'audio';
-            $this->webPush->sendToUser(
-                (int) $appointment->student_id,
-                $isAudio ? 'Incoming audio call' : 'Incoming video call',
-                sprintf(
-                    'Your counselor is calling you for %s.',
-                    $isAudio ? 'an audio session' : 'a video session'
-                ),
-                '/student/video-call',
-                [
-                    'tag' => 'cms-call-apt-'.(int) $appointment->id,
-                    'urgency' => 'high',
-                    'requireInteraction' => true,
-                ]
-            );
+            try {
+                $this->webPush->sendToUser(
+                    (int) $appointment->student_id,
+                    $isAudio ? 'Incoming audio call' : 'Incoming video call',
+                    sprintf(
+                        'Your counselor is calling you for %s.',
+                        $isAudio ? 'an audio session' : 'a video session'
+                    ),
+                    '/student/video-call',
+                    [
+                        'tag' => 'cms-call-apt-'.(int) $appointment->id,
+                        'urgency' => 'high',
+                        'requireInteraction' => true,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[VideoCall] web push failed (counselor caller)', [
+                    'appointment_id' => $appointment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         return response()->json([

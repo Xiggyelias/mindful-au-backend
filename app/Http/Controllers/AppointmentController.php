@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Models\CounselingSession;
 use App\Models\ActivityLog;
 use App\Models\Notification;
 use App\Events\NotificationCreated;
@@ -479,6 +480,44 @@ class AppointmentController extends Controller
         }
 
         return response()->json(['message' => 'Appointment deleted successfully']);
+    }
+
+    public function revealIdentity(Request $request, string $id): JsonResponse
+    {
+        $appointment = Appointment::findOrFail($id);
+        $user = $request->user();
+
+        if ((int) $appointment->student_id !== (int) $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if (!$appointment->is_anonymous) {
+            return response()->json(['message' => 'Identity is already revealed.'], 422);
+        }
+
+        $appointment->update([
+            'is_anonymous' => false,
+            'anonymous_id' => null,
+        ]);
+
+        // Also update any active session linked to this appointment
+        CounselingSession::where('student_id', $user->id)
+            ->where('counselor_id', $appointment->counselor_id)
+            ->where('is_anonymous', true)
+            ->update([
+                'is_anonymous' => false,
+                'anonymous_id' => null,
+                'identity_revealed_at' => now(),
+                'identity_revealed_by' => $user->id,
+            ]);
+
+        $appointment->load(['student.profile', 'counselor.profile']);
+        $this->applyAnonymousAppointmentProjection($appointment, $user);
+
+        return response()->json([
+            'message' => 'Identity revealed successfully.',
+            'appointment' => $appointment,
+        ]);
     }
 
     private function isApprovedCounselor(int $userId): bool
