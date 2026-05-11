@@ -19,7 +19,11 @@ class NotificationController extends Controller
     {
         $user = $request->user();
         if ($user instanceof User) {
-            $this->tipOfDayService->resolveForUser($user);
+            try {
+                $this->tipOfDayService->resolveForUser($user);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         $validated = $request->validate([

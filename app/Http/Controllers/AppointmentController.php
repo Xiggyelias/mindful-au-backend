@@ -105,7 +105,23 @@ class AppointmentController extends Controller
 
         $validated = $request->validate([
             'counselor_id' => 'required|exists:users,id',
-            'scheduled_at' => 'required|date|after:now',
+            'scheduled_at' => [
+                'required',
+                'date',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    try {
+                        $start = Carbon::parse($value);
+                    } catch (\Throwable) {
+                        $fail('The scheduled time is invalid.');
+
+                        return;
+                    }
+                    // Allow ~1 minute in the past vs server clock to avoid false rejects from skew / submit latency.
+                    if ($start->lessThanOrEqualTo(now()->subMinute())) {
+                        $fail('Choose a start time in the future (at least a minute from now).');
+                    }
+                },
+            ],
             'duration_minutes' => 'sometimes|integer|min:15|max:120',
             'notes' => 'sometimes|nullable|string|max:2000',
             'is_anonymous' => 'sometimes|boolean',
@@ -113,11 +129,21 @@ class AppointmentController extends Controller
         ]);
 
         if (!$this->isApprovedCounselor((int) $validated['counselor_id'])) {
-            return response()->json(['message' => 'Selected counselor is not available'], 422);
+            return response()->json([
+                'message' => 'Selected counselor is not available',
+                'errors' => [
+                    'counselor_id' => ['Selected counselor is not available.'],
+                ],
+            ], 422);
         }
 
         if ((int) $validated['counselor_id'] === (int) $request->user()->id) {
-            return response()->json(['message' => 'You cannot book an appointment with your own account'], 422);
+            return response()->json([
+                'message' => 'You cannot book an appointment with your own account',
+                'errors' => [
+                    'counselor_id' => ['You cannot book an appointment with your own account.'],
+                ],
+            ], 422);
         }
 
         $durationMinutes = (int) ($validated['duration_minutes'] ?? 60);
@@ -258,7 +284,22 @@ class AppointmentController extends Controller
 
         $validated = $request->validate([
             'status' => 'sometimes|in:scheduled,confirmed,completed,cancelled',
-            'scheduled_at' => 'sometimes|date|after:now',
+            'scheduled_at' => [
+                'sometimes',
+                'date',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    try {
+                        $start = Carbon::parse($value);
+                    } catch (\Throwable) {
+                        $fail('The scheduled time is invalid.');
+
+                        return;
+                    }
+                    if ($start->lessThanOrEqualTo(now()->subMinute())) {
+                        $fail('Choose a start time in the future (at least a minute from now).');
+                    }
+                },
+            ],
             'notes' => 'sometimes|string|max:2000',
         ]);
 
