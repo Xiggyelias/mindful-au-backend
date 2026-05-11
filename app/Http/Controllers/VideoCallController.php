@@ -66,7 +66,6 @@ class VideoCallController extends Controller
                 ->where('student_id', $appointment->student_id)
                 ->where('counselor_id', $appointment->counselor_id)
                 ->where('session_type', 'video')
-                ->whereIn('assigned_role', ['counselor', null])
                 ->where('is_anonymous', (bool) $appointment->is_anonymous)
                 ->whereIn('status', ['pending', 'active'])
                 ->where('created_at', '>=', now()->subDay())
@@ -77,16 +76,14 @@ class VideoCallController extends Controller
             if (!$session) {
                 $isAnonymous = (bool) $appointment->is_anonymous;
                 $session = CounselingSession::create([
-                    'student_id'    => $appointment->student_id,
-                    'counselor_id'  => $appointment->counselor_id,
-                    'session_type'  => 'video',
-                    'status'        => 'active',
-                    'assigned_role' => 'counselor',
-                    'assigned_by'   => null,
-                    'started_at'    => now(),
-                    'notes'         => "Video appointment #{$appointment->id}",
-                    'is_anonymous'  => $isAnonymous,
-                    'anonymous_id'  => $isAnonymous
+                    'student_id' => $appointment->student_id,
+                    'counselor_id' => $appointment->counselor_id,
+                    'session_type' => 'video',
+                    'status' => 'active',
+                    'started_at' => now(),
+                    'notes' => "Video appointment #{$appointment->id}",
+                    'is_anonymous' => $isAnonymous,
+                    'anonymous_id' => $isAnonymous
                         ? ($appointment->anonymous_id ?: 'User_' . str_pad((string) ((int) $appointment->id % 10000), 4, '0', STR_PAD_LEFT))
                         : null,
                 ]);
