@@ -1479,7 +1479,7 @@ class SessionController extends Controller
                     try {
                         event(new \App\Events\NotificationCreated($notification));
                     } catch (\Throwable $broadcastException) {
-                        \Illuminate\Support\Facades\Log::warning(
+                        Log::warning(
                             'Session panic notification broadcast failed',
                             [
                                 'session_id' => $session->id,
@@ -1490,7 +1490,7 @@ class SessionController extends Controller
                         );
                     }
                 } catch (\Throwable $createException) {
-                    \Illuminate\Support\Facades\Log::error(
+                    Log::error(
                         'Failed to create session panic notification',
                         [
                             'session_id' => $session->id,
