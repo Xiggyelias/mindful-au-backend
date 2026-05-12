@@ -73,6 +73,10 @@ class AppServiceProvider extends ServiceProvider
             return;
         }
 
+        // Force HTTPS for all generated URLs (signed file downloads, redirects, etc.)
+        // Prevents ERR_FAILED caused by http:// URLs being served over an https:// origin.
+        \Illuminate\Support\Facades\URL::forceScheme('https');
+
         if ((bool) config('app.debug')) {
             config(['app.debug' => false]);
             Log::critical('APP_DEBUG was enabled in production and has been forced off for safety.');
