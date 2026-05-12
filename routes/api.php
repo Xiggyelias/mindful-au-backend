@@ -133,6 +133,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
 
     // Video Calls
     Route::post('/video-calls/authorize', [VideoCallController::class, 'authorizeCall'])->middleware('throttle:20,1');
+    Route::post('/video-calls/cancel', [VideoCallController::class, 'cancelCall'])->middleware('throttle:30,1');
     Route::post('/video-calls/end', [VideoCallController::class, 'end'])->middleware('throttle:20,1');
     Route::get('/counselor/incoming-calls', [CounselorIncomingCallController::class, 'index'])->middleware(['counselor', 'throttle:120,1']);
     Route::patch('/counselor/incoming-calls/{counselingCall}', [CounselorIncomingCallController::class, 'update'])->middleware(['counselor', 'throttle:60,1']);
