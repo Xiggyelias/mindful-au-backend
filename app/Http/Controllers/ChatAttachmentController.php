@@ -97,7 +97,9 @@ class ChatAttachmentController extends Controller
         $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin'));
         $storedFileName = Str::uuid()->toString() . '.' . $extension;
         $datedDirectory = trim($directory . '/' . now()->format('Y/m'), '/');
-        $storedPath = Storage::disk($disk)->putFileAs($datedDirectory, $file, $storedFileName);
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $storage */
+        $storage = Storage::disk($disk);
+        $storedPath = $storage->putFileAs($datedDirectory, $file, $storedFileName);
 
         if (!$storedPath) {
             return response()->json([
@@ -212,8 +214,10 @@ class ChatAttachmentController extends Controller
             return response()->json(['message' => 'File not found'], 404);
         }
 
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $publicStorage */
+        $publicStorage = Storage::disk('public');
         return response()->json([
-            'download_url' => Storage::disk('public')->url($path),
+            'download_url' => $publicStorage->url($path),
             'message' => ChatMessageData::make($message, true),
         ]);
     }
@@ -223,7 +227,9 @@ class ChatAttachmentController extends Controller
         $disk = (string) config('chat.attachments.disk', 'local');
         abort_unless(Storage::disk($disk)->exists($chatFile->file_path), 404);
 
-        $absolutePath = Storage::disk($disk)->path($chatFile->file_path);
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $storage */
+        $storage = Storage::disk($disk);
+        $absolutePath = $storage->path($chatFile->file_path);
         $download = filter_var((string) $request->query('download', '0'), FILTER_VALIDATE_BOOL);
         $disposition = $download ? 'attachment' : 'inline';
         $safeName = str_replace(['\\', '"'], ['_', ''], (string) $chatFile->file_name);

@@ -156,7 +156,8 @@ class AIDiagnosticController extends Controller
         // Create a lightweight CounselingSession wrapper for the job if necessary,
         // or update ProcessAIDiagnostic to handle Appointments directly.
         // For now, we simulate a session for the AI engine.
-        $session = new CounselingSession([
+        $session = new CounselingSession();
+        $session->fill([
             'student_id' => $appointment->student_id,
             'counselor_id' => $appointment->counselor_id,
             'session_type' => 'physical',

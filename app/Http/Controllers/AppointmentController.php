@@ -75,7 +75,8 @@ class AppointmentController extends Controller
             $paginator = $query
                 ->paginate($perPage, ['*'], 'page', $page)
                 ->appends($request->query());
-            $paginator->getCollection()->transform(function (Appointment $appointment) use ($user) {
+            /** @var \Illuminate\Pagination\LengthAwarePaginator $paginator */
+            $paginator->through(function (Appointment $appointment) use ($user) {
                 $this->applyAnonymousAppointmentProjection($appointment, $user);
                 return $appointment;
             });

@@ -158,7 +158,9 @@ class TipOfDayService
             'is_active' => $tip->is_active,
             'personalized' => (bool) $delivery->personalized,
             'mood' => $delivery->mood,
-            'served_for_date' => $delivery->delivered_on?->toDateString(),
+            'served_for_date' => $delivery->delivered_on instanceof Carbon
+                ? $delivery->delivered_on->toDateString()
+                : (is_string($delivery->delivered_on) ? substr($delivery->delivered_on, 0, 10) : null),
             'delivered_at' => $delivery->created_at?->toISOString(),
             'is_favorite' => $user->tipFavorites()->where('tip_id', $tip->id)->exists(),
         ];
