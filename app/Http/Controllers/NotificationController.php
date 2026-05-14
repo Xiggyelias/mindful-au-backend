@@ -132,4 +132,15 @@ class NotificationController extends Controller
             'unread_count' => 0,
         ]);
     }
+
+    public function destroy(Request $request, string $id): JsonResponse
+    {
+        $notification = $request->user()
+            ->notifications()
+            ->findOrFail($id);
+
+        $notification->delete();
+
+        return response()->json(['success' => true]);
+    }
 }

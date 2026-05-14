@@ -28,13 +28,27 @@ class VideoCallController extends Controller
 
     public function authorizeCall(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'appointment_id' => 'required|integer|exists:appointments,id',
-            'call_type' => 'sometimes|in:video,audio',
-        ]);
+        try {
+            $validated = $request->validate([
+                'appointment_id' => 'required|integer|exists:appointments,id',
+                'call_type' => 'sometimes|in:video,audio',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('Video call authorize validation failed', [
+                'request' => $request->all(),
+                'errors' => $e->errors(),
+            ]);
+            throw $e;
+        }
 
         $user = $request->user();
         $appointment = Appointment::findOrFail($validated['appointment_id']);
+
+        if ($appointment->is_anonymous) {
+            return response()->json([
+                'message' => 'Video calls not available in anonymous mode',
+            ], 403);
+        }
 
         if (!$this->isParticipant($appointment, (int) $user->id)) {
             Log::warning('[VideoCall] User not participant', ['user_id' => $user->id, 'appointment_id' => $appointment->id]);

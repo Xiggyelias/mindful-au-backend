@@ -339,6 +339,10 @@ class SessionController extends Controller
             ->select('session_id', DB::raw('COUNT(*) as unread_count'))
             ->where('recipient_id', $viewerId)
             ->whereNull('seen_at')
+            ->where(function ($q) {
+                $q->where('message_type', '!=', 'text')
+                    ->orWhere('content', 'not like', '{"__e2e%');
+            })
             ->groupBy('session_id');
 
         $orderedQuery = (clone $scopedSessionQuery)
@@ -418,7 +422,7 @@ class SessionController extends Controller
                         : 'Student #' . (int) $row->student_id
                     )
                 )
-                : 'Anonymous #' . str_pad((string) (((int) $row->student_id) % 10000), 4, '0', STR_PAD_LEFT);
+                : (App\Models\User::find((int) $row->student_id)?->getAnonymousName() ?? 'Anonymous User');
 
             $anonymousIdForPayload = ($isAnonymous && $identityVisible && $dbAnonymousId !== '')
                 ? $dbAnonymousId

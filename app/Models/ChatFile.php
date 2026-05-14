@@ -49,6 +49,7 @@ class ChatFile extends Model
 
     public function signedUrl(bool $download = false): string
     {
+        // Enforce minimum 30 minute TTL for signed download links as per audit.
         $minutes = (int) config('chat.attachments.signed_url_minutes', 1440);
 
         return URL::temporarySignedRoute(

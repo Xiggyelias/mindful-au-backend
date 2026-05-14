@@ -65,6 +65,7 @@ class MessageController extends Controller
             'is_anonymous',
             'identity_revealed_at',
             'updated_at',
+            'ended_at',
         ])
             ->findOrFail($sessionId);
         $user = $request->user();
@@ -87,16 +88,18 @@ class MessageController extends Controller
 
     public function index(Request $request, string $sessionId): JsonResponse
     {
-                $session = CounselingSession::query()->select(['id',
-                'student_id',
-                'counselor_id',
-                'peer_counselor_id',
-                'assigned_role',
-                'status',
-                'is_anonymous',
-                'identity_revealed_at',
-                'updated_at',
-            ])
+        $session = CounselingSession::query()->select([
+            'id',
+            'student_id',
+            'counselor_id',
+            'peer_counselor_id',
+            'assigned_role',
+            'status',
+            'is_anonymous',
+            'identity_revealed_at',
+            'updated_at',
+            'ended_at',
+        ])
             ->findOrFail($sessionId);
         $user = $request->user();
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
@@ -469,6 +472,7 @@ class MessageController extends Controller
                 'anonymous_id',
                 'identity_revealed_at',
                 'updated_at',
+                'ended_at',
             ])
             ->findOrFail($sessionId);
         $user = $request->user();
@@ -762,6 +766,7 @@ class MessageController extends Controller
                 'is_anonymous',
                 'identity_revealed_at',
                 'updated_at',
+                'ended_at',
             ])
             ->findOrFail($sessionId);
         $user = $request->user();

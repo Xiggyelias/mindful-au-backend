@@ -117,6 +117,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/notifications', [NotificationController::class, 'store'])->middleware('admin');
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+    Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
 
     Route::post('/push/subscribe', [PushSubscriptionController::class, 'subscribe'])->middleware('throttle:60,1');
     Route::post('/push/unsubscribe', [PushSubscriptionController::class, 'unsubscribe'])->middleware('throttle:60,1');

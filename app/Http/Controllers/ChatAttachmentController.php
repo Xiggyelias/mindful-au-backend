@@ -172,7 +172,12 @@ class ChatAttachmentController extends Controller
 
     public function download(Request $request, string $messageId): JsonResponse
     {
-        $message = Message::findOrFail($messageId);
+        $message = Message::find($messageId);
+
+        if (!$message) {
+            return response()->json(['message' => 'Resource not found.'], 404);
+        }
+
         $user = $request->user();
         $session = $message->session()->with(['student', 'counselor'])->first() ?? $message->session;
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
