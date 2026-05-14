@@ -1084,6 +1084,11 @@ class MessageController extends Controller
             return false;
         }
 
+        // Check status directly to avoid unnecessary calculations on polls for already closed sessions.
+        if ($session->status === 'cancelled' || $session->status === 'completed') {
+            return true;
+        }
+
         $ttlHours = max(1, (int) env('ANONYMOUS_SESSION_TTL_HOURS', self::ANONYMOUS_SESSION_TTL_HOURS));
         $updatedAt = $session->updated_at instanceof \DateTimeInterface
             ? Carbon::instance($session->updated_at)
@@ -1093,12 +1098,11 @@ class MessageController extends Controller
             return false;
         }
 
-        if (in_array((string) $session->status, ['pending', 'active'], true)) {
-            $session->forceFill([
-                'status' => 'cancelled',
-                'ended_at' => now(),
-            ])->saveQuietly();
-        }
+        // Mark as expired/cancelled once.
+        $session->forceFill([
+            'status' => 'cancelled',
+            'ended_at' => now(),
+        ])->saveQuietly();
 
         return true;
     }

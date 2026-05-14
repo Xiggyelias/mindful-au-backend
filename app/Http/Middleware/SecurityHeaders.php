@@ -33,7 +33,7 @@ class SecurityHeaders
             $response->headers->set('Expires', '0');
         }
 
-        $permissionsPolicy = trim((string) env('SECURITY_PERMISSIONS_POLICY', 'camera=(), microphone=(), geolocation=()'));
+        $permissionsPolicy = trim((string) env('SECURITY_PERMISSIONS_POLICY', 'camera=(), microphone=()'));
         if ($permissionsPolicy !== '') {
             $response->headers->set('Permissions-Policy', $permissionsPolicy);
         }

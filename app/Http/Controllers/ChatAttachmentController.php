@@ -239,8 +239,24 @@ class ChatAttachmentController extends Controller
         $disposition = $download ? 'attachment' : 'inline';
         $safeName = str_replace(['\\', '"'], ['_', ''], (string) $chatFile->file_name);
 
+        $contentType = $chatFile->file_type;
+        // Fix for Section 3: ensure image content-type is correct for previews.
+        if (in_array($contentType, ['application/octet-stream', 'binary/octet-stream'])) {
+            $extension = strtolower(pathinfo($chatFile->file_name, PATHINFO_EXTENSION));
+            $map = [
+                'jpg' => 'image/jpeg',
+                'jpeg' => 'image/jpeg',
+                'png' => 'image/png',
+                'gif' => 'image/gif',
+                'webp' => 'image/webp',
+            ];
+            if (isset($map[$extension])) {
+                $contentType = $map[$extension];
+            }
+        }
+
         return response()->file($absolutePath, [
-            'Content-Type' => $chatFile->file_type,
+            'Content-Type' => $contentType,
             'Content-Disposition' => sprintf('%s; filename="%s"', $disposition, $safeName),
             'Cache-Control' => 'private, max-age=300',
         ]);

@@ -41,9 +41,14 @@ class User extends Authenticatable
         return $this->hasOne(Profile::class);
     }
 
+    public static function generateAnonymousName(int $id): string
+    {
+        return 'Anonymous #' . str_pad((string) ($id % 10000), 4, '0', STR_PAD_LEFT);
+    }
+
     public function getAnonymousName(): string
     {
-        return 'Anonymous #' . str_pad((string) (($this->id ?? 0) % 10000), 4, '0', STR_PAD_LEFT);
+        return self::generateAnonymousName((int) ($this->id ?? 0));
     }
 
     public function roles()
