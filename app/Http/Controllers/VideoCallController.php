@@ -513,6 +513,27 @@ class VideoCallController extends Controller
         }
     }
 
+    public function cancelCall(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'appointment_id' => 'required|integer|exists:appointments,id',
+        ]);
+
+        $user = $request->user();
+        $appointment = Appointment::findOrFail($validated['appointment_id']);
+
+        if (!$this->isParticipant($appointment, (int) $user->id)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        CounselingCall::query()
+            ->where('appointment_id', $appointment->id)
+            ->where('status', CounselingCall::STATUS_PENDING)
+            ->delete();
+
+        return response()->json(['message' => 'Call cancelled.']);
+    }
+
     private function flushDashboardCaches(): void
     {
         Cache::forget('analytics:admin:overview:v1');
