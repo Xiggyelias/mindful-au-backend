@@ -384,8 +384,8 @@ class ChatAttachmentController extends Controller
         return true;
     }
 
-    private function resolveAnonymousLabel(CounselingSession $_session): string
+    private function resolveAnonymousLabel(CounselingSession $session): string
     {
-        return 'Anonymous User';
+        return $session->student?->getAnonymousName() ?? 'Anonymous User';
     }
 }

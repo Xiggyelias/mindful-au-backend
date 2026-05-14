@@ -251,7 +251,7 @@ class UserController extends Controller
         if ($user->hasRole('counselor') && !$user->hasRole('admin')) {
             $students = $students->map(function($student) {
                 if ($student->profile && $student->profile->anonymous_mode) {
-                    $student->profile->full_name = 'Anonymous #' . substr($student->id, -4);
+                    $student->profile->full_name = $student->getAnonymousName();
                     $student->email = 'anonymous@africau.edu';
                 }
                 return $student;

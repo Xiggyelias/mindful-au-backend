@@ -53,7 +53,7 @@ class CounselorSessionReminderController extends Controller
                 $fullName = trim((string) (optional($profile)->full_name ?? ''));
 
                 $studentName = $isAnonymous
-                    ? 'Anonymous User'
+                    ? ($student?->getAnonymousName() ?? 'Anonymous User')
                     : (
                         $fullName !== ''
                         ? $fullName

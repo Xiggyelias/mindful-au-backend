@@ -418,7 +418,7 @@ class SessionController extends Controller
                         : 'Student #' . (int) $row->student_id
                     )
                 )
-                : 'Anonymous User';
+                : 'Anonymous #' . str_pad((string) (((int) $row->student_id) % 10000), 4, '0', STR_PAD_LEFT);
 
             $anonymousIdForPayload = ($isAnonymous && $identityVisible && $dbAnonymousId !== '')
                 ? $dbAnonymousId
@@ -1810,7 +1810,7 @@ class SessionController extends Controller
             return '';
         }
 
-        return 'Anonymous User';
+        return $session->student?->getAnonymousName() ?? 'Anonymous User';
     }
 
     private function latestRiskLevel(CounselingSession $session): ?string

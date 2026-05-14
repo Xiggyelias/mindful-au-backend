@@ -76,7 +76,7 @@ class SecurityHardeningTest extends TestCase
         $this->assertNotNull($row);
         $this->assertSame(0, (int) ($row['student_id'] ?? -1));
         $this->assertNull($row['anonymous_id'] ?? null);
-        $this->assertSame('Anonymous User', (string) ($row['student']['profile']['full_name'] ?? ''));
+        $this->assertSame($student->getAnonymousName(), (string) ($row['student']['profile']['full_name'] ?? ''));
         $this->assertSame($student->id, (int) ($row['chat_peer_student_id'] ?? 0));
     }
 

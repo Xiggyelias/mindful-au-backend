@@ -36,7 +36,7 @@ class CounselorIncomingCallController extends Controller
             $isAnonymous = (bool) ($apt?->is_anonymous);
 
             $studentLabel = $isAnonymous
-                ? 'Anonymous User'
+                ? ($student?->getAnonymousName() ?? 'Anonymous User')
                 : (
                     $fullName !== ''
                     ? $fullName

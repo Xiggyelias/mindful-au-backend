@@ -834,7 +834,13 @@ class AppointmentController extends Controller
 
     private function applyAnonymousAppointmentProjection(Appointment $appointment, User $viewer): void
     {
-        if (!$appointment->is_anonymous) {
+        $shouldBeAnonymous = $appointment->is_anonymous;
+
+        if (!$shouldBeAnonymous && $appointment->student?->profile?->anonymous_mode) {
+            $shouldBeAnonymous = true;
+        }
+
+        if (!$shouldBeAnonymous) {
             $appointment->setAttribute('identity_visible_to_viewer', true);
             return;
         }
@@ -864,9 +870,9 @@ class AppointmentController extends Controller
         }
     }
 
-    private function resolveAppointmentStudentAlias(Appointment $_appointment): string
+    private function resolveAppointmentStudentAlias(Appointment $appointment): string
     {
-        return 'Anonymous User';
+        return $appointment->student?->getAnonymousName() ?? 'Anonymous User';
     }
 
     private function inferCallTypeFromNotes(string $notes): string
