@@ -9,7 +9,6 @@ use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\ChatMessageData;
-use App\Support\SystemSettings;
 use App\Services\WebPushService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -546,18 +545,6 @@ class MessageController extends Controller
             : $this->inferEncryptionFlag($content);
 
         $recipientId = $this->resolveRecipientId($session, (int) $user->id);
-
-        $requiresEncryption = SystemSettings::getBool('data_encryption', true);
-        if (
-            $requiresEncryption
-            && $messageType === 'text'
-            && !$isEncrypted
-            && !$this->isHandshakeEnvelope($messageType, $content)
-        ) {
-            return response()->json([
-                'message' => 'Secure messaging is required right now. Please refresh and retry.',
-            ], 422);
-        }
 
         $message = Message::create([
             'session_id' => $sessionId,
