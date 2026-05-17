@@ -231,10 +231,8 @@ class CounselorWellnessController extends Controller
         return implode(' ', $tips);
     }
 
-    private function buildLiveSummary(User $counselor): array
+    private function calculateLiveMetrics(User $counselor, \Carbon\Carbon $now): array
     {
-        $now = now();
-
         $sessions7d = CounselingSession::query()
             ->where('counselor_id', $counselor->id)
             ->where('created_at', '>=', $now->copy()->subDays(7))
@@ -322,27 +320,43 @@ class CounselorWellnessController extends Controller
                 ->avg() ?? 0
         );
 
-        $workloadFromSessions = min(100, ($merged7d->count() / 18) * 100);
-        $workloadFromMinutes = min(100, ($minutes7d / 900) * 100);
+        return [
+            'sessions_7d_count' => $merged7d->count(),
+            'sessions_30d_count' => $sessions30d->count() + $appointments30d->count(),
+            'active_days_7d' => $activeDays7d,
+            'session_minutes_7d' => $minutes7d,
+            'upcoming_appointments_3d' => $upcoming3d,
+            'upcoming_appointments_7d' => $upcoming7d,
+            'scheduled_pending_approval' => $pendingApproval,
+            'high_risk_ai_diagnostics_14d' => $highRiskDiagnostics14d,
+            'ai_diagnostics_14d_count' => $aiDiagnostics14d->count(),
+            'avg_distress_signal_14d' => $avgDiagnosticLoad,
+        ];
+    }
+
+    private function calculateLiveScores(array $metrics, User $counselor, \Carbon\Carbon $now): array
+    {
+        $workloadFromSessions = min(100, ($metrics['sessions_7d_count'] / 18) * 100);
+        $workloadFromMinutes = min(100, ($metrics['session_minutes_7d'] / 900) * 100);
         $workloadIndex = (int) round(($workloadFromSessions * 0.6) + ($workloadFromMinutes * 0.4));
 
-        $riskRatio = $aiDiagnostics14d->count() > 0
-            ? $highRiskDiagnostics14d / $aiDiagnostics14d->count()
+        $riskRatio = $metrics['ai_diagnostics_14d_count'] > 0
+            ? $metrics['high_risk_ai_diagnostics_14d'] / $metrics['ai_diagnostics_14d_count']
             : 0.0;
-        $riskExposure = (int) round(min(100, ($riskRatio * 100 * 0.65) + ($avgDiagnosticLoad * 0.35)));
+        $riskExposure = (int) round(min(100, ($riskRatio * 100 * 0.65) + ($metrics['avg_distress_signal_14d'] * 0.35)));
 
-        $schedulePressure = (int) round(min(100, ($upcoming3d * 18) + ($pendingApproval * 12) + ($upcoming7d * 6)));
+        $schedulePressure = (int) round(min(100, ($metrics['upcoming_appointments_3d'] * 18) + ($metrics['scheduled_pending_approval'] * 12) + ($metrics['upcoming_appointments_7d'] * 6)));
 
         $recoveryPenalty = 0;
-        if ($activeDays7d >= 7) {
+        if ($metrics['active_days_7d'] >= 7) {
             $recoveryPenalty = 15;
-        } elseif ($activeDays7d >= 6) {
+        } elseif ($metrics['active_days_7d'] >= 6) {
             $recoveryPenalty = 10;
-        } elseif ($activeDays7d >= 5) {
+        } elseif ($metrics['active_days_7d'] >= 5) {
             $recoveryPenalty = 6;
         }
 
-        if ($merged7d->count() === 0 && $upcoming7d === 0) {
+        if ($metrics['sessions_7d_count'] === 0 && $metrics['upcoming_appointments_7d'] === 0) {
             $stress = 18;
             $burnout = 14;
             $mood = 82;
@@ -352,11 +366,11 @@ class CounselorWellnessController extends Controller
             );
 
             $burnout = $this->clampInt(
-                round(($stress * 0.58) + ($workloadIndex * 0.22) + ($riskExposure * 0.20) + ($activeDays7d >= 6 ? 6 : 0))
+                round(($stress * 0.58) + ($workloadIndex * 0.22) + ($riskExposure * 0.20) + ($metrics['active_days_7d'] >= 6 ? 6 : 0))
             );
 
             $mood = $this->clampInt(
-                round(100 - (($stress * 0.55) + ($burnout * 0.25)) + ($activeDays7d <= 4 ? 8 : 0))
+                round(100 - (($stress * 0.55) + ($burnout * 0.25)) + ($metrics['active_days_7d'] <= 4 ? 8 : 0))
             );
         }
 
@@ -378,36 +392,53 @@ class CounselorWellnessController extends Controller
             $source = 'live-computed+self-check-in';
         }
 
-        $scores = [
-            'mood_score' => $mood,
-            'stress_level' => $stress,
-            'burnout_index' => $burnout,
+        return [
+            'source' => $source,
+            'values' => [
+                'mood_score' => $mood,
+                'stress_level' => $stress,
+                'burnout_index' => $burnout,
+            ],
+            'indices' => [
+                'workload_index' => $workloadIndex,
+                'risk_exposure_index' => $riskExposure,
+                'schedule_pressure_index' => $schedulePressure,
+            ]
         ];
+    }
 
+    private function buildLiveSummary(User $counselor): array
+    {
+        $now = now();
+        $baseMetrics = $this->calculateLiveMetrics($counselor, $now);
+        $scoreData = $this->calculateLiveScores($baseMetrics, $counselor, $now);
+
+        $scores = $scoreData['values'];
+        
         $metrics = [
-            'sessions_7d' => $merged7d->count(),
-            'sessions_30d' => $sessions30d->count() + $appointments30d->count(),
-            'active_days_7d' => $activeDays7d,
-            'session_minutes_7d' => $minutes7d,
-            'upcoming_appointments_3d' => $upcoming3d,
-            'upcoming_appointments_7d' => $upcoming7d,
-            'scheduled_pending_approval' => $pendingApproval,
-            'high_risk_ai_diagnostics_14d' => $highRiskDiagnostics14d,
-            'ai_diagnostics_14d' => $aiDiagnostics14d->count(),
-            'avg_distress_signal_14d' => $avgDiagnosticLoad,
-            'workload_index' => $workloadIndex,
-            'risk_exposure_index' => $riskExposure,
-            'schedule_pressure_index' => $schedulePressure,
+            'sessions_7d' => $baseMetrics['sessions_7d_count'],
+            'sessions_30d' => $baseMetrics['sessions_30d_count'],
+            'active_days_7d' => $baseMetrics['active_days_7d'],
+            'session_minutes_7d' => $baseMetrics['session_minutes_7d'],
+            'upcoming_appointments_3d' => $baseMetrics['upcoming_appointments_3d'],
+            'upcoming_appointments_7d' => $baseMetrics['upcoming_appointments_7d'],
+            'scheduled_pending_approval' => $baseMetrics['scheduled_pending_approval'],
+            'high_risk_ai_diagnostics_14d' => $baseMetrics['high_risk_ai_diagnostics_14d'],
+            'ai_diagnostics_14d' => $baseMetrics['ai_diagnostics_14d_count'],
+            'avg_distress_signal_14d' => $baseMetrics['avg_distress_signal_14d'],
+            'workload_index' => $scoreData['indices']['workload_index'],
+            'risk_exposure_index' => $scoreData['indices']['risk_exposure_index'],
+            'schedule_pressure_index' => $scoreData['indices']['schedule_pressure_index'],
         ];
 
         return [
             'generated_at' => $now->toIso8601String(),
-            'source' => $source,
+            'source' => $scoreData['source'],
             'scores' => $scores,
             'labels' => [
-                'wellness' => $this->wellnessLabel($mood),
-                'stress' => $this->pressureLabel($stress),
-                'burnout' => $this->pressureLabel($burnout),
+                'wellness' => $this->wellnessLabel($scores['mood_score']),
+                'stress' => $this->pressureLabel($scores['stress_level']),
+                'burnout' => $this->pressureLabel($scores['burnout_index']),
             ],
             'metrics' => $metrics,
             'recommendations' => $this->buildLiveRecommendations($scores, $metrics),
