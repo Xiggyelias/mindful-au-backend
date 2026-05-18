@@ -34,6 +34,11 @@ return [
             'audio/x-wav',
             'audio/webm',
             'video/webm',
+            // WebM is a Matroska profile; older libmagic / Symfony MimeTypeGuesser
+            // may return these instead of audio/webm or video/webm:
+            'audio/x-matroska',
+            'video/x-matroska',
+            'application/x-matroska',
             'audio/ogg',
             'audio/mp4',
             'audio/x-m4a',

@@ -37,7 +37,15 @@ class VoiceNotesController extends Controller
         }
 
         $request->validate([
-            'audio' => 'required|file|mimes:mp3,wav,m4a,ogg,webm|max:10240|mimetypes:audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm',
+            'audio' => [
+                'required',
+                'file',
+                'max:10240',
+                'mimes:mp3,wav,m4a,ogg,webm',
+                // audio/x-matroska and video/x-matroska: older libmagic detects
+                // Chrome MediaRecorder WebM blobs as Matroska instead of WebM.
+                'mimetypes:audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm,video/webm,audio/x-matroska,video/x-matroska,application/x-matroska',
+            ],
         ]);
 
         $file = $request->file('audio');
