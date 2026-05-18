@@ -84,7 +84,6 @@ class ChatAttachmentController extends Controller
                 'file',
                 'max:' . (int) config('chat.attachments.max_upload_kb', 5120),
                 'extensions:' . implode(',', (array) config('chat.attachments.allowed_extensions', [])),
-                'mimetypes:' . implode(',', (array) config('chat.attachments.allowed_mime_types', [])),
             ],
             'message_type' => 'nullable|in:file,voice',
         ]);
