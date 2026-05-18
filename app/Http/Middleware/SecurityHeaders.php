@@ -24,7 +24,12 @@ class SecurityHeaders
         $response->headers->set('X-Permitted-Cross-Domain-Policies', 'none');
         $response->headers->set('Origin-Agent-Cluster', '?1');
         $response->headers->set('Cross-Origin-Opener-Policy', 'same-origin');
-        $response->headers->set('Cross-Origin-Resource-Policy', 'same-origin');
+        // Chat file downloads are served from the API subdomain and loaded by the
+        // frontend subdomain — allow cross-origin access for that route only.
+        $corp = $request->is('api/chat/files/*/content')
+            ? 'cross-origin'
+            : 'same-origin';
+        $response->headers->set('Cross-Origin-Resource-Policy', $corp);
 
         if ($request->is('api/*')) {
             // Avoid sensitive API payloads being cached by browsers/intermediaries.
