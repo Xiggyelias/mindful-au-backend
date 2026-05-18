@@ -33,6 +33,7 @@ return [
             'audio/wav',
             'audio/x-wav',
             'audio/webm',
+            'video/webm',
             'audio/ogg',
             'audio/mp4',
             'audio/x-m4a',
