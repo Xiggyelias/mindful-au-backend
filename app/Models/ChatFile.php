@@ -50,10 +50,25 @@ class ChatFile extends Model
     public function signedUrl(bool $download = false): string
     {
         $minutes = (int) config('chat.attachments.signed_url_minutes', 1440);
+        $disk = (string) config('chat.attachments.disk', 'local');
+        $expiry = now()->addMinutes(max(30, $minutes));
+
+        if ($disk === 's3') {
+            $options = [];
+            if ($download) {
+                $options['ResponseContentDisposition'] = sprintf(
+                    'attachment; filename="%s"',
+                    str_replace(['"', '\\'], ['_', '_'], (string) $this->file_name)
+                );
+            }
+            /** @var \Illuminate\Filesystem\FilesystemAdapter $storage */
+            $storage = Storage::disk('s3');
+            return $storage->temporaryUrl($this->file_path, $expiry, $options);
+        }
 
         return URL::temporarySignedRoute(
             'chat-files.content',
-            now()->addMinutes(max(30, $minutes)),
+            $expiry,
             [
                 'chatFile' => $this->id,
                 'download' => $download ? 1 : 0,

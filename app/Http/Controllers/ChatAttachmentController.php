@@ -14,8 +14,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
-
 class ChatAttachmentController extends Controller
 {
     private const ANONYMOUS_SESSION_TTL_HOURS = 24;
@@ -222,15 +220,23 @@ class ChatAttachmentController extends Controller
         ]);
     }
 
-    public function show(Request $request, ChatFile $chatFile): BinaryFileResponse
+    public function show(Request $request, ChatFile $chatFile): \Symfony\Component\HttpFoundation\Response
     {
         $disk = (string) config('chat.attachments.disk', 'local');
+        $download = filter_var((string) $request->query('download', '0'), FILTER_VALIDATE_BOOL);
+
+        // For S3 (or any remote driver), redirect to a fresh pre-signed URL so the
+        // file is streamed directly from the object store — not proxied through the app.
+        if ($disk === 's3') {
+            $url = $chatFile->signedUrl($download);
+            return redirect()->away($url, 302);
+        }
+
         abort_unless(Storage::disk($disk)->exists($chatFile->file_path), 404);
 
         /** @var \Illuminate\Filesystem\FilesystemAdapter $storage */
         $storage = Storage::disk($disk);
         $absolutePath = $storage->path($chatFile->file_path);
-        $download = filter_var((string) $request->query('download', '0'), FILTER_VALIDATE_BOOL);
         $disposition = $download ? 'attachment' : 'inline';
         $safeName = str_replace(['\\', '"'], ['_', ''], (string) $chatFile->file_name);
 
