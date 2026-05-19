@@ -25,8 +25,10 @@ class CrisisSignalTest extends TestCase
     {
         $student = User::factory()->create();
         $counselor = User::factory()->create();
+        $admin = User::factory()->create();
         $this->assignRole($student, 'student');
         $this->assignRole($counselor, 'counselor');
+        $this->assignRole($admin, 'admin');
 
         $session = CounselingSession::create([
             'student_id' => $student->id,
@@ -44,6 +46,11 @@ class CrisisSignalTest extends TestCase
         $this->assertTrue(
             Notification::query()->where('user_id', $counselor->id)->exists(),
             'Counselor should receive crisis notification'
+        );
+
+        $this->assertTrue(
+            Notification::query()->where('user_id', $admin->id)->exists(),
+            'Admin should receive crisis notification'
         );
     }
 

@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Support\SystemSettings;
+use App\Services\WebPushService;
+use App\Models\User;
+use App\Models\Notification;
 
 class AIWellnessChatController extends Controller
 {
@@ -20,7 +23,8 @@ class AIWellnessChatController extends Controller
     private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
 
     public function __construct(
-        private readonly MentalHealthMlService $mentalHealthMlService
+        private readonly MentalHealthMlService $mentalHealthMlService,
+        private readonly WebPushService $webPush
     ) {
     }
 
@@ -137,6 +141,16 @@ Important guidelines:
                 'user_id' => (int) $user->id,
                 'conversation_id' => (int) $conversation->id,
             ]);
+
+            $crisisWords = $this->mentalHealthMlService->detectCrisisInText($message);
+            if (empty($crisisWords)) {
+                $crisisWords = ['high-risk indicators'];
+            }
+            try {
+                $this->triggerAiCrisisAlert($user, $crisisWords, (int) $conversation->id);
+            } catch (\Throwable $e) {
+                Log::error('Failed to trigger AI crisis alert: ' . $e->getMessage());
+            }
         } else {
             $messages = [
                 ['role' => 'system', 'content' => $systemPrompt],
@@ -1113,6 +1127,61 @@ Important guidelines:
     {
         $timeout = (int) config('services.ai.provider_connect_timeout_seconds', self::DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS);
         return max(1, min(10, $timeout));
+    }
+
+    private function triggerAiCrisisAlert(User $student, array $words, int $conversationId): void
+    {
+        $wordList = implode(', ', $words);
+        $studentName = $student->profile?->full_name ?: $student->email;
+        
+        $activeSession = \App\Models\CounselingSession::where('student_id', $student->id)
+            ->where('status', 'active')
+            ->first();
+
+        $counselorId = $activeSession?->counselor_id;
+        $peerCounselorId = $activeSession?->peer_counselor_id;
+        $adminIds = User::whereHas('roles', function($q) {
+            $q->where('role', 'admin')->where('approved', true);
+        })->pluck('id')->all();
+
+        $recipients = array_unique(array_filter(array_merge(
+            $counselorId ? [$counselorId] : [],
+            $peerCounselorId ? [$peerCounselorId] : [],
+            $adminIds
+        )));
+
+        foreach ($recipients as $recipientId) {
+            Notification::create([
+                'user_id' => $recipientId,
+                'title' => '🚨 Crisis Alert: AI Chat Trigger',
+                'message' => sprintf(
+                    'Student (%s) sent a message in AI Wellness Chat containing high-risk terms: %s. Please review immediately.',
+                    $studentName,
+                    $wordList
+                ),
+                'type' => 'error', // High priority
+            ]);
+
+            try {
+                $this->webPush->sendToUser(
+                    (int) $recipientId,
+                    'Emergency: AI crisis keywords detected',
+                    sprintf(
+                        '%s — terms: %s. Review immediately.',
+                        $studentName,
+                        $wordList
+                    ),
+                    '/admin/wellness-chat/' . $student->id,
+                    [
+                        'tag' => 'ai-crisis-' . $student->id . '-' . time(),
+                        'urgency' => 'high',
+                        'requireInteraction' => true,
+                    ]
+                );
+            } catch (\Throwable $_) {
+                // ignore
+            }
+        }
     }
 }
 

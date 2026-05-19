@@ -446,6 +446,9 @@ class MentalHealthMlService
             'topic_counts' => [],
             'distress_words' => [],
             'crisis_words' => [],
+            'academic_risk_events_count' => 0,
+            'academic_risk_highest_score' => 0.0,
+            'academic_risk_types' => [],
         ];
     }
 
@@ -668,6 +671,27 @@ class MentalHealthMlService
             }
         }
 
+        $academicEvents = \App\Models\AcademicRiskEvent::query()
+            ->whereIn('linked_user_id', $studentIds)
+            ->where('created_at', '>=', now()->subDays(90))
+            ->get(['linked_user_id', 'risk_score', 'risk_type']);
+
+        foreach ($academicEvents as $event) {
+            $studentId = (int) $event->linked_user_id;
+            if (isset($snapshots[$studentId])) {
+                $snapshots[$studentId]['academic_risk_events_count']++;
+                $score = (float) ($event->risk_score ?? 0.0);
+                if ($score > $snapshots[$studentId]['academic_risk_highest_score']) {
+                    $snapshots[$studentId]['academic_risk_highest_score'] = $score;
+                }
+                $snapshots[$studentId]['academic_risk_types'][] = (string) $event->risk_type;
+            }
+        }
+
+        foreach ($snapshots as $studentId => $snapshot) {
+            $snapshots[$studentId]['academic_risk_types'] = array_values(array_unique($snapshots[$studentId]['academic_risk_types']));
+        }
+
         return $snapshots;
     }
 
@@ -798,6 +822,9 @@ class MentalHealthMlService
                 'cancel_rate_60d' => round((float) ($snapshot['cancel_rate_60d'] ?? 0), 2),
                 'mood_logs_14d' => (int) ($snapshot['mood_logs_14d'] ?? 0),
                 'completed_sessions_60d' => (int) ($snapshot['completed_sessions_60d'] ?? 0),
+                'academic_risk_events_count' => (int) ($snapshot['academic_risk_events_count'] ?? 0),
+                'academic_risk_highest_score' => round((float) ($snapshot['academic_risk_highest_score'] ?? 0.0), 2),
+                'academic_risk_types' => $snapshot['academic_risk_types'] ?? [],
             ],
         ];
     }
@@ -835,6 +862,12 @@ class MentalHealthMlService
         $base += min(18, $distressRatio * 100 * 0.18);
         $base += min(12, $cancelRate * 100 * 0.12);
         $base += min(12, (int) ($snapshot['low_mood_logs_14d'] ?? 0) * 2.5);
+
+        $academicCount = (int) ($snapshot['academic_risk_events_count'] ?? 0);
+        $highestAcademicScore = (float) ($snapshot['academic_risk_highest_score'] ?? 0.0);
+        if ($academicCount > 0) {
+            $base += min(18, ($highestAcademicScore * 0.15) + ($academicCount * 3.0));
+        }
 
         $trendDelta = (int) ($snapshot['diagnostic_trend_delta'] ?? 0);
         if ($trendDelta >= 12) {
@@ -906,6 +939,11 @@ class MentalHealthMlService
             };
         }
 
+        $academicCount = (int) ($snapshot['academic_risk_events_count'] ?? 0);
+        if ($academicCount > 0) {
+            return 'Academic pressure stabilization';
+        }
+
         if ((float) ($snapshot['cancel_rate_60d'] ?? 0.0) >= 0.35) {
             return 'Session continuity and follow-up';
         }
@@ -954,6 +992,12 @@ class MentalHealthMlService
         }
         if (($snapshot['diagnostic_trend_delta'] ?? 0) >= 15) {
             $indicators[] = 'Significant worsening in self-assessment scores.';
+        }
+
+        $academicCount = (int) ($snapshot['academic_risk_events_count'] ?? 0);
+        if ($academicCount > 0) {
+            $types = implode(', ', $snapshot['academic_risk_types'] ?? []);
+            $indicators[] = "Academic risk events flagged: {$types}.";
         }
 
         return $indicators;

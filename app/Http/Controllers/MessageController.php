@@ -1220,18 +1220,22 @@ class MessageController extends Controller
         $wordList = implode(', ', $words);
         $studentName = $student->profile?->full_name ?: $student->email;
         $anonymousLabel = $this->resolveAnonymousLabel($session);
-        
         $counselorId = $session->counselor_id;
-        $adminIds = User::whereHas('roles', function($q) { $q->where('role', 'admin'); })->pluck('id')->all();
+        $peerCounselorId = $session->peer_counselor_id;
+        $adminIds = User::whereHas('roles', function($q) {
+            $q->where('role', 'admin')->where('approved', true);
+        })->pluck('id')->all();
         
-        $recipients = array_unique(array_merge(
+        $recipients = array_unique(array_filter(array_merge(
             $counselorId ? [$counselorId] : [],
+            $peerCounselorId ? [$peerCounselorId] : [],
             $adminIds
-        ));
+        )));
 
         foreach ($recipients as $recipientId) {
-            $isCounselorForSession = (int)$recipientId === (int)$session->counselor_id;
-            $viewerName = $isCounselorForSession && !$session->is_anonymous ? $studentName : $anonymousLabel;
+            $isCounselorOrPeer = (int)$recipientId === (int)$session->counselor_id 
+                || (int)$recipientId === (int)$session->peer_counselor_id;
+            $viewerName = $isCounselorOrPeer && !$session->is_anonymous ? $studentName : $anonymousLabel;
 
             Notification::create([
                 'user_id' => $recipientId,

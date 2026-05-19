@@ -150,6 +150,37 @@ class MentalHealthMlIntegrationTest extends TestCase
             ]);
     }
 
+    /** @test */
+    public function it_factors_academic_risk_events_into_ml_insights(): void
+    {
+        $this->disableTwoFactor();
+
+        $student = $this->createPortalUser('student', 'academic-ml-student@test.com', 'Academic Student');
+
+        // Create an AcademicRiskEvent for this student
+        \App\Models\AcademicRiskEvent::create([
+            'student_identifier' => 'academic-ml-student@test.com',
+            'linked_user_id' => $student->id,
+            'risk_type' => 'failed_courses',
+            'risk_score' => 75.50,
+            'status' => 'linked',
+            'received_at' => now(),
+            'processed_at' => now(),
+            'payload' => [],
+        ]);
+
+        $response = $this->actingAs($student)->getJson('/api/student-wellness/summary');
+
+        $response->assertOk();
+        $mlInsights = $response->json('ml_insights');
+
+        $this->assertEquals('Academic pressure stabilization', $mlInsights['focus_area']);
+        $this->assertContains('Academic risk events flagged: failed_courses.', $mlInsights['risk_indicators']);
+        $this->assertEquals(1, $mlInsights['feature_snapshot']['academic_risk_events_count']);
+        $this->assertEquals(75.50, $mlInsights['feature_snapshot']['academic_risk_highest_score']);
+        $this->assertContains('failed_courses', $mlInsights['feature_snapshot']['academic_risk_types']);
+    }
+
     private function disableTwoFactor(): void
     {
         SystemSetting::query()->updateOrCreate(

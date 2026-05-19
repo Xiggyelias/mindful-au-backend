@@ -128,6 +128,8 @@ class DiagnosticController extends Controller
 
         $diagnostic->save();
 
+        $user->update(['needs_assessment' => false]);
+
         // Log for counselors if elevated risk / safety concerns
         if (! empty($scoreData['notify_counselors'])) {
             $this->notifyCounselors($user, $diagnostic, $scoreData['risk_flags'] ?? []);
@@ -465,4 +467,36 @@ class DiagnosticController extends Controller
             ->filter()
             ->values();
     }
+
+    public function assignNewAssessment(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user->hasRole('counselor') && !$user->hasRole('admin')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'student_id' => 'required|integer|exists:users,id',
+        ]);
+
+        $student = User::findOrFail($validated['student_id']);
+        if (!$student->hasRole('student')) {
+            return response()->json(['message' => 'Assessment can only be assigned to students'], 422);
+        }
+
+        $student->update(['needs_assessment' => true]);
+
+        Notification::query()->create([
+            'user_id' => $student->id,
+            'title' => 'New Assessment Assigned',
+            'message' => 'A counselor has assigned a new wellness assessment for you to complete.',
+            'type' => 'info',
+        ]);
+
+        return response()->json([
+            'message' => 'New assessment assigned successfully',
+            'student_id' => $student->id,
+        ]);
+    }
 }
+

@@ -183,6 +183,15 @@ class AIWellnessChatFallbackTest extends TestCase
         Http::fake();
 
         $student = $this->createPortalUser('student', 'ai-crisis-student@test.com', 'AI Crisis Student');
+        $counselor = $this->createPortalUser('counselor', 'ai-crisis-counselor@test.com', 'AI Crisis Counselor');
+        $admin = $this->createPortalUser('admin', 'ai-crisis-admin@test.com', 'AI Crisis Admin');
+
+        \App\Models\CounselingSession::create([
+            'student_id' => $student->id,
+            'counselor_id' => $counselor->id,
+            'status' => 'active',
+            'session_type' => 'chat',
+        ]);
 
         $response = $this->actingAs($student)->postJson('/api/ai/wellness-chat', [
             'message' => 'I want to jump off a building',
@@ -205,6 +214,16 @@ class AIWellnessChatFallbackTest extends TestCase
         $this->assertStringContainsString('move away from the edge', $assistantText);
         $this->assertStringContainsString('crisis contact', $assistantText);
         $this->assertStringNotContainsString('academic pressure can feel intense', $assistantText);
+
+        $this->assertTrue(
+            \App\Models\Notification::query()->where('user_id', $counselor->id)->exists(),
+            'Counselor should receive crisis notification'
+        );
+
+        $this->assertTrue(
+            \App\Models\Notification::query()->where('user_id', $admin->id)->exists(),
+            'Admin should receive crisis notification'
+        );
 
         Http::assertNothingSent();
     }

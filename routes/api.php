@@ -185,6 +185,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/diagnostics/latest', [\App\Http\Controllers\DiagnosticController::class, 'getLatest']);
     Route::get('/diagnostics/trends', [\App\Http\Controllers\DiagnosticController::class, 'getTrends']);
     Route::get('/diagnostics/counselor-dashboard', [\App\Http\Controllers\DiagnosticController::class, 'getCounselorDashboard'])->middleware('counselor');
+    Route::post('/diagnostics/assign', [\App\Http\Controllers\DiagnosticController::class, 'assignNewAssessment'])->middleware('counselor');
     Route::get('/student-wellness/summary', [\App\Http\Controllers\StudentWellnessController::class, 'summary']);
     Route::get('/ml/counselor-matches', [\App\Http\Controllers\MlInsightsController::class, 'counselorMatches']);
     Route::get('/ml/health', [\App\Http\Controllers\MlInsightsController::class, 'health']);
