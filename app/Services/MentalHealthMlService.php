@@ -18,30 +18,78 @@ class MentalHealthMlService
     private const MAX_TEXT_SIGNAL_ROWS = 20000;
 
     private const DISTRESS_TERMS = [
-        'stress', 'stressed', 'anxious', 'anxiety', 'panic', 'overwhelmed',
-        'hopeless', 'alone', 'lonely', 'drained', 'tired', 'exhausted',
-        'burnout', "can't cope", 'cannot cope', 'no point', 'give up',
-        'suffocating', 'lost', 'unbearable', 'drowning', 'empty',
+        // Core distress vocabulary
+        'stressed', 'anxious', 'anxiety', 'panic', 'overwhelmed',
+        'hopeless', 'alone', 'lonely', 'drained', 'exhausted',
+        'burnout', 'cannot cope', 'no point', 'give up',
+        'suffocating', 'unbearable', 'drowning', 'empty',
         'help me', 'crisis', 'distressed', 'miserable', 'heartbroken',
-        'scared', 'fearful', 'shaking', 'crying', 'tears', 'heavy',
-        'worthless', 'failure', 'useless', 'hating myself'
+        'scared', 'fearful', 'shaking', 'crying', 'worthless',
+        'failure', 'hating myself',
+        // University-specific distress signals
+        'depressed', 'depression', 'numb', 'falling apart', 'breaking down',
+        'not coping', 'panic attack', 'can t keep up', 'falling behind',
+        'no motivation', 'can t function', 'mental breakdown',
+        'behind on assignments', 'isolated', 'disconnected', 'invisible',
+        'ashamed', 'humiliated', 'so behind', 'failing my course',
+        'no energy', 'can t sleep', 'not sleeping', 'can t eat',
+        'feeling trapped', 'no one understands', 'nobody cares',
+        'no future', 'no hope', 'nothing matters', 'what is the point',
+        'struggling so much', 'completely lost', 'overwhelmed with everything',
+        'too much pressure', 'can t take it anymore', 'at my limit',
+        'falling to pieces', 'hit rock bottom', 'barely holding on',
     ];
 
     private const CRISIS_TERMS = [
+        // Explicit self-harm/suicide signals
         'suicide', 'kill myself', 'end my life', 'self harm', 'hurt myself',
         'jump off', 'wish i were dead', 'better off without me', 'take my life',
         'dont want to live', 'sleeping pills', 'overdose', 'goodbye everyone',
-        'no more pain', 'done with life', 'cutting', 'bleeding', 'hanging'
+        'no more pain', 'done with life', 'cutting myself', 'hanging',
+        // Additional high-risk university crisis phrases
+        'want to die', 'don t want to be here', 'not worth living',
+        'life is not worth', 'ending it all', 'end it all',
+        'rather be dead', 'die by suicide', 'suicidal thoughts',
+        'suicidal ideation', 'no reason to live', 'give up on life',
+        'make it stop forever', 'just want it all to end',
+        'leave everything behind', 'nobody would miss me',
+        'tired of being alive', 'can t keep living like this',
     ];
 
     private const CHAT_TOPICS = [
-        'anxiety' => ['anxiety', 'anxious', 'panic', 'overwhelmed', 'stress', 'stressed', 'scared', 'fear'],
-        'study' => ['exam', 'assignment', 'deadline', 'study', 'focus', 'concentrate', 'university', 'grades'],
-        'sleep' => ['sleep', 'insomnia', 'tired', 'exhausted', 'rest', 'nightmare', 'awake'],
-        'sadness' => ['sad', 'depressed', 'hopeless', 'alone', 'lonely', 'empty', 'worthless', 'miserable'],
-        'relationships' => ['relationship', 'breakup', 'friend', 'friendship', 'partner', 'family', 'parents'],
-        'financial' => ['fees', 'tuition', 'money', 'rent', 'financial', 'debt', 'food', 'budget', 'work'],
-  ];
+        'anxiety' => [
+            'anxiety', 'anxious', 'panic', 'overwhelmed', 'stressed',
+            'scared', 'fear', 'worry', 'nervous', 'on edge', 'dread',
+            'tension', 'tense', 'racing thoughts', 'restless',
+        ],
+        'study' => [
+            'exam', 'assignment', 'deadline', 'study', 'focus', 'concentrate',
+            'university', 'grades', 'marks', 'fail', 'failing', 'procrastinate',
+            'coursework', 'lecture', 'thesis', 'dissertation', 'semester',
+            'falling behind', 'academic pressure', 'workload',
+        ],
+        'sleep' => [
+            'sleep', 'insomnia', 'tired', 'exhausted', 'rest', 'nightmare',
+            'awake', 'can t sleep', 'not sleeping', 'fatigue', 'no energy',
+            'wide awake', 'sleep deprived', 'oversleeping',
+        ],
+        'sadness' => [
+            'sad', 'depressed', 'hopeless', 'alone', 'lonely', 'empty',
+            'worthless', 'miserable', 'numb', 'low mood', 'no motivation',
+            'lost interest', 'unmotivated', 'tearful', 'crying', 'grief',
+            'depression', 'down', 'helpless',
+        ],
+        'relationships' => [
+            'relationship', 'breakup', 'friend', 'friendship', 'partner',
+            'family', 'parents', 'roommate', 'conflict', 'argument',
+            'isolation', 'rejected', 'fitting in', 'belonging', 'group',
+        ],
+        'financial' => [
+            'fees', 'tuition', 'money', 'rent', 'financial', 'debt',
+            'food', 'budget', 'work', 'scholarship', 'afford', 'broke',
+            'struggling financially', 'can t afford', 'bills', 'income',
+        ],
+    ];
 
     public function detectCrisisInText(string $text): array
     {
@@ -370,7 +418,7 @@ class MentalHealthMlService
             ->filter(fn (array $item) => (int) ($item['risk_forecast']['score'] ?? 0) >= 70)
             ->values();
         $risingRiskStudents = $insights
-            ->filter(fn (array $item) => (string) ($item['trend']['label'] ?? '') === 'rising')
+            ->filter(fn (array $item) => (string) ($item['trend']['label'] ?? '') === 'worsening')
             ->count();
         $followUpCoverage = $studentsNeedingFollowUp->count() > 0
             ? round(
@@ -905,19 +953,26 @@ class MentalHealthMlService
     private function buildTrendLabel(array $snapshot): string
     {
         $delta = (int) ($snapshot['diagnostic_trend_delta'] ?? 0);
+
+        // Crisis messages or a meaningful score increase → risk is worsening.
+        // Use 'worsening' to align with DiagnosticController::buildStudentObservations()
+        // which validates against ['improving', 'stable', 'worsening', 'insufficient_data'].
         if ((int) ($snapshot['crisis_messages_30d'] ?? 0) > 0 || $delta >= 12) {
-            return 'rising';
+            return 'worsening';
         }
+
         if ($delta <= -12) {
             return 'improving';
         }
 
+        // High cancellation with no upcoming appointments signals disengagement —
+        // still worsening from a care continuity standpoint.
         $cancelRate = (float) ($snapshot['cancel_rate_60d'] ?? 0.0);
         if ($cancelRate >= 0.4 && (int) ($snapshot['upcoming_appointments'] ?? 0) === 0) {
-            return 'fragile';
+            return 'worsening';
         }
 
-        return 'steady';
+        return 'stable';
     }
 
     private function buildFocusArea(array $snapshot, int $riskScore): string
@@ -1298,7 +1353,16 @@ class MentalHealthMlService
         $matches = [];
         foreach ($terms as $term) {
             $needle = $this->normalizeText((string) $term);
-            if ($needle !== '' && str_contains($text, $needle)) {
+            if ($needle === '') {
+                continue;
+            }
+
+            // Use word-boundary anchors so that e.g. 'stressed' does NOT
+            // match inside 'unstressed', and 'stress' does NOT match inside
+            // 'distress'.  The anchors check for a non-alphanumeric character
+            // (or start/end of string) immediately before and after the term.
+            $pattern = '/(?<![a-z0-9])' . preg_quote($needle, '/') . '(?![a-z0-9])/u';
+            if (preg_match($pattern, $text) === 1) {
                 $matches[] = $term;
             }
         }

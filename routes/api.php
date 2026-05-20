@@ -130,6 +130,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     // Voice Notes
     Route::post('/sessions/{id}/voice-notes', [VoiceNotesController::class, 'upload']);
     Route::get('/messages/{id}/voice-note', [VoiceNotesController::class, 'download']);
+    Route::get('/messages/{id}/voice-note/stream', [VoiceNotesController::class, 'stream']);
 
     // Video Calls
     Route::post('/video-calls/authorize', [VideoCallController::class, 'authorizeCall'])->middleware('throttle:20,1');
