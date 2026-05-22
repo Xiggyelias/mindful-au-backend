@@ -18,9 +18,6 @@ class TipOfDayService
     public function resolveForUser(User $user): ?array
     {
         $audience = $this->resolveAudience($user);
-        if (in_array($audience, ['counselor', 'admin'])) {
-            return null;
-        }
 
         $today = now()->toDateString();
         $existingDelivery = TipDelivery::query()
@@ -34,7 +31,7 @@ class TipOfDayService
             return $this->buildPayload($existingDelivery->tip, $existingDelivery, $user);
         }
 
-        $audience = $this->resolveAudience($user);
+        // Tier 1: audience-specific or universal tips
         $eligibleTips = Tip::query()
             ->where('is_active', true)
             ->whereIn('audience', ['all', $audience])
@@ -43,10 +40,19 @@ class TipOfDayService
             ->get();
 
         if ($eligibleTips->isEmpty()) {
-            // Fallback to all audiences if nothing specific found
+            // Tier 2: only 'all' audience
             $eligibleTips = Tip::query()
                 ->where('is_active', true)
                 ->where('audience', 'all')
+                ->get();
+        }
+
+        if ($eligibleTips->isEmpty()) {
+            // Tier 3: any active tip regardless of audience — never leave the card empty
+            $eligibleTips = Tip::query()
+                ->where('is_active', true)
+                ->orderByDesc('priority')
+                ->orderBy('id')
                 ->get();
         }
 

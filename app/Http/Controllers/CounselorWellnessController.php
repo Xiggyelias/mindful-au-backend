@@ -273,7 +273,13 @@ class CounselorWellnessController extends Controller
         $activeDays7d = $merged7d
             ->map(function ($session) {
                 $reference = $session->started_at ?? $session->created_at;
-                return $reference ? $reference->toDateString() : null;
+                if (!$reference) {
+                    return null;
+                }
+                return ($reference instanceof \Carbon\Carbon
+                    ? $reference
+                    : \Carbon\Carbon::parse($reference)
+                )->toDateString();
             })
             ->filter()
             ->unique()
@@ -450,7 +456,13 @@ class CounselorWellnessController extends Controller
         $total = 0;
         foreach ($sessions as $session) {
             if ($session->started_at !== null && $session->ended_at !== null) {
-                $minutes = $session->started_at->diffInMinutes($session->ended_at, false);
+                $start = $session->started_at instanceof \Carbon\Carbon
+                    ? $session->started_at
+                    : \Carbon\Carbon::parse($session->started_at);
+                $end = $session->ended_at instanceof \Carbon\Carbon
+                    ? $session->ended_at
+                    : \Carbon\Carbon::parse($session->ended_at);
+                $minutes = $start->diffInMinutes($end, false);
                 if ($minutes > 0) {
                     $total += $minutes;
                 }
