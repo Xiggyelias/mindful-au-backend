@@ -30,22 +30,19 @@ RUN a2enmod rewrite headers
 RUN echo "upload_max_filesize = 20M" >> /usr/local/etc/php/conf.d/uploads.ini && \
     echo "post_max_size = 40M" >> /usr/local/etc/php/conf.d/uploads.ini
 
-# PHP extensions for Laravel + Redis (no Swoole - Apache serves directly)
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libzip-dev \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    libicu-dev \
     zip \
     unzip \
     curl \
     default-mysql-client \
     supervisor \
-    && docker-php-ext-install pdo_mysql mbstring intl zip bcmath gd \
-    && pecl install redis \
-    && docker-php-ext-enable redis \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# PHP extensions (handled via install-php-extensions for robust configuration & clean-up)
+ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
+RUN chmod +x /usr/local/bin/install-php-extensions && \
+    install-php-extensions pdo_mysql mbstring intl zip bcmath gd redis
 
 # Copy app
 COPY --from=vendor /app /app
