@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Support\SystemSettings;
 use App\Services\WebPushService;
+use App\Services\OpenRouterService;
 use App\Models\User;
 use App\Models\Notification;
 
@@ -439,47 +440,6 @@ Important guidelines:
         }
     }
 
-    private function tryKwaipilot(array $messages): ?string
-    {
-        $apiKey = config('services.kwaipilot.api_key');
-        
-        if (!$apiKey) {
-            return null;
-        }
-
-        try {
-            $payload = [
-                'model' => 'gpt-4o-mini',
-                'messages' => $messages,
-                'max_tokens' => 500,
-                'temperature' => 0.7,
-            ];
-
-            $baseUrl = config('services.kwaipilot.base_url', 'https://api.kwaipilot.com/v1');
-
-            $response = $this->providerHttp()
-                ->withHeaders([
-                    'Authorization' => 'Bearer ' . $apiKey,
-                    'Content-Type' => 'application/json',
-                ])
-                ->post(rtrim($baseUrl, '/') . '/chat/completions', $payload);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                return $data['choices'][0]['message']['content'] ?? null;
-            }
-            Log::warning('Kwaipilot API request failed.', [
-                'status' => $response->status(),
-            ]);
-        } catch (\Exception $e) {
-            Log::warning('Kwaipilot API request error.', [
-                'exception' => $e::class,
-            ]);
-        }
-
-        return null;
-    }
-
     private function tryOpenRouter(array $messages): ?string
     {
         $apiKey = config('services.openrouter.api_key');
@@ -490,7 +450,7 @@ Important guidelines:
 
         try {
             $payload = [
-                'model' => 'openai/gpt-4o',
+                'model' => OpenRouterService::configuredChatModel(),
                 'messages' => $messages,
                 'max_tokens' => 500,
                 'temperature' => 0.7,
@@ -613,40 +573,6 @@ Important guidelines:
             }
         } catch (\Exception $e) {
             Log::error('Gemini API error.', [
-                'exception' => $e::class,
-            ]);
-        }
-
-        return null;
-    }
-
-    private function tryOpenAI(array $messages): ?string
-    {
-        $apiKey = config('services.openai.api_key') ?? env('OPENAI_API_KEY');
-        
-        if (!$apiKey) {
-            return null;
-        }
-
-        try {
-            $response = $this->providerHttp()
-                ->withHeaders([
-                    'Authorization' => 'Bearer ' . $apiKey,
-                    'Content-Type' => 'application/json',
-                ])
-                ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => 'gpt-4o-mini',
-                    'messages' => $messages,
-                    'max_tokens' => 500,
-                    'temperature' => 0.7,
-                ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                return $data['choices'][0]['message']['content'] ?? null;
-            }
-        } catch (\Exception $e) {
-            Log::error('OpenAI API error.', [
                 'exception' => $e::class,
             ]);
         }
@@ -1060,10 +986,8 @@ Important guidelines:
     private function availableAiProviders(): array
     {
         return [
-            ['name' => 'kwaipilot', 'method' => 'tryKwaipilot'],
             ['name' => 'openrouter', 'method' => 'tryOpenRouter'],
             ['name' => 'gemini', 'method' => 'tryGemini'],
-            ['name' => 'openai', 'method' => 'tryOpenAI'],
         ];
     }
 
@@ -1071,20 +995,12 @@ Important guidelines:
     {
         $providers = [];
 
-        if (trim((string) config('services.kwaipilot.api_key', '')) !== '') {
-            $providers[] = 'kwaipilot';
-        }
-
         if (trim((string) config('services.openrouter.api_key', '')) !== '') {
             $providers[] = 'openrouter';
         }
 
         if (trim((string) config('services.gemini.api_key', '')) !== '') {
             $providers[] = 'gemini';
-        }
-
-        if (trim((string) config('services.openai.api_key', '')) !== '') {
-            $providers[] = 'openai';
         }
 
         return $providers;
@@ -1184,4 +1100,3 @@ Important guidelines:
         }
     }
 }
-

@@ -32,7 +32,7 @@ class OpenRouterChatController extends Controller
 
         $user = $request->user();
         $messages = $request->input('messages');
-        $model = $request->input('model', 'nvidia/nemotron-nano-9b-v2:free');
+        $model = OpenRouterService::resolveChatModel($request->input('model'));
         $conversationId = $request->input('conversation_id');
 
         if ($conversationId && !$this->conversationBelongsToUser((int) $conversationId, (int) $user->id)) {
@@ -74,7 +74,7 @@ class OpenRouterChatController extends Controller
 
         $user = $request->user();
         $messages = $request->input('messages');
-        $model = $request->input('model', 'nvidia/nemotron-nano-9b-v2:free');
+        $model = OpenRouterService::resolveChatModel($request->input('model'));
         $conversationId = $request->input('conversation_id');
 
         if ($conversationId && !$this->conversationBelongsToUser((int) $conversationId, (int) $user->id)) {
@@ -146,7 +146,7 @@ class OpenRouterChatController extends Controller
             ], 422);
         }
 
-        $model = $request->input('model', 'nvidia/nemotron-nano-9b-v2:free');
+        $model = OpenRouterService::resolveChatModel($request->input('model'));
 
         $messages = [
             ['role' => 'user', 'content' => $message]
@@ -217,7 +217,7 @@ class OpenRouterChatController extends Controller
 
         $user = $request->user();
         $title = $request->input('title', 'New Chat');
-        $model = $request->input('model', 'nvidia/nemotron-nano-9b-v2:free');
+        $model = OpenRouterService::resolveChatModel($request->input('model'));
 
         // Find or create AI model
         $aiModel = \App\Models\AiModel::findOrCreateByName($model, [
@@ -277,9 +277,10 @@ class OpenRouterChatController extends Controller
     private function getDisplayNameForModel(string $model): string
     {
         $modelMap = [
-            'nvidia/nemotron-nano-9b-v2:free' => 'NVIDIA Nemotron Nano 9B',
-            'qwen/qwen3-4b:free' => 'Qwen 3 4B',
-            'openai/gpt-3.5-turbo' => 'GPT-3.5 Turbo',
+            OpenRouterService::DEFAULT_CHAT_MODEL => 'Llama 3.3 70B Instruct',
+            OpenRouterService::DEFAULT_CORE_MODEL => 'Qwen3 Next 80B Thinking',
+            OpenRouterService::DEFAULT_HEAVY_ANALYSIS_MODEL => 'DeepSeek V4 Pro',
+            OpenRouterService::DEFAULT_SPEED_MODEL => 'LFM2.5 1.2B Thinking',
             'anthropic/claude-3-haiku' => 'Claude 3 Haiku',
         ];
 
@@ -291,10 +292,14 @@ class OpenRouterChatController extends Controller
      */
     private function getProviderForModel(string $model): string
     {
-        if (str_contains($model, 'nvidia')) return 'nvidia';
-        if (str_contains($model, 'qwen')) return 'qwen';
-        if (str_contains($model, 'gpt')) return 'openai';
-        if (str_contains($model, 'claude')) return 'anthropic';
+        $lower = strtolower($model);
+
+        if (str_contains($lower, 'meta-llama') || str_contains($lower, 'llama')) return 'meta';
+        if (str_contains($lower, 'deepseek')) return 'deepseek';
+        if (str_contains($lower, 'liquid') || str_contains($lower, 'lfm')) return 'liquid';
+        if (str_contains($lower, 'nvidia')) return 'nvidia';
+        if (str_contains($lower, 'qwen')) return 'qwen';
+        if (str_contains($lower, 'claude')) return 'anthropic';
         
         return 'openrouter';
     }

@@ -22,10 +22,8 @@ class AIWellnessChatFallbackTest extends TestCase
         );
 
         config([
-            'services.kwaipilot.api_key' => null,
             'services.openrouter.api_key' => null,
             'services.gemini.api_key' => null,
-            'services.openai.api_key' => null,
         ]);
 
         $student = $this->createPortalUser('student', 'ai-fallback-student@test.com', 'AI Fallback Student');
@@ -62,10 +60,8 @@ class AIWellnessChatFallbackTest extends TestCase
         );
 
         config([
-            'services.kwaipilot.api_key' => null,
             'services.openrouter.api_key' => null,
             'services.gemini.api_key' => null,
-            'services.openai.api_key' => null,
         ]);
 
         $student = $this->createPortalUser('student', 'ai-follow-up-student@test.com', 'AI Follow Up Student');
@@ -101,10 +97,8 @@ class AIWellnessChatFallbackTest extends TestCase
         );
 
         config([
-            'services.kwaipilot.api_key' => null,
             'services.openrouter.api_key' => null,
             'services.gemini.api_key' => null,
-            'services.openai.api_key' => null,
         ]);
 
         $student = $this->createPortalUser('student', 'ai-social-student@test.com', 'AI Social Student');
@@ -139,10 +133,8 @@ class AIWellnessChatFallbackTest extends TestCase
         );
 
         config([
-            'services.kwaipilot.api_key' => null,
             'services.openrouter.api_key' => null,
             'services.gemini.api_key' => null,
-            'services.openai.api_key' => null,
         ]);
 
         $student = $this->createPortalUser('student', 'ai-health-student@test.com', 'AI Health Student');
@@ -174,10 +166,8 @@ class AIWellnessChatFallbackTest extends TestCase
         );
 
         config([
-            'services.kwaipilot.api_key' => 'test-kwaipilot',
             'services.openrouter.api_key' => 'test-openrouter',
             'services.gemini.api_key' => 'test-gemini',
-            'services.openai.api_key' => 'test-openai',
         ]);
 
         Http::fake();

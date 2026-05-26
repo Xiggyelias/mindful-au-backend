@@ -440,7 +440,7 @@ CREATE TABLE IF NOT EXISTS `chat_conversations` (
   `user_id` bigint(20) UNSIGNED NOT NULL,
   `ai_model_id` bigint(20) UNSIGNED DEFAULT NULL,
   `title` varchar(255) DEFAULT NULL,
-  `model` varchar(255) NOT NULL DEFAULT 'nvidia/nemotron-nano-9b-v2:free',
+  `model` varchar(255) NOT NULL DEFAULT 'meta-llama/llama-3.3-70b-instruct:free',
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `last_message_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,

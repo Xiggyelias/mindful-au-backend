@@ -92,10 +92,8 @@ class MentalHealthMlIntegrationTest extends TestCase
         $this->disableTwoFactor();
 
         config([
-            'services.kwaipilot.api_key' => null,
             'services.openrouter.api_key' => null,
             'services.gemini.api_key' => null,
-            'services.openai.api_key' => null,
         ]);
 
         $student = $this->createPortalUser('student', 'chat-ml-student@test.com', 'Chat ML Student');

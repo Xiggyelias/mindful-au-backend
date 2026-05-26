@@ -15,6 +15,10 @@ class OpenRouterService
 {
     private const FALLBACK_MODEL = 'mindful/offline-assistant-v1';
     private const FALLBACK_RESPONSE = 'I am currently using local support mode. Share one specific concern, and I can suggest a short coping plan while you connect with a counselor.';
+    public const DEFAULT_CHAT_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+    public const DEFAULT_CORE_MODEL = 'qwen/qwen3-next-80b-a3b-thinking';
+    public const DEFAULT_HEAVY_ANALYSIS_MODEL = 'deepseek/deepseek-v4-pro';
+    public const DEFAULT_SPEED_MODEL = 'liquid/lfm-2.5-1.2b-thinking:free';
     private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8;
     private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
 
@@ -52,8 +56,10 @@ class OpenRouterService
     /**
      * Send a chat message and get response
      */
-    public function sendMessage(array $messages, string $model = 'nvidia/nemotron-nano-9b-v2:free', ?int $conversationId = null): array
+    public function sendMessage(array $messages, ?string $model = null, ?int $conversationId = null): array
     {
+        $model = self::resolveChatModel($model);
+
         if (!$this->hasConfiguredApiKey()) {
             return $this->fallbackResult($messages, $model, $conversationId, 'missing_api_key');
         }
@@ -107,8 +113,10 @@ class OpenRouterService
     /**
      * Stream chat response
      */
-    public function streamMessage(array $messages, string $model = 'nvidia/nemotron-nano-9b-v2:free', ?int $conversationId = null): \Generator
+    public function streamMessage(array $messages, ?string $model = null, ?int $conversationId = null): \Generator
     {
+        $model = self::resolveChatModel($model);
+
         if (!$this->hasConfiguredApiKey()) {
             yield from $this->streamFallback($messages, $model, $conversationId);
             return;
@@ -431,6 +439,55 @@ class OpenRouterService
         return trim($this->apiKey) !== '';
     }
 
+    public static function configuredChatModel(): string
+    {
+        return self::configuredModel('chat_model', self::DEFAULT_CHAT_MODEL);
+    }
+
+    public static function configuredCoreModel(): string
+    {
+        return self::configuredModel('core_model', self::DEFAULT_CORE_MODEL);
+    }
+
+    public static function configuredHeavyAnalysisModel(): string
+    {
+        return self::configuredModel('heavy_analysis_model', self::DEFAULT_HEAVY_ANALYSIS_MODEL);
+    }
+
+    public static function configuredSpeedModel(): string
+    {
+        return self::configuredModel('speed_model', self::DEFAULT_SPEED_MODEL);
+    }
+
+    public static function resolveChatModel(?string $model = null): string
+    {
+        $candidate = trim((string) ($model ?? ''));
+
+        if ($candidate === '' || self::isOpenAiModelName($candidate)) {
+            return self::configuredChatModel();
+        }
+
+        return $candidate;
+    }
+
+    private static function configuredModel(string $key, string $fallback): string
+    {
+        $model = trim((string) config("services.openrouter.{$key}", $fallback));
+
+        if ($model === '' || self::isOpenAiModelName($model)) {
+            return $fallback;
+        }
+
+        return $model;
+    }
+
+    private static function isOpenAiModelName(string $model): bool
+    {
+        $lower = Str::lower($model);
+
+        return Str::contains($lower, ['openai/', 'gpt-', 'gpt_']);
+    }
+
     private function providerTimeoutSeconds(): int
     {
         $timeout = (int) config('services.ai.provider_timeout_seconds', self::DEFAULT_PROVIDER_TIMEOUT_SECONDS);
@@ -556,21 +613,39 @@ class OpenRouterService
     {
         return [
             [
+                'id' => self::configuredChatModel(),
+                'name' => self::configuredChatModel(),
+                'provider' => 'meta',
+                'description' => 'Llama 3.3 chat interface for natural student wellness conversations.',
+                'context_length' => 131072,
+            ],
+            [
+                'id' => self::configuredCoreModel(),
+                'name' => self::configuredCoreModel(),
+                'provider' => 'qwen',
+                'description' => 'Qwen3 80B core reasoning model for deeper app analysis.',
+                'context_length' => 262144,
+            ],
+            [
+                'id' => self::configuredHeavyAnalysisModel(),
+                'name' => self::configuredHeavyAnalysisModel(),
+                'provider' => 'deepseek',
+                'description' => 'DeepSeek heavy analysis model for very large inputs.',
+                'context_length' => 1048576,
+            ],
+            [
+                'id' => self::configuredSpeedModel(),
+                'name' => self::configuredSpeedModel(),
+                'provider' => 'liquid',
+                'description' => 'Liquid fast fallback model for lightweight thinking tasks.',
+                'context_length' => 32768,
+            ],
+            [
                 'id' => self::FALLBACK_MODEL,
                 'name' => self::FALLBACK_MODEL,
                 'provider' => 'local',
                 'description' => 'Local offline fallback assistant for resilience when cloud AI providers are unavailable.',
                 'context_length' => 4096,
-            ],
-            [
-                'id' => 'nvidia/nemotron-nano-9b-v2:free',
-                'name' => 'nvidia/nemotron-nano-9b-v2:free',
-                'provider' => 'openrouter',
-            ],
-            [
-                'id' => 'qwen/qwen3-4b:free',
-                'name' => 'qwen/qwen3-4b:free',
-                'provider' => 'openrouter',
             ],
         ];
     }
@@ -582,9 +657,10 @@ class OpenRouterService
     {
         $modelMap = [
             self::FALLBACK_MODEL => 'Mindful Offline Assistant',
-            'nvidia/nemotron-nano-9b-v2:free' => 'NVIDIA Nemotron Nano 9B',
-            'qwen/qwen3-4b:free' => 'Qwen 3 4B',
-            'openai/gpt-3.5-turbo' => 'GPT-3.5 Turbo',
+            self::DEFAULT_CHAT_MODEL => 'Llama 3.3 70B Instruct',
+            self::DEFAULT_CORE_MODEL => 'Qwen3 Next 80B Thinking',
+            self::DEFAULT_HEAVY_ANALYSIS_MODEL => 'DeepSeek V4 Pro',
+            self::DEFAULT_SPEED_MODEL => 'LFM2.5 1.2B Thinking',
             'anthropic/claude-3-haiku' => 'Claude 3 Haiku',
         ];
 
@@ -596,11 +672,15 @@ class OpenRouterService
      */
     private function getProviderForModel(string $model): string
     {
+        $lower = Str::lower($model);
+
         if ($model === self::FALLBACK_MODEL) return 'local';
-        if (str_contains($model, 'nvidia')) return 'nvidia';
-        if (str_contains($model, 'qwen')) return 'qwen';
-        if (str_contains($model, 'gpt')) return 'openai';
-        if (str_contains($model, 'claude')) return 'anthropic';
+        if (str_contains($lower, 'meta-llama') || str_contains($lower, 'llama')) return 'meta';
+        if (str_contains($lower, 'deepseek')) return 'deepseek';
+        if (str_contains($lower, 'liquid') || str_contains($lower, 'lfm')) return 'liquid';
+        if (str_contains($lower, 'nvidia')) return 'nvidia';
+        if (str_contains($lower, 'qwen')) return 'qwen';
+        if (str_contains($lower, 'claude')) return 'anthropic';
 
         return 'openrouter';
     }

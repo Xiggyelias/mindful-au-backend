@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('title')->nullable();
-            $table->string('model')->default('nvidia/nemotron-nano-9b-v2:free');
+            $table->string('model')->default('meta-llama/llama-3.3-70b-instruct:free');
             $table->boolean('is_active')->default(true);
             $table->timestamp('last_message_at')->nullable();
             $table->timestamps();

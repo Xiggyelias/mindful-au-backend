@@ -34,20 +34,15 @@ return [
         'api_key' => env('ECOBOT_API_KEY', null),
     ],
 
-    'openai' => [
-        'api_key' => env('OPENAI_API_KEY', null),
-    ],
-
-    'kwaipilot' => [
-        'api_key' => env('KWAIPILOT_API_KEY', null),
-        'base_url' => env('KWAIPILOT_BASE_URL', 'https://api.kwaipilot.com/v1'),
-    ],
-
     'openrouter' => [
         'api_key' => env('OPENROUTER_API_KEY', null),
         'base_url' => env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
         'site_url' => env('OPENROUTER_SITE_URL', 'https://mindful-au.local'),
         'site_name' => env('OPENROUTER_SITE_NAME', 'Mindful AU'),
+        'chat_model' => env('OPENROUTER_CHAT_MODEL', 'meta-llama/llama-3.3-70b-instruct:free'),
+        'core_model' => env('OPENROUTER_CORE_MODEL', 'qwen/qwen3-next-80b-a3b-thinking'),
+        'heavy_analysis_model' => env('OPENROUTER_HEAVY_ANALYSIS_MODEL', 'deepseek/deepseek-v4-pro'),
+        'speed_model' => env('OPENROUTER_SPEED_MODEL', 'liquid/lfm-2.5-1.2b-thinking:free'),
     ],
 
     'ai' => [

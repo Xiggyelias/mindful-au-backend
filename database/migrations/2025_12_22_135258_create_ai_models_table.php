@@ -13,9 +13,9 @@ return new class extends Migration
     {
         Schema::create('ai_models', function (Blueprint $table) {
             $table->id();
-            $table->string('name')->unique(); // e.g., 'nvidia/nemotron-nano-9b-v2:free'
-            $table->string('display_name'); // e.g., 'NVIDIA Nemotron Nano 9B'
-            $table->string('provider'); // e.g., 'nvidia', 'openai', 'anthropic'
+            $table->string('name')->unique(); // e.g., 'meta-llama/llama-3.3-70b-instruct:free'
+            $table->string('display_name'); // e.g., 'Llama 3.3 70B Instruct'
+            $table->string('provider'); // e.g., 'meta', 'qwen', 'deepseek'
             $table->text('description')->nullable();
             $table->boolean('is_active')->default(true);
             $table->integer('max_tokens')->nullable();

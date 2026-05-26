@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\OpenRouterService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -61,6 +62,6 @@ class ChatConversation extends Model
             return (string) $this->model;
         }
 
-        return 'nvidia/nemotron-nano-9b-v2:free';
+        return OpenRouterService::configuredChatModel();
     }
 }

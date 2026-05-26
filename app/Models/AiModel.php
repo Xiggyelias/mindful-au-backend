@@ -56,11 +56,17 @@ class AiModel extends Model
     {
         $lower = Str::lower($name);
 
-        if (Str::contains($lower, 'openai') || Str::contains($lower, 'gpt')) {
-            return 'openai';
-        }
         if (Str::contains($lower, 'anthropic') || Str::contains($lower, 'claude')) {
             return 'anthropic';
+        }
+        if (Str::contains($lower, ['meta-llama', 'llama'])) {
+            return 'meta';
+        }
+        if (Str::contains($lower, 'deepseek')) {
+            return 'deepseek';
+        }
+        if (Str::contains($lower, ['liquid', 'lfm'])) {
+            return 'liquid';
         }
         if (Str::contains($lower, 'nvidia')) {
             return 'nvidia';

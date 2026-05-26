@@ -265,20 +265,12 @@ class HealthController extends Controller
     {
         $configuredProviders = [];
 
-        if (trim((string) config('services.kwaipilot.api_key', '')) !== '') {
-            $configuredProviders[] = 'kwaipilot';
-        }
-
         if (trim((string) config('services.openrouter.api_key', '')) !== '') {
             $configuredProviders[] = 'openrouter';
         }
 
         if (trim((string) config('services.gemini.api_key', '')) !== '') {
             $configuredProviders[] = 'gemini';
-        }
-
-        if (trim((string) config('services.openai.api_key', '')) !== '') {
-            $configuredProviders[] = 'openai';
         }
 
         $externalConfigured = $configuredProviders !== [];

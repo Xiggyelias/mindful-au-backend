@@ -14,10 +14,8 @@ class HealthCheckTest extends TestCase
         parent::setUp();
 
         config([
-            'services.kwaipilot.api_key' => null,
             'services.openrouter.api_key' => null,
             'services.gemini.api_key' => null,
-            'services.openai.api_key' => null,
         ]);
     }
 

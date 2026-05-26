@@ -86,32 +86,41 @@ class AIDiagnosticService
 
         try {
             $prompt = $this->buildDiagnosticPrompt($text, $context);
-            $response = $this->providerHttp()
-                ->withHeaders([
-                    'Authorization' => 'Bearer ' . $apiKey,
-                    'Content-Type' => 'application/json',
-                    'HTTP-Referer' => config('services.openrouter.site_url', 'https://mindful-au.local'),
-                    'X-Title' => config('services.openrouter.site_name', 'Mindful AU'),
-                ])
-                ->post(rtrim(config('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/') . '/chat/completions', [
-                    'model' => 'openai/gpt-4o-mini',
-                    'messages' => [
-                        ['role' => 'system', 'content' => 'You are a professional counseling diagnostic assistant. Respond ONLY with valid JSON.'],
-                        ['role' => 'user', 'content' => $prompt]
-                    ],
-                    'max_tokens' => 1000,
-                    'temperature' => 0.3,
+            foreach ($this->openRouterAnalysisModels() as $model) {
+                $response = $this->providerHttp()
+                    ->withHeaders($this->openRouterHeaders((string) $apiKey))
+                    ->post($this->openRouterChatEndpoint(), [
+                        'model' => $model,
+                        'messages' => [
+                            ['role' => 'system', 'content' => 'You are a professional counseling diagnostic assistant. Respond ONLY with valid JSON.'],
+                            ['role' => 'user', 'content' => $prompt]
+                        ],
+                        'max_tokens' => 1000,
+                        'temperature' => 0.3,
+                    ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $content = $data['choices'][0]['message']['content'] ?? null;
+                    if (!$content) {
+                        continue;
+                    }
+
+                    preg_match('/\{.*\}/s', $content, $matches);
+                    if (empty($matches)) {
+                        continue;
+                    }
+
+                    $analysis = $this->validateAnalysisData(json_decode($matches[0], true));
+                    if ($analysis !== null) {
+                        return $analysis;
+                    }
+                }
+
+                Log::warning('OpenRouter diagnostic model failed, trying next configured model.', [
+                    'model' => $model,
+                    'status' => $response->status(),
                 ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                $content = $data['choices'][0]['message']['content'] ?? null;
-                if (!$content) return null;
-
-                preg_match('/\{.*\}/s', $content, $matches);
-                if (empty($matches)) return null;
-
-                return $this->validateAnalysisData(json_decode($matches[0], true));
             }
         } catch (\Throwable $e) {
             $this->logProviderException('OpenRouter diagnostic request failed.', $e);
@@ -142,32 +151,41 @@ class AIDiagnosticService
                 \"recommendations\": \"...\"
             }";
 
-            $response = $this->providerHttp()
-                ->withHeaders([
-                    'Authorization' => 'Bearer ' . $apiKey,
-                    'Content-Type' => 'application/json',
-                    'HTTP-Referer' => config('services.openrouter.site_url', 'https://mindful-au.local'),
-                    'X-Title' => config('services.openrouter.site_name', 'Mindful AU'),
-                ])
-                ->post(rtrim(config('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/') . '/chat/completions', [
-                    'model' => 'openai/gpt-4o-mini',
-                    'messages' => [
-                        ['role' => 'system', 'content' => 'You are a professional counselor wellness assistant. Respond ONLY with valid JSON.'],
-                        ['role' => 'user', 'content' => $wellnessPrompt]
-                    ],
-                    'max_tokens' => 1000,
-                    'temperature' => 0.3,
+            foreach ($this->openRouterAnalysisModels() as $model) {
+                $response = $this->providerHttp()
+                    ->withHeaders($this->openRouterHeaders((string) $apiKey))
+                    ->post($this->openRouterChatEndpoint(), [
+                        'model' => $model,
+                        'messages' => [
+                            ['role' => 'system', 'content' => 'You are a professional counselor wellness assistant. Respond ONLY with valid JSON.'],
+                            ['role' => 'user', 'content' => $wellnessPrompt]
+                        ],
+                        'max_tokens' => 1000,
+                        'temperature' => 0.3,
+                    ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $content = $data['choices'][0]['message']['content'] ?? null;
+                    if (!$content) {
+                        continue;
+                    }
+
+                    preg_match('/\{.*\}/s', $content, $matches);
+                    if (empty($matches)) {
+                        continue;
+                    }
+
+                    $analysis = $this->validateCounselorWellnessData(json_decode($matches[0], true));
+                    if ($analysis !== null) {
+                        return $analysis;
+                    }
+                }
+
+                Log::warning('OpenRouter counselor wellness model failed, trying next configured model.', [
+                    'model' => $model,
+                    'status' => $response->status(),
                 ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                $content = $data['choices'][0]['message']['content'] ?? null;
-                if (!$content) return null;
-
-                preg_match('/\{.*\}/s', $content, $matches);
-                if (empty($matches)) return null;
-
-                return $this->validateCounselorWellnessData(json_decode($matches[0], true));
             }
         } catch (\Throwable $e) {
             $this->logProviderException('OpenRouter counselor wellness request failed.', $e);
@@ -568,6 +586,31 @@ class AIDiagnosticService
             'recommendations' => $data['recommendations'] ?? null,
         ];
     }
+
+    private function openRouterAnalysisModels(): array
+    {
+        return array_values(array_unique(array_filter([
+            OpenRouterService::configuredCoreModel(),
+            OpenRouterService::configuredHeavyAnalysisModel(),
+            OpenRouterService::configuredSpeedModel(),
+        ], static fn ($model): bool => trim((string) $model) !== '')));
+    }
+
+    private function openRouterHeaders(string $apiKey): array
+    {
+        return [
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+            'HTTP-Referer' => config('services.openrouter.site_url', 'https://mindful-au.local'),
+            'X-Title' => config('services.openrouter.site_name', 'Mindful AU'),
+        ];
+    }
+
+    private function openRouterChatEndpoint(): string
+    {
+        return rtrim(config('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/') . '/chat/completions';
+    }
+
     private function logProviderException(string $message, \Throwable $e): void
     {
         Log::error($message, [
