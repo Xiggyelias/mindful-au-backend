@@ -491,6 +491,10 @@ class DiagnosticController extends Controller
             'title' => 'New Assessment Assigned',
             'message' => 'A counselor has assigned a new wellness assessment for you to complete.',
             'type' => 'info',
+            'meta' => [
+                'assessment_assigned' => true,
+                'path' => '/student/diagnostic-assessment',
+            ],
         ]);
 
         return response()->json([
