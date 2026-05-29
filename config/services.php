@@ -39,7 +39,7 @@ return [
         'base_url' => env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
         'site_url' => env('OPENROUTER_SITE_URL', 'https://mindful-au.local'),
         'site_name' => env('OPENROUTER_SITE_NAME', 'Mindful AU'),
-        'chat_model' => env('OPENROUTER_CHAT_MODEL', 'mistralai/mistral-7b-instruct:free'),
+        'chat_model' => env('OPENROUTER_CHAT_MODEL', 'nousresearch/nous-hermes-2-mistral-7b-dpo:free'),
         'core_model' => env('OPENROUTER_CORE_MODEL', 'qwen/qwen3-next-80b-a3b-thinking'),
         'heavy_analysis_model' => env('OPENROUTER_HEAVY_ANALYSIS_MODEL', 'deepseek/deepseek-v4-pro'),
         'speed_model' => env('OPENROUTER_SPEED_MODEL', 'liquid/lfm-2.5-1.2b-thinking:free'),
