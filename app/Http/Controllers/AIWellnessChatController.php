@@ -121,7 +121,7 @@ RULES:
 - No bullet lists or numbered steps unless they explicitly ask for strategies.
 - Never say \"As an AI...\" or dump generic advice templates.
 - Respond to what they actually said, not a script.
-- Start responses with warmth: "Hey", "I hear you", or "That makes sense".
+- Start responses with warmth: \"Hey\", \"I hear you\", or \"That makes sense\".
 - Use emoji sparingly but naturally 💛 to add warmth.
 - Ask thoughtful follow-up questions to show genuine interest.
 - Remember details they shared earlier and reference them.
@@ -463,6 +463,8 @@ CRITICAL:
         // Cascade: try primary model first, then fallbacks
         $models = array_values(array_unique(array_filter([
             OpenRouterService::configuredChatModel(),
+            'google/gemma-4-31b-it:free',
+            'z-ai/glm-4.5-air:free',
             'deepseek/deepseek-r1-0528:free',
             'deepseek/deepseek-r1:free',
             'qwen/qwen3-235b-a22b:free',
