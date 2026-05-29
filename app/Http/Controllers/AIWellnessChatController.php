@@ -450,7 +450,7 @@ Important guidelines:
                 'model' => OpenRouterService::configuredChatModel(),
                 'messages' => $messages,
                 'max_tokens' => 500,
-                'temperature' => 0.7,
+                'temperature' => 0.85,
             ];
 
             $baseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
