@@ -6,6 +6,7 @@ use App\Models\Appointment;
 use App\Models\CounselingCall;
 use App\Models\CounselingSession;
 use App\Models\Notification;
+use App\Events\NotificationCreated;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -169,6 +170,27 @@ class VideoCallController extends Controller
                 Log::warning('[VideoCall] web push failed', [
                     'appointment_id' => $appointment->id,
                     'caller_role'    => $callerRole,
+                    'error'          => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $notification = Notification::create([
+                    'user_id' => $notifyUserId,
+                    'title'   => $isAudio ? 'Incoming audio call' : 'Incoming video call',
+                    'message' => $notifyBody,
+                    'type'    => 'warning',
+                    'meta'    => [
+                        'kind'           => 'incoming_call',
+                        'appointment_id' => (int) $appointment->id,
+                        'call_type'      => $callTypeResult,
+                        'caller_role'    => $callerRole,
+                    ],
+                ]);
+                event(new NotificationCreated($notification));
+            } catch (\Throwable $e) {
+                Log::warning('[VideoCall] in-app notification failed', [
+                    'appointment_id' => $appointment->id,
                     'error'          => $e->getMessage(),
                 ]);
             }

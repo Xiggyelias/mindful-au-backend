@@ -97,6 +97,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
 
     // Appointments
     Route::post('/appointments/bulk-cancel', [AppointmentController::class, 'bulkCancel'])->middleware('throttle:10,1');
+    Route::post('/appointments/{id}/reveal-identity', [AppointmentController::class, 'revealIdentity'])->middleware('throttle:10,1');
     Route::apiResource('appointments', AppointmentController::class);
 
     // Intake & Triage

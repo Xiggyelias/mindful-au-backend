@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Appointment;
+use App\Models\CounselingSession;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -53,11 +55,7 @@ class ProfileController extends Controller
             $newMode = (bool) $profile->anonymous_mode;
 
             if ($oldMode !== $newMode && $user->hasRole('student')) {
-                \App\Models\Appointment::query()
-                    ->where('student_id', $user->id)
-                    ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
-                    ->where('scheduled_at', '>=', now()->subMinutes(30))
-                    ->update(['is_anonymous' => $newMode]);
+                $this->syncStudentAnonymityFromProfile($user, $newMode);
             }
         }
 
@@ -97,6 +95,81 @@ class ProfileController extends Controller
         }
 
         return response()->json($profile->load('user'));
+    }
+
+    /**
+     * Keep profile anonymous_mode, upcoming appointments, and open sessions aligned
+     * so counselors see the correct name when a student switches before a video call.
+     */
+    private function syncStudentAnonymityFromProfile(User $user, bool $anonymousMode): void
+    {
+        $graceStart = now()->subMinutes(15);
+
+        $appointments = Appointment::query()
+            ->where('student_id', $user->id)
+            ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
+            ->where('scheduled_at', '>=', $graceStart)
+            ->get();
+
+        foreach ($appointments as $appointment) {
+            $notes = strtolower(trim((string) ($appointment->notes ?? '')));
+            $isPhysical = str_starts_with($notes, 'physical');
+
+            if ($anonymousMode) {
+                $updates = [
+                    'is_anonymous' => true,
+                ];
+                if ($appointment->anonymous_id === null || trim((string) $appointment->anonymous_id) === '') {
+                    $updates['anonymous_id'] = $this->generateAnonymousIdForAppointment();
+                }
+                if (! $isPhysical) {
+                    $updates['notes'] = 'Online audio';
+                    if ($this->appointmentSupportsCallTypeColumn()) {
+                        $updates['call_type'] = 'audio';
+                    }
+                }
+                $appointment->update($updates);
+            } else {
+                $appointment->update([
+                    'is_anonymous' => false,
+                    'anonymous_id' => null,
+                ]);
+            }
+        }
+
+        $sessions = CounselingSession::query()
+            ->where('student_id', $user->id)
+            ->whereIn('status', ['pending', 'active'])
+            ->get();
+
+        foreach ($sessions as $session) {
+            if ($anonymousMode) {
+                $session->is_anonymous = true;
+                if ($session->anonymous_id === null || trim((string) $session->anonymous_id) === '') {
+                    $session->anonymous_id = CounselingSession::generateUniqueAnonymousId();
+                }
+            } else {
+                $session->is_anonymous = false;
+                $session->anonymous_id = null;
+                $session->identity_revealed_at = now();
+                $session->identity_revealed_by = $user->id;
+            }
+            $session->save();
+        }
+    }
+
+    private function generateAnonymousIdForAppointment(): string
+    {
+        do {
+            $candidate = 'User_' . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+        } while (Appointment::query()->where('anonymous_id', $candidate)->exists());
+
+        return $candidate;
+    }
+
+    private function appointmentSupportsCallTypeColumn(): bool
+    {
+        return \Illuminate\Support\Facades\Schema::hasColumn('appointments', 'call_type');
     }
 }
 
