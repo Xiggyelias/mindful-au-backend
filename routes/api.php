@@ -69,14 +69,14 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
 
     // Sessions
     Route::get('/sessions/chat-list', [SessionController::class, 'chatList'])->middleware('throttle:messages-read');
-    Route::patch('/sessions/{id}/chat-anonymity', [SessionController::class, 'updateChatAnonymity'])->middleware('throttle:30,1');
+    Route::patch('/sessions/{id}/chat-anonymity', [SessionController::class, 'updateChatAnonymity'])->middleware('throttle:messages-write');
     Route::apiResource('sessions', SessionController::class);
     Route::get('/sessions/{id}/messages', [MessageController::class, 'index'])->middleware('throttle:messages-read');
     Route::post('/sessions/{id}/messages/read', [MessageController::class, 'markInboundRead'])->middleware('throttle:messages-read');
     Route::get('/chat/messages', [MessageController::class, 'indexBySession'])->middleware('throttle:messages-read');
-    Route::get('/chat/incoming-digest', [MessageController::class, 'incomingDigest'])->middleware('throttle:90,1');
+    Route::get('/chat/incoming-digest', [MessageController::class, 'incomingDigest'])->middleware('throttle:messages-read');
     Route::post('/sessions/{id}/messages', [MessageController::class, 'store'])->middleware('throttle:messages-write');
-    Route::post('/sessions/{id}/crisis-signal', [MessageController::class, 'reportCrisisSignal'])->middleware('throttle:20,1');
+    Route::post('/sessions/{id}/crisis-signal', [MessageController::class, 'reportCrisisSignal'])->middleware('throttle:messages-write');
     Route::delete('/sessions/{id}/messages/{messageId}', [MessageController::class, 'destroy'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/typing', [MessageController::class, 'setTyping'])->middleware('throttle:messages-write');
     Route::get('/sessions/{id}/typing', [MessageController::class, 'typingStatus'])->middleware('throttle:messages-read');
@@ -86,25 +86,25 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/sessions/{id}/attachments', [ChatAttachmentController::class, 'upload'])->middleware('throttle:messages-write');
     Route::get('/messages/{id}/attachment', [ChatAttachmentController::class, 'download'])->middleware('throttle:messages-read');
     Route::post('/sessions/counselor', [SessionController::class, 'storeAsCounselor']);
-    Route::put('/sessions/{id}/note', [SessionController::class, 'upsertNote'])->middleware('throttle:60,1');
-    Route::delete('/sessions/{id}/note', [SessionController::class, 'deleteNote'])->middleware('throttle:60,1');
-    Route::post('/sessions/{id}/assign-peer', [SessionController::class, 'assignPeerCounselor'])->middleware('throttle:30,1');
-    Route::post('/sessions/{id}/unassign-peer', [SessionController::class, 'unassignPeerCounselor'])->middleware('throttle:30,1');
-    Route::post('/sessions/{id}/escalate', [SessionController::class, 'escalateToCounselor'])->middleware('throttle:30,1');
-    Route::post('/sessions/{id}/panic-escalate', [SessionController::class, 'panicEscalation'])->middleware('throttle:20,1');
-    Route::post('/sessions/{id}/flag-urgent', [SessionController::class, 'flagUrgentConcern'])->middleware('throttle:30,1');
-    Route::post('/sessions/{id}/reveal-identity', [SessionController::class, 'revealIdentity'])->middleware('throttle:10,1');
+    Route::put('/sessions/{id}/note', [SessionController::class, 'upsertNote'])->middleware('throttle:messages-write');
+    Route::delete('/sessions/{id}/note', [SessionController::class, 'deleteNote'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/assign-peer', [SessionController::class, 'assignPeerCounselor'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/unassign-peer', [SessionController::class, 'unassignPeerCounselor'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/escalate', [SessionController::class, 'escalateToCounselor'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/panic-escalate', [SessionController::class, 'panicEscalation'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/flag-urgent', [SessionController::class, 'flagUrgentConcern'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/reveal-identity', [SessionController::class, 'revealIdentity'])->middleware('throttle:messages-write');
 
     // Appointments
-    Route::post('/appointments/bulk-cancel', [AppointmentController::class, 'bulkCancel'])->middleware('throttle:10,1');
-    Route::post('/appointments/{id}/reveal-identity', [AppointmentController::class, 'revealIdentity'])->middleware('throttle:10,1');
+    Route::post('/appointments/bulk-cancel', [AppointmentController::class, 'bulkCancel'])->middleware('throttle:messages-write');
+    Route::post('/appointments/{id}/reveal-identity', [AppointmentController::class, 'revealIdentity'])->middleware('throttle:messages-write');
     Route::apiResource('appointments', AppointmentController::class);
 
     // Intake & Triage
     Route::get('/intake-submissions', [IntakeController::class, 'index']);
     Route::post('/intake-submissions', [IntakeController::class, 'store']);
     Route::get('/intake-submissions/{id}', [IntakeController::class, 'show']);
-    Route::patch('/risk-alerts/{id}/acknowledge', [IntakeController::class, 'acknowledgeAlert'])->middleware('throttle:60,1');
+    Route::patch('/risk-alerts/{id}/acknowledge', [IntakeController::class, 'acknowledgeAlert'])->middleware('throttle:messages-write');
 
     // Referrals
     Route::get('/referrals', [ReferralController::class, 'index']);
@@ -119,9 +119,9 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 
-    Route::post('/push/subscribe', [PushSubscriptionController::class, 'subscribe'])->middleware('throttle:60,1');
-    Route::post('/push/unsubscribe', [PushSubscriptionController::class, 'unsubscribe'])->middleware('throttle:60,1');
-    Route::patch('/push/preferences', [PushSubscriptionController::class, 'preferences'])->middleware('throttle:30,1');
+    Route::post('/push/subscribe', [PushSubscriptionController::class, 'subscribe'])->middleware('throttle:messages-write');
+    Route::post('/push/unsubscribe', [PushSubscriptionController::class, 'unsubscribe'])->middleware('throttle:messages-write');
+    Route::patch('/push/preferences', [PushSubscriptionController::class, 'preferences'])->middleware('throttle:messages-write');
 
     // Analytics (Admin only)
     Route::get('/analytics/overview', [AnalyticsController::class, 'overview'])->middleware('admin');
@@ -134,14 +134,14 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/messages/{id}/voice-note/stream', [VoiceNotesController::class, 'stream']);
 
     // Video Calls
-    Route::post('/video-calls/authorize', [VideoCallController::class, 'authorizeCall'])->middleware('throttle:20,1');
-    Route::post('/video-calls/cancel', [VideoCallController::class, 'cancelCall'])->middleware('throttle:30,1');
-    Route::post('/video-calls/end', [VideoCallController::class, 'end'])->middleware('throttle:20,1');
-    Route::get('/counselor/incoming-calls', [CounselorIncomingCallController::class, 'index'])->middleware(['counselor', 'throttle:120,1']);
-    Route::patch('/counselor/incoming-calls/{counselingCall}', [CounselorIncomingCallController::class, 'update'])->middleware(['counselor', 'throttle:60,1']);
-    Route::get('/student/incoming-calls', [StudentIncomingCallController::class, 'index'])->middleware(['student', 'throttle:120,1']);
-    Route::patch('/student/incoming-calls/{counselingCall}', [StudentIncomingCallController::class, 'update'])->middleware(['student', 'throttle:60,1']);
-    Route::get('/counselor/session-reminders', [CounselorSessionReminderController::class, 'index'])->middleware(['counselor', 'throttle:90,1']);
+    Route::post('/video-calls/authorize', [VideoCallController::class, 'authorizeCall'])->middleware('throttle:messages-write');
+    Route::post('/video-calls/cancel', [VideoCallController::class, 'cancelCall'])->middleware('throttle:messages-write');
+    Route::post('/video-calls/end', [VideoCallController::class, 'end'])->middleware('throttle:messages-write');
+    Route::get('/counselor/incoming-calls', [CounselorIncomingCallController::class, 'index'])->middleware(['counselor', 'throttle:messages-read']);
+    Route::patch('/counselor/incoming-calls/{counselingCall}', [CounselorIncomingCallController::class, 'update'])->middleware(['counselor', 'throttle:messages-write']);
+    Route::get('/student/incoming-calls', [StudentIncomingCallController::class, 'index'])->middleware(['student', 'throttle:messages-read']);
+    Route::patch('/student/incoming-calls/{counselingCall}', [StudentIncomingCallController::class, 'update'])->middleware(['student', 'throttle:messages-write']);
+    Route::get('/counselor/session-reminders', [CounselorSessionReminderController::class, 'index'])->middleware(['counselor', 'throttle:messages-read']);
 
     // Users
     Route::get('/users', [\App\Http\Controllers\UserController::class, 'index'])->middleware('admin');
