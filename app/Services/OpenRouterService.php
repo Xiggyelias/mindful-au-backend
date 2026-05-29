@@ -15,7 +15,7 @@ class OpenRouterService
 {
     private const FALLBACK_MODEL = 'mindful/offline-assistant-v1';
     private const FALLBACK_RESPONSE = 'I am currently using local support mode. Share one specific concern, and I can suggest a short coping plan while you connect with a counselor.';
-    public const DEFAULT_CHAT_MODEL = 'nousresearch/nous-hermes-2-mistral-7b-dpo:free';
+    public const DEFAULT_CHAT_MODEL = 'deepseek/deepseek-r1-0528:free';
     public const DEFAULT_CORE_MODEL = 'qwen/qwen3-next-80b-a3b-thinking';
     public const DEFAULT_HEAVY_ANALYSIS_MODEL = 'deepseek/deepseek-v4-pro';
     public const DEFAULT_SPEED_MODEL = 'liquid/lfm-2.5-1.2b-thinking:free';

@@ -20,8 +20,8 @@ class AIWellnessChatController extends Controller
     private const WELLNESS_MODEL = 'wellness-assistant-v1';
     private const CONTEXT_WINDOW_MESSAGES = 10;
     private const HISTORY_LIMIT_MESSAGES = 100;
-    private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8;
-    private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
+    private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 25;
+    private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 8;
 
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService,
@@ -121,6 +121,10 @@ RULES:
 - No bullet lists or numbered steps unless they explicitly ask for strategies.
 - Never say \"As an AI...\" or dump generic advice templates.
 - Respond to what they actually said, not a script.
+- Start responses with warmth: "Hey", "I hear you", or "That makes sense".
+- Use emoji sparingly but naturally 💛 to add warmth.
+- Ask thoughtful follow-up questions to show genuine interest.
+- Remember details they shared earlier and reference them.
 
 STYLE:
 - Sound like a caring friend texting back: \"That sounds really heavy. I get why you feel that way.\"
@@ -456,39 +460,87 @@ CRITICAL:
             return null;
         }
 
-        try {
-            $payload = [
-                'model' => OpenRouterService::configuredChatModel(),
-                'messages' => $messages,
-                'max_tokens' => 500,
-                'temperature' => 0.85,
-            ];
+        // Cascade: try primary model first, then fallbacks
+        $models = array_values(array_unique(array_filter([
+            OpenRouterService::configuredChatModel(),
+            'deepseek/deepseek-r1-0528:free',
+            'deepseek/deepseek-r1:free',
+            'qwen/qwen3-235b-a22b:free',
+            'meta-llama/llama-3.3-70b-instruct:free',
+        ], static fn ($v): bool => trim((string) $v) !== '')));
 
-            $baseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
+        $baseUrl = config('services.openrouter.base_url', 'https://openrouter.ai/api/v1');
 
-            $response = $this->providerHttp()
-                ->withHeaders([
-                    'Authorization' => 'Bearer ' . $apiKey,
-                    'Content-Type' => 'application/json',
-                    'HTTP-Referer' => config('services.openrouter.site_url', 'https://mindful-au.local'),
-                    'X-Title' => config('services.openrouter.site_name', 'Mindful AU'),
-                ])
-                ->post(rtrim($baseUrl, '/') . '/chat/completions', $payload);
+        foreach ($models as $model) {
+            try {
+                $payload = [
+                    'model' => $model,
+                    'messages' => $messages,
+                    'max_tokens' => 1200,
+                    'temperature' => 0.85,
+                ];
 
-            if ($response->successful()) {
-                $data = $response->json();
-                return $data['choices'][0]['message']['content'] ?? null;
+                $response = $this->providerHttp()
+                    ->withHeaders([
+                        'Authorization' => 'Bearer ' . $apiKey,
+                        'Content-Type' => 'application/json',
+                        'HTTP-Referer' => config('services.openrouter.site_url', 'https://mindful-au.local'),
+                        'X-Title' => config('services.openrouter.site_name', 'Mindful AU'),
+                    ])
+                    ->post(rtrim($baseUrl, '/') . '/chat/completions', $payload);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $rawContent = $data['choices'][0]['message']['content'] ?? null;
+
+                    if (is_string($rawContent) && trim($rawContent) !== '') {
+                        // Strip <think>...</think> tags from reasoning models
+                        return $this->stripThinkTags($rawContent);
+                    }
+                }
+
+                $status = $response->status();
+                $retryable = [429, 500, 502, 503, 504];
+                if (in_array($status, $retryable, true)) {
+                    Log::info('OpenRouter model failed with retryable status, trying next model.', [
+                        'model' => $model,
+                        'status' => $status,
+                    ]);
+                    continue;
+                }
+
+                Log::warning('OpenRouter API request failed.', [
+                    'model' => $model,
+                    'status' => $status,
+                ]);
+            } catch (\Exception $e) {
+                Log::warning('OpenRouter API request error, trying next model.', [
+                    'model' => $model,
+                    'exception' => $e::class,
+                ]);
+                continue;
             }
-            Log::warning('OpenRouter API request failed.', [
-                'status' => $response->status(),
-            ]);
-        } catch (\Exception $e) {
-            Log::warning('OpenRouter API request error.', [
-                'exception' => $e::class,
-            ]);
         }
 
         return null;
+    }
+
+    /**
+     * Strip <think>...</think> reasoning blocks from model output.
+     * Returns only the visible response content.
+     */
+    private function stripThinkTags(string $content): string
+    {
+        // Remove <think>...</think> blocks (single-line and multi-line)
+        $cleaned = preg_replace('/<think>[\s\S]*?<\/think>/i', '', $content);
+        $cleaned = is_string($cleaned) ? trim($cleaned) : trim($content);
+
+        // If stripping left nothing (model only produced thinking), return original minus tags
+        if ($cleaned === '') {
+            return trim(strip_tags($content));
+        }
+
+        return $cleaned;
     }
 
     private function tryGemini(array $messages): ?string
