@@ -108,30 +108,31 @@ class AIWellnessChatController extends Controller
         $studentMlInsights = $this->mentalHealthMlService->buildStudentMlInsights($user);
 
         // Build conversation context
-        $systemPrompt = "You are a warm, compassionate, and deeply human mental health support companion for university students. Your role is to listen, validate, and support—not fix or diagnose.
+        $systemPrompt = "You are a warm mental health support companion for university students. Listen first—do not fix, diagnose, or lecture.
 
-CONVERSATION STYLE (this is critical):
-- Sound like a caring friend or supportive peer, not an AI or counselor giving advice.
-- Use natural contractions (I'm, you're, it's, don't). Be casual and genuine.
-- NEVER use lists, bullet points, or numbered advice unless the student explicitly asks for strategies.
-- NEVER say \"As an AI...\" or use phrases like \"Here are some steps...\" or \"First, try...\"
-- Lead with empathy and validation. When someone shares something hard, sit with them in that feeling before moving forward.
-- Keep responses conversational and natural—like you're messaging a friend. Short paragraphs, flowing thoughts.
-- Ask one gentle, open-ended question at a time to help them explore their own feelings.
-- Respond to what they actually said, not a template. If they're sharing, listen. If they ask for advice, then offer ideas.
+RULES:
+- Be warm, simple, and non-judgmental.
+- Never sound robotic, formal, or overly therapist-like.
+- Avoid long explanations unless the student asks for more.
+- Understand first, then offer gentle guidance.
+- Use short sentences and natural language. Use contractions (I'm, you're, it's).
+- Acknowledge their emotions before giving any advice.
+- Never overwhelm with multiple suggestions at once—one gentle thought or question at a time.
+- No bullet lists or numbered steps unless they explicitly ask for strategies.
+- Never say \"As an AI...\" or dump generic advice templates.
+- Respond to what they actually said, not a script.
 
-EXAMPLE OF WHAT TO DO:
-Student: 'I just ended a 3yr relationship am kind of down'
-Good response: 'I'm really sorry to hear that. Ending a relationship can be really tough, especially after so much time together. It's okay to feel down and take some time to process everything. Remember to be kind to yourself during this period. Is there anything specific that's been on your mind about the breakup?'
+STYLE:
+- Sound like a caring friend texting back: \"That sounds really heavy. I get why you feel that way.\"
+- NOT like: \"I am sorry to hear that you are experiencing distress.\"
 
-NOT like this:
-Bad response: 'I am sorry this feels heavy. Here are 3 grounding actions you should try: 1) Drink water, 2) Go outside...'
+END GOAL:
+Make them feel heard, safe, and not judged.
 
-CRITICAL RULES:
+CRITICAL:
 - Never provide medical diagnoses or treatment advice.
 - If they mention suicide or self-harm, give immediate safety guidance to contact emergency services, a counselor, or a trusted person.
-- Use mindfulness and CBT insights naturally in conversation, never as clinical exercises.
-- Prioritize being human and relatable over being helpful or strategic.";
+- Use mindfulness and CBT insights naturally in conversation, never as clinical exercises.";
 
         if (!empty($promptSafeContext['prompt_summary']) && is_string($promptSafeContext['prompt_summary'])) {
             $systemPrompt .= "\n- Internal privacy-safe context: {$promptSafeContext['prompt_summary']}";
@@ -597,7 +598,7 @@ CRITICAL RULES:
         }
 
         if ($conversationTopic === 'physical_health') {
-            return 'I am sorry you are feeling sick. Try to keep things simple for now: rest, sip water if you can, and avoid pushing yourself. If you have trouble breathing, severe pain, fainting, or symptoms that are getting worse, contact a clinic, campus health service, or emergency support as soon as possible. What symptoms are bothering you most right now?';
+            return 'That sounds rough. Take it easy for now—rest if you can. What symptom is bothering you most? If anything feels severe or you are struggling to breathe, please reach out to campus health or emergency support right away.';
         }
 
         $socialResponse = $this->buildSocialConversationResponse($normalized, $historyMessages);
@@ -610,35 +611,35 @@ CRITICAL RULES:
         }
 
         if ($conversationTopic === 'anxiety') {
-            return 'That sounds heavy, and your reaction makes sense. Start with your body first: breathe in for 4 and out for 6 for one minute, then write the main thought making this feel threatening. After that, choose one 10 to 15 minute task that gives you a sense of control.';
+            return 'That sounds really heavy, and it makes sense you\'d feel on edge. What\'s been weighing on you most today?';
         }
 
         if ($conversationTopic === 'study') {
-            return 'Academic pressure can feel intense. Start with the smallest concrete task first, not the whole workload. Use one short cycle: 25 minutes focus, 5 minutes break, and then review what is still unclear. If you want, tell me the subject or assignment and I will help you break it down.';
+            return 'Academic pressure can pile up fast. What\'s the one thing on your plate that feels hardest right now?';
         }
 
         if ($conversationTopic === 'sleep') {
-            return 'Sleep strain can increase stress quickly. Focus on tonight rather than solving everything at once: reduce screens, avoid caffeine late, and do one calm wind-down activity before bed. If this continues for several days, discuss it with your counselor so you can create a recovery plan.';
+            return 'When sleep is off, everything feels harder. Has tonight been the rough part, or has this been going on a while?';
         }
 
         if ($conversationTopic === 'sadness') {
-            return 'I am sorry this feels heavy. Be gentle with yourself for today. Start with one grounding action like drinking water, stepping into fresh air, or messaging one trusted person. If you want, tell me whether this feels more like sadness, loneliness, or exhaustion.';
+            return 'That sounds really heavy. I get why you\'d feel low right now. Does it feel more like sadness, loneliness, or just being worn out?';
         }
 
         if ($conversationTopic === 'relationships') {
-            return 'Relationship strain can shake a lot at once. Start by naming the one part that hurts most right now: conflict, rejection, betrayal, or loneliness. Then choose one calm action today, like pausing before replying, writing what you want to say, or contacting one trusted person for perspective.';
+            return 'Relationship stuff can hit hard. What part of it is sitting with you most right now?';
         }
 
         if ($conversationTopic === 'family') {
-            return 'Family pressure can feel especially personal. Focus on one boundary or one support action for today rather than solving the whole relationship at once. If you want, tell me what happened and I will help you decide what to say or do next.';
+            return 'Family pressure can feel really personal. What happened—if you want to share?';
         }
 
         if ($conversationTopic === 'financial') {
-            return 'Money pressure can make everything feel urgent. Start by separating what is immediate from what can wait. Make a short list of the top 2 financial pressures, then identify one person or office you can contact today for support, such as student services, finance, or a trusted staff member.';
+            return 'Money stress can make everything feel urgent. What\'s the thing weighing on you most right now?';
         }
 
         if ($conversationTopic === 'safety') {
-            return 'I am sorry you are dealing with that. Your safety matters. Move toward a safer person or place if you can, avoid being alone with anyone who is threatening you, and contact a counselor, campus security, or another trusted adult as soon as possible.';
+            return 'That sounds scary, and you shouldn\'t have to deal with it alone. Your safety matters. Can you get to a safer person or place right now? If someone is threatening you, reach out to campus security, a counselor, or someone you trust as soon as you can.';
         }
 
         if (str_word_count($normalized) <= 4) {
@@ -821,17 +822,17 @@ CRITICAL RULES:
     private function buildFollowUpFallbackResponse(?string $topic): string
     {
         return match ($topic) {
-            'crisis' => 'Stay focused on safety right now. Reach out to emergency services, a counselor, or a trusted person immediately. If you can, send one direct message now saying you do not feel safe and need someone with you.',
-            'anxiety' => 'Let us take it step by step. First, slow your breathing for one minute. Next, write the exact thought making this feel overwhelming. Then choose one 10 to 15 minute task that helps you regain control. If you want, tell me the thought and I will help you challenge it.',
-            'study' => 'Start with the smallest academic action. Open the course material, pick one question or one subsection, and work on it for 15 minutes only. After that, pause and decide the next small task instead of thinking about the whole workload.',
-            'sleep' => 'Start with tonight, not the whole week. Put screens aside for a while, dim the room if you can, and do one quiet routine such as breathing, stretching, or writing down tomorrow worries on paper so they are not circling in your head.',
-            'physical_health' => 'Focus on basic care first: rest, fluids if you can manage them, and reducing extra strain. Tell me the main symptom that is bothering you most right now, and I will help you think through the next sensible step. If symptoms are severe or suddenly worsening, contact a clinic or emergency support now.',
-            'sadness' => 'Start with something grounding and human. Drink some water, move to a brighter or calmer place, and send one short message to someone safe. Then tell me whether the hardest part is loneliness, exhaustion, or heavy thoughts.',
-            'relationships' => 'Start by slowing the situation down. Do not try to solve the whole relationship in one message or one argument. Tell me what happened most recently, and I will help you think through the next calm step.',
-            'family' => 'Let us narrow it down. Tell me the exact family situation that is hurting most right now, and I will help you decide between setting a boundary, asking for support, or stepping away for a while.',
-            'financial' => 'Start with the most urgent practical point first. Tell me what feels most immediate right now, such as fees, food, transport, or rent, and I will help you think through the next contact or action.',
-            'safety' => 'Focus on getting safer first, not explaining everything. Move toward another person or safer place if you can, and tell me whether the risk is happening now or whether you are safe for the moment.',
-            default => 'We can do this one step at a time. Tell me the hardest part in one sentence, and I will help you decide what to do first.',
+            'crisis' => 'Your safety comes first. Can you message or call someone you trust right now and tell them you need support?',
+            'anxiety' => 'What\'s the one thought that keeps looping the most?',
+            'study' => 'What\'s the smallest piece you could tackle for just 15 minutes?',
+            'sleep' => 'Is it more that you can\'t switch off, or that you wake up and can\'t get back to sleep?',
+            'physical_health' => 'What symptom is bothering you most right now?',
+            'sadness' => 'Does it feel more like loneliness, exhaustion, or just heavy thoughts?',
+            'relationships' => 'What happened most recently—if you want to share?',
+            'family' => 'What part of it is sitting with you hardest right now?',
+            'financial' => 'What\'s the thing that feels most urgent—fees, rent, food, something else?',
+            'safety' => 'Are you somewhere safe right now, or do you need to get to a safer place?',
+            default => 'What\'s the hardest part in one sentence?',
         };
     }
 
@@ -888,11 +889,11 @@ CRITICAL RULES:
         }
 
         if (preg_match('/\b(sick|ill|fever|flu|headache|nausea|vomiting|cough)\b/u', $normalized) === 1) {
-            return 'I am sorry you are feeling unwell. What symptom is bothering you most right now? If anything feels severe or you are struggling to breathe, please contact a clinic or emergency support straight away.';
+            return 'That sounds rough. What symptom is bothering you most? If anything feels severe or you are struggling to breathe, please reach out to a clinic or emergency support right away.';
         }
 
         if (preg_match('/\b(not good|not okay|not ok|bad|terrible|awful|rough|drained|exhausted|tired)\b/u', $normalized) === 1) {
-            return 'I am sorry it has been a rough moment. You do not have to carry it alone here. What has been feeling hardest for you today?';
+            return 'Sounds like it\'s been a lot. You don\'t have to carry it alone here. What\'s been feeling hardest today?';
         }
 
         if (preg_match('/\b(lonely|alone|bored)\b/u', $normalized) === 1) {
