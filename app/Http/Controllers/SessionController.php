@@ -925,14 +925,15 @@ class SessionController extends Controller
     public function assignPeerCounselor(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor')) {
-            return response()->json(['message' => 'Only counselors can assign peer counselors'], 403);
+        $isAdmin = $user->hasRole('admin');
+        if (!$user->hasRole('counselor') && !$isAdmin) {
+            return response()->json(['message' => 'Only counselors or administrators can assign peer counselors'], 403);
         }
 
         $session = CounselingSession::with(['student.profile', 'counselor.profile', 'peerCounselor.profile'])
             ->findOrFail($id);
 
-        if ((int) $session->counselor_id !== (int) $user->id) {
+        if (!$isAdmin && (int) $session->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'You can only assign your own student cases'], 403);
         }
 
@@ -1080,14 +1081,15 @@ class SessionController extends Controller
     public function unassignPeerCounselor(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor')) {
-            return response()->json(['message' => 'Only counselors can remove peer assignments'], 403);
+        $isAdmin = $user->hasRole('admin');
+        if (!$user->hasRole('counselor') && !$isAdmin) {
+            return response()->json(['message' => 'Only counselors or administrators can remove peer assignments'], 403);
         }
 
         $session = CounselingSession::with(['student.profile', 'counselor.profile', 'peerCounselor.profile'])
             ->findOrFail($id);
 
-        if ((int) $session->counselor_id !== (int) $user->id) {
+        if (!$isAdmin && (int) $session->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'You can only manage your own student cases'], 403);
         }
 

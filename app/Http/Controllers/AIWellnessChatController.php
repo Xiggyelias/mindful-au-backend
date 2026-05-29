@@ -594,11 +594,11 @@ CRITICAL:
         $conversationTopic = $this->resolveConversationTopic($normalized, $historyMessages);
 
         if ($conversationTopic === 'crisis') {
-            return 'Your safety comes first. Please contact emergency services or a trusted counselor right now. If you are alone, move toward another person and tell them clearly that you need support now.';
+            return 'Your safety comes first. Please contact emergency services or a trusted counselor right now. If you’re alone, move toward another person and tell them clearly you need support now.';
         }
 
         if ($conversationTopic === 'physical_health') {
-            return 'That sounds rough. Take it easy for now—rest if you can. What symptom is bothering you most? If anything feels severe or you are struggling to breathe, please reach out to campus health or emergency support right away.';
+            return 'That sounds rough. Rest if you can. What symptom is bothering you most? If anything feels severe or you’re struggling to breathe, please reach out to campus health or emergency support right away.';
         }
 
         $socialResponse = $this->buildSocialConversationResponse($normalized, $historyMessages);
@@ -643,10 +643,10 @@ CRITICAL:
         }
 
         if (str_word_count($normalized) <= 4) {
-            return 'I am listening. Tell me a little more about what is happening for you right now, and I will respond as clearly as I can.';
+            return 'I’m here. Tell me a little more about what’s happening for you right now.';
         }
 
-        return 'I am here with you. Tell me what feels most difficult right now, and we will break it into one manageable next step together.';
+        return 'I’m here with you. What feels most difficult right now?';
     }
 
     private function normalizeIntentText(string $message): string
@@ -850,7 +850,7 @@ CRITICAL:
             ]);
 
         if ($this->isConversationResetCue($normalized)) {
-            return 'Hi. I am here with you. How has your day been so far?';
+            return 'Hey — I’m here with you. How’s your day been so far?';
         }
 
         if ($this->matchesExactIntent($normalized, [
@@ -867,7 +867,7 @@ CRITICAL:
             'lets talk',
             'let s talk',
         ])) {
-            return 'Yes, I am here with you. We can talk. You do not need to have the perfect words. What has your day felt like so far?';
+            return 'Yeah, I’m here. We can talk. You don’t need perfect words. What’s your day felt like so far?';
         }
 
         if ($this->matchesExactIntent($normalized, [
@@ -877,7 +877,7 @@ CRITICAL:
             'okay thanks',
             'ok thanks',
         ])) {
-            return 'You are welcome. I am still here if you want to keep talking. What is on your mind now?';
+            return 'You’re welcome. I’m still here if you want to keep talking. What’s on your mind now?';
         }
 
         if ($this->matchesExactIntent($normalized, [
@@ -885,7 +885,7 @@ CRITICAL:
             'who are you',
             'what can you do',
         ])) {
-            return 'I am your AI wellness assistant. I can talk with you, help you think through stress, and help you slow things down when life feels heavy. What has been on your mind today?';
+            return 'I’m here to listen and help you sort through what’s heavy. What’s been on your mind today?';
         }
 
         if (preg_match('/\b(sick|ill|fever|flu|headache|nausea|vomiting|cough)\b/u', $normalized) === 1) {
