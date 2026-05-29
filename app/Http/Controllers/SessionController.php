@@ -851,6 +851,68 @@ class SessionController extends Controller
         return response()->json(['message' => 'Session deleted successfully']);
     }
 
+    /**
+     * Keep a session alive by bumping its updated_at timestamp.
+     * Prevents anonymous session expiration while user is actively using the chat.
+     * Lightweight endpoint: no message content required.
+     */
+    public function touch(Request $request, string $id): JsonResponse
+    {
+        $session = CounselingSession::query()
+            ->select(['id', 'student_id', 'counselor_id', 'peer_counselor_id', 'assigned_role', 'status'])
+            ->findOrFail($id);
+
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        // Verify user is a participant in this session
+        $isStudent = (int) $session->student_id === (int) $user->id;
+        $isCounselor = (int) $session->counselor_id === (int) $user->id;
+        $isPeer = (int) $session->peer_counselor_id === (int) $user->id && $session->assigned_role === 'peer_counselor';
+        $isAdmin = $user->hasRole('admin');
+
+        if (!$isStudent && !$isCounselor && !$isPeer && !$isAdmin) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // Only allow touching active sessions (don't resurrect completed/cancelled)
+        if (!in_array($session->status, ['pending', 'active'], true)) {
+            return response()->json([
+                'message' => 'Cannot touch inactive session',
+                'status' => $session->status,
+            ], 410);
+        }
+
+        // Throttle touches to avoid excessive database updates
+        $touchThrottleSeconds = max(15, (int) env('SESSION_TOUCH_THROTTLE_SECONDS', 60));
+        $lastTouchKey = "session_touch_{$id}";
+
+        if (Cache::get($lastTouchKey)) {
+            // Touch was done recently, skip to avoid thrashing the database
+            return response()->json([
+                'ok' => true,
+                'session_id' => (int) $id,
+                'throttled' => true,
+                'message' => 'Session already touched recently',
+            ]);
+        }
+
+        // Update session updated_at to reset expiration timer
+        $session->touch();
+
+        // Set throttle cache to prevent excessive touches
+        Cache::set($lastTouchKey, true, $touchThrottleSeconds);
+
+        return response()->json([
+            'ok' => true,
+            'session_id' => (int) $id,
+            'updated_at' => $session->updated_at->toIso8601String(),
+            'throttled' => false,
+        ]);
+    }
+
     public function upsertNote(Request $request, string $id): JsonResponse
     {
         $session = CounselingSession::with([
