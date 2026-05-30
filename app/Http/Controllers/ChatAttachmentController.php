@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ChatFile;
+use App\Models\AiDiagnostic;
 use App\Models\Message;
 use App\Models\CounselingSession;
 use App\Models\Notification;
@@ -66,18 +67,6 @@ class ChatAttachmentController extends Controller
             ], 422);
         }
 
-        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor'
-            && (int) $session->peer_counselor_id > 0;
-        if (
-            ! $user->hasRole('admin')
-            && $isDelegatedPeerThread
-            && $isAssignedPeerCounselor
-        ) {
-            return response()->json([
-                'message' => 'Peer counselors cannot upload attachments in supervised chat.',
-            ], 422);
-        }
-
         $request->validate([
             'file' => [
                 'required',
@@ -89,6 +78,37 @@ class ChatAttachmentController extends Controller
         ]);
 
         $file = $request->file('file');
+        $messageType = (string) $request->input('message_type', '');
+        if ($messageType === '') {
+            $messageType = str_starts_with((string) $file->getMimeType(), 'audio/') ? 'voice' : 'file';
+        }
+
+        $mimeType = strtolower((string) $file->getMimeType());
+        if (!$this->isAllowedMimeType($mimeType)) {
+            return response()->json([
+                'message' => 'File type is not supported for chat uploads.',
+            ], 422);
+        }
+
+        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor'
+            && (int) $session->peer_counselor_id > 0;
+
+        if (!$user->hasRole('admin') && $isDelegatedPeerThread && $isAssignedPeerCounselor) {
+            if ($messageType !== 'voice' || !$this->isVoiceUploadMimeType($mimeType)) {
+                return response()->json([
+                    'message' => 'Peer counselors can send voice notes, but cannot upload file attachments in supervised chat.',
+                ], 422);
+            }
+
+            $riskLevel = $this->latestRiskLevel($session);
+            if ($riskLevel !== null && $riskLevel !== 'low') {
+                return response()->json([
+                    'message' => 'This case is no longer low-risk. Please escalate to counselor immediately.',
+                    'risk_level' => $riskLevel,
+                ], 422);
+            }
+        }
+
         $disk = (string) config('chat.attachments.disk', 'local');
         $directory = trim((string) config('chat.attachments.directory', 'uploads/chat_files'), '/');
         $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin'));
@@ -102,11 +122,6 @@ class ChatAttachmentController extends Controller
             return response()->json([
                 'message' => 'Unable to store attachment.',
             ], 500);
-        }
-
-        $messageType = (string) $request->input('message_type', '');
-        if ($messageType === '') {
-            $messageType = str_starts_with((string) $file->getMimeType(), 'audio/') ? 'voice' : 'file';
         }
 
         $message = null;
@@ -132,7 +147,7 @@ class ChatAttachmentController extends Controller
                 'message_id' => $message->id,
                 'file_name' => $this->sanitizeFileName((string) $file->getClientOriginalName(), $extension),
                 'file_path' => $storedPath,
-                'file_type' => (string) $file->getMimeType(),
+                'file_type' => $mimeType,
                 'file_size' => (int) $file->getSize(),
                 'uploaded_at' => now(),
             ]);
@@ -295,40 +310,93 @@ class ChatAttachmentController extends Controller
         Message $message,
         string $messageType,
     ): void {
-        $recipientId = $this->resolveRecipientId($session, $senderId);
-        if (!$recipientId || $recipientId === $senderId) {
+        $recipientIds = $this->resolveNotificationRecipientIds($session, $senderId);
+        if ($recipientIds === []) {
             return;
         }
 
         $sender = User::with('profile', 'roles')->find($senderId);
-        $senderName = optional(optional($sender)->profile)->full_name
-            ?: ($sender?->email ? Str::before($sender->email, '@') : 'Someone');
-
-        if (
-            (int) $session->student_id === $senderId
-            && $this->shouldMaskStudentIdentityForRecipient($session, $recipientId, $message->sent_as_anonymous)
-        ) {
-            $senderName = $this->resolveAnonymousLabel($session);
-        }
-
         $preview = $messageType === 'voice' ? 'sent a voice note' : 'sent an attachment';
 
-        Notification::create([
-            'user_id' => $recipientId,
-            'title' => 'New message',
-            'message' => sprintf(
-                '%s: %s',
-                $senderName,
-                $preview
-            ),
-            'meta' => [
-                'chat_session_id' => (int) $session->id,
-                'chat_message_id' => (int) $message->id,
-                'is_encrypted' => (bool) $message->is_encrypted,
-                'message_type' => $messageType,
-            ],
-            'type' => 'info',
-        ]);
+        foreach ($recipientIds as $recipientId) {
+            $senderName = optional(optional($sender)->profile)->full_name
+                ?: ($sender?->email ? Str::before($sender->email, '@') : 'Someone');
+
+            if (
+                (int) $session->student_id === $senderId
+                && $this->shouldMaskStudentIdentityForRecipient($session, $recipientId, $message->sent_as_anonymous)
+            ) {
+                $senderName = $this->resolveAnonymousLabel($session);
+            }
+
+            Notification::create([
+                'user_id' => $recipientId,
+                'title' => 'New message',
+                'message' => sprintf('%s: %s', $senderName, $preview),
+                'meta' => [
+                    'chat_session_id' => (int) $session->id,
+                    'chat_message_id' => (int) $message->id,
+                    'is_encrypted' => (bool) $message->is_encrypted,
+                    'message_type' => $messageType,
+                ],
+                'type' => 'info',
+            ]);
+        }
+    }
+
+    /**
+     * @return int[]
+     */
+    private function resolveNotificationRecipientIds(CounselingSession $session, int $senderId): array
+    {
+        $studentId = (int) $session->student_id;
+        $counselorId = (int) $session->counselor_id;
+        $peerCounselorId = (int) $session->peer_counselor_id;
+        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor' && $peerCounselorId > 0;
+        $participantIds = $isDelegatedPeerThread
+            ? [$studentId, $peerCounselorId, $counselorId]
+            : [$studentId, $counselorId];
+
+        return array_values(array_filter(
+            array_unique($participantIds),
+            static fn (int $participantId): bool => $participantId > 0 && $participantId !== $senderId
+        ));
+    }
+
+    private function isAllowedMimeType(string $mimeType): bool
+    {
+        if ($mimeType === '') {
+            return true;
+        }
+
+        return in_array($mimeType, (array) config('chat.attachments.allowed_mime_types', []), true);
+    }
+
+    private function isVoiceUploadMimeType(string $mimeType): bool
+    {
+        return str_starts_with($mimeType, 'audio/')
+            || in_array($mimeType, ['video/webm', 'audio/x-matroska', 'video/x-matroska', 'application/x-matroska'], true);
+    }
+
+    private function latestRiskLevel(CounselingSession $session): ?string
+    {
+        $sessionDiagnostic = AiDiagnostic::query()
+            ->where('session_id', $session->id)
+            ->whereNotNull('risk_level')
+            ->latest('id')
+            ->value('risk_level');
+
+        if ($sessionDiagnostic) {
+            return strtolower((string) $sessionDiagnostic);
+        }
+
+        $studentDiagnostic = AiDiagnostic::query()
+            ->where('student_id', $session->student_id)
+            ->whereNotNull('risk_level')
+            ->latest('id')
+            ->value('risk_level');
+
+        return $studentDiagnostic ? strtolower((string) $studentDiagnostic) : null;
     }
 
     private function isAnonymousSessionExpired(CounselingSession $session): bool

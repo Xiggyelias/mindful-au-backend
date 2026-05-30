@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\CounselingSession;
 use App\Models\Message;
+use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -53,7 +54,13 @@ class MessageDeletionTest extends TestCase
                 'id' => $message->id,
             ]);
 
-        $this->assertDatabaseMissing('messages', ['id' => $message->id]);
+        $this->assertDatabaseHas('messages', [
+            'id' => $message->id,
+            'content' => 'This message was deleted.',
+            'message_type' => 'text',
+            'has_file' => false,
+            'is_encrypted' => false,
+        ]);
     }
 
     /** @test */
@@ -72,7 +79,13 @@ class MessageDeletionTest extends TestCase
                 'id' => $message->id,
             ]);
 
-        $this->assertDatabaseMissing('messages', ['id' => $message->id]);
+        $this->assertDatabaseHas('messages', [
+            'id' => $message->id,
+            'content' => 'This message was deleted.',
+            'message_type' => 'text',
+            'has_file' => false,
+            'is_encrypted' => false,
+        ]);
     }
 
     /** @test */
@@ -130,6 +143,29 @@ class MessageDeletionTest extends TestCase
 
         $response->assertStatus(404);
         $this->assertDatabaseHas('messages', ['id' => $message->id]);
+    }
+
+    /** @test */
+    public function deleting_for_everyone_removes_related_notifications(): void
+    {
+        $message = $this->createMessage($this->student->id, $this->counselor->id);
+        $notification = Notification::create([
+            'user_id' => $this->counselor->id,
+            'title' => 'New message',
+            'message' => 'Student sent a message',
+            'type' => 'info',
+            'meta' => [
+                'chat_session_id' => $this->session->id,
+                'chat_message_id' => $message->id,
+            ],
+        ]);
+
+        $response = $this->actingAs($this->student)->deleteJson(
+            "/api/sessions/{$this->session->id}/messages/{$message->id}"
+        );
+
+        $response->assertStatus(200);
+        $this->assertDatabaseMissing('notifications', ['id' => $notification->id]);
     }
 
     private function assignRole(User $user, string $role): void

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Message extends Model
 {
@@ -11,6 +12,31 @@ class Message extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (self $message): void {
+            if (empty($message->case_id) && !empty($message->session_id)) {
+                $message->case_id = (int) $message->session_id;
+            }
+
+            if (!empty($message->sender_role) && !empty($message->sender_name_snapshot)) {
+                return;
+            }
+
+            $session = $message->relationLoaded('session')
+                ? $message->session
+                : CounselingSession::query()->find($message->session_id);
+            $sender = $message->relationLoaded('sender')
+                ? $message->sender
+                : User::query()->with(['profile', 'roles'])->find($message->sender_id);
+
+            if (empty($message->sender_role)) {
+                $message->sender_role = self::resolveSenderRoleSnapshot($sender, $session, (int) $message->sender_id);
+            }
+
+            if (empty($message->sender_name_snapshot)) {
+                $message->sender_name_snapshot = self::resolveSenderNameSnapshot($sender, (string) $message->sender_role);
+            }
+        });
+
         static::created(function (self $message): void {
             CounselingSession::query()->whereKey((int) $message->session_id)->update([
                 'updated_at' => now(),
@@ -19,8 +45,11 @@ class Message extends Model
     }
 
     protected $fillable = [
+        'case_id',
         'session_id',
         'sender_id',
+        'sender_role',
+        'sender_name_snapshot',
         'recipient_id',
         'content',
         'message_type',
@@ -36,6 +65,53 @@ class Message extends Model
         'is_encrypted' => 'boolean',
         'seen_at' => 'datetime',
     ];
+
+    private static function resolveSenderRoleSnapshot(?User $sender, ?CounselingSession $session, int $senderId): string
+    {
+        if ($session) {
+            if ((int) $session->student_id === $senderId) {
+                return 'student';
+            }
+            if ((int) $session->peer_counselor_id === $senderId) {
+                return 'peer_counselor';
+            }
+            if ((int) $session->counselor_id === $senderId) {
+                return 'counselor';
+            }
+        }
+
+        if ($sender?->hasRole('admin')) {
+            return 'admin';
+        }
+        if ($sender?->hasRole('counselor')) {
+            return 'counselor';
+        }
+        if ($sender?->hasRole('peer_counselor')) {
+            return 'peer_counselor';
+        }
+
+        return 'student';
+    }
+
+    private static function resolveSenderNameSnapshot(?User $sender, string $senderRole): string
+    {
+        $profileName = trim((string) ($sender?->profile?->full_name ?? ''));
+        if ($profileName !== '') {
+            return $profileName;
+        }
+
+        $email = trim((string) ($sender?->email ?? ''));
+        if ($email !== '') {
+            return Str::before($email, '@');
+        }
+
+        return match ($senderRole) {
+            'admin' => 'Admin',
+            'counselor' => 'Counselor',
+            'peer_counselor' => 'Peer Counselor',
+            default => 'Student',
+        };
+    }
 
     public function session()
     {

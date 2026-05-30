@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Message;
 use App\Models\CounselingSession;
+use App\Models\AiDiagnostic;
+use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -37,12 +39,34 @@ class VoiceNotesController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        if (!$user->hasRole('admin') && in_array((string) $session->status, ['completed', 'cancelled'], true)) {
+            return response()->json([
+                'message' => 'This session is closed and cannot receive new voice notes.',
+            ], 422);
+        }
+
+        if ($this->isAssignedPeerCounselor($user, $session)) {
+            if ($session->session_type !== 'chat') {
+                return response()->json([
+                    'message' => 'Peer counselors are limited to chat-only interaction.',
+                ], 422);
+            }
+
+            $riskLevel = $this->latestRiskLevel($session);
+            if ($riskLevel !== null && $riskLevel !== 'low') {
+                return response()->json([
+                    'message' => 'This case is no longer low-risk. Please escalate to counselor immediately.',
+                    'risk_level' => $riskLevel,
+                ], 422);
+            }
+        }
+
         $request->validate([
             'audio' => [
                 'required',
                 'file',
                 'max:10240',
-                'mimes:mp3,wav,m4a,ogg,webm',
+                'mimes:mp3,wav,m4a,ogg,webm,weba',
                 // audio/x-matroska and video/x-matroska: older libmagic detects
                 // Chrome MediaRecorder WebM blobs as Matroska instead of WebM.
                 'mimetypes:audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm,video/webm,audio/x-matroska,video/x-matroska,application/x-matroska',
@@ -62,12 +86,16 @@ class VoiceNotesController extends Controller
         $message = Message::create([
             'session_id' => $sessionId,
             'sender_id' => $user->id,
+            'recipient_id' => $this->resolveRecipientId($session, (int) $user->id),
             'content' => 'Voice note',
             'message_type' => 'voice',
             'file_url' => $url,
+            'has_file' => true,
             'is_encrypted' => false,
             'sent_as_anonymous' => (bool) $session->is_anonymous,
         ]);
+
+        $this->notifyRecipients($session, (int) $user->id, $message);
 
         return response()->json($message->load('sender'), 201);
     }
@@ -189,6 +217,84 @@ class VoiceNotesController extends Controller
             'X-Content-Type-Options' => 'nosniff',
             'Accept-Ranges'       => 'none',
         ]);
+    }
+
+    private function resolveRecipientId(CounselingSession $session, int $senderId): ?int
+    {
+        if ((int) $session->student_id === $senderId) {
+            return $session->assigned_role === 'peer_counselor' && $session->peer_counselor_id
+                ? (int) $session->peer_counselor_id
+                : ($session->counselor_id ? (int) $session->counselor_id : null);
+        }
+
+        if ((int) $session->peer_counselor_id === $senderId || (int) $session->counselor_id === $senderId) {
+            return (int) $session->student_id;
+        }
+
+        return null;
+    }
+
+    private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool
+    {
+        return $user->hasRole('peer_counselor')
+            && (int) $session->peer_counselor_id === (int) $user->id
+            && $session->assigned_role === 'peer_counselor';
+    }
+
+    private function latestRiskLevel(CounselingSession $session): ?string
+    {
+        $sessionDiagnostic = AiDiagnostic::query()
+            ->where('session_id', (string) $session->id)
+            ->whereNotNull('risk_level')
+            ->latest('id')
+            ->value('risk_level');
+
+        if ($sessionDiagnostic) {
+            return strtolower((string) $sessionDiagnostic);
+        }
+
+        $studentDiagnostic = AiDiagnostic::query()
+            ->where('student_id', $session->student_id)
+            ->whereNotNull('risk_level')
+            ->latest('id')
+            ->value('risk_level');
+
+        return $studentDiagnostic ? strtolower((string) $studentDiagnostic) : null;
+    }
+
+    private function notifyRecipients(CounselingSession $session, int $senderId, Message $message): void
+    {
+        $studentId = (int) $session->student_id;
+        $counselorId = (int) $session->counselor_id;
+        $peerCounselorId = (int) $session->peer_counselor_id;
+        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor' && $peerCounselorId > 0;
+        $participantIds = $isDelegatedPeerThread
+            ? [$studentId, $peerCounselorId, $counselorId]
+            : [$studentId, $counselorId];
+
+        $sender = User::with('profile')->find($senderId);
+        $senderName = optional(optional($sender)->profile)->full_name
+            ?: ($sender?->email ? Str::before((string) $sender->email, '@') : 'Someone');
+
+        foreach (array_unique($participantIds) as $recipientId) {
+            $recipientId = (int) $recipientId;
+            if ($recipientId <= 0 || $recipientId === $senderId) {
+                continue;
+            }
+
+            Notification::create([
+                'user_id' => $recipientId,
+                'title' => 'New voice note',
+                'message' => "{$senderName}: sent a voice note",
+                'meta' => [
+                    'chat_session_id' => (int) $session->id,
+                    'chat_message_id' => (int) $message->id,
+                    'is_encrypted' => false,
+                    'message_type' => 'voice',
+                ],
+                'type' => 'info',
+            ]);
+        }
     }
 }
 

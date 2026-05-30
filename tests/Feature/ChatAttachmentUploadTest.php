@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CounselingSession;
+use App\Models\AiDiagnostic;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -15,6 +16,7 @@ class ChatAttachmentUploadTest extends TestCase
 
     private User $student;
     private User $counselor;
+    private User $peerCounselor;
     private CounselingSession $session;
 
     protected function setUp(): void
@@ -25,9 +27,11 @@ class ChatAttachmentUploadTest extends TestCase
 
         $this->student = User::factory()->create(['email' => 'student-attachment@test.com']);
         $this->counselor = User::factory()->create(['email' => 'counselor-attachment@test.com']);
+        $this->peerCounselor = User::factory()->create(['email' => 'peer-attachment@test.com']);
 
         $this->assignRole($this->student, 'student');
         $this->assignRole($this->counselor, 'counselor');
+        $this->assignRole($this->peerCounselor, 'peer_counselor');
 
         $this->session = CounselingSession::create([
             'student_id' => $this->student->id,
@@ -132,9 +136,86 @@ class ChatAttachmentUploadTest extends TestCase
                 'id' => $messageId,
             ]);
 
-        $this->assertDatabaseMissing('messages', ['id' => $messageId]);
+        $this->assertDatabaseHas('messages', [
+            'id' => $messageId,
+            'content' => 'This message was deleted.',
+            'message_type' => 'text',
+            'has_file' => false,
+        ]);
         $this->assertDatabaseMissing('chat_files', ['message_id' => $messageId]);
         Storage::disk('local')->assertMissing($storedPath);
+    }
+
+    /** @test */
+    public function assigned_peer_counselor_can_upload_voice_note_but_not_file_attachment(): void
+    {
+        $peerSession = CounselingSession::create([
+            'student_id' => $this->student->id,
+            'counselor_id' => $this->counselor->id,
+            'peer_counselor_id' => $this->peerCounselor->id,
+            'assigned_role' => 'peer_counselor',
+            'status' => 'active',
+            'session_type' => 'chat',
+        ]);
+
+        $voice = UploadedFile::fake()->create('check-in.webm', 128, 'audio/webm');
+
+        $voiceResponse = $this->actingAs($this->peerCounselor)->post('/api/chat/upload-file', [
+            'session_id' => $peerSession->id,
+            'message_type' => 'voice',
+            'file' => $voice,
+        ]);
+
+        $voiceResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice')
+            ->assertJsonPath('has_file', true);
+
+        $this->assertDatabaseHas('messages', [
+            'id' => (int) $voiceResponse->json('id'),
+            'session_id' => $peerSession->id,
+            'sender_id' => $this->peerCounselor->id,
+            'recipient_id' => $this->student->id,
+            'message_type' => 'voice',
+            'has_file' => true,
+        ]);
+
+        $endpointVoice = UploadedFile::fake()->create('endpoint-voice.webm', 128, 'audio/webm');
+
+        $endpointVoiceResponse = $this->actingAs($this->peerCounselor)->post("/api/sessions/{$peerSession->id}/voice-notes", [
+            'audio' => $endpointVoice,
+        ]);
+
+        $endpointVoiceResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice')
+            ->assertJsonPath('has_file', true);
+
+        AiDiagnostic::create([
+            'student_id' => $this->student->id,
+            'session_id' => (string) $peerSession->id,
+            'risk_level' => 'high',
+        ]);
+
+        $blockedVoice = UploadedFile::fake()->create('blocked-voice.webm', 128, 'audio/webm');
+
+        $blockedVoiceResponse = $this->actingAs($this->peerCounselor)->post("/api/sessions/{$peerSession->id}/voice-notes", [
+            'audio' => $blockedVoice,
+        ]);
+
+        $blockedVoiceResponse
+            ->assertStatus(422)
+            ->assertJsonPath('risk_level', 'high');
+
+        $document = UploadedFile::fake()->create('notes.pdf', 64, 'application/pdf');
+
+        $documentResponse = $this->actingAs($this->peerCounselor)->post('/api/chat/upload-file', [
+            'session_id' => $peerSession->id,
+            'message_type' => 'file',
+            'file' => $document,
+        ]);
+
+        $documentResponse->assertStatus(422);
     }
 
     private function assignRole(User $user, string $role): void

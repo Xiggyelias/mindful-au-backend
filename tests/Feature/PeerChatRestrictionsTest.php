@@ -87,6 +87,156 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertDatabaseCount('messages', 0);
     }
 
+    /** @test */
+    public function supervising_counselor_can_join_peer_delegated_thread_without_new_room(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $response = $this->actingAs($this->counselor)->postJson(
+            "/api/sessions/{$session->id}/messages",
+            [
+                'content' => 'I am joining this conversation.',
+                'message_type' => 'text',
+                'is_encrypted' => false,
+            ]
+        );
+
+        $response
+            ->assertStatus(201)
+            ->assertJsonPath('session_id', $session->id)
+            ->assertJsonPath('sender_id', $this->counselor->id)
+            ->assertJsonPath('sender_role', 'counselor')
+            ->assertJsonPath('sender_display_name', 'peer-restrict-counselor')
+            ->assertJsonPath('recipient_id', $this->student->id);
+
+        $this->assertSame(1, CounselingSession::query()->count());
+    }
+
+    /** @test */
+    public function assigned_peer_counselor_can_create_session_note(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $response = $this->actingAs($this->peer)->putJson("/api/sessions/{$session->id}/note", [
+            'notes' => 'Student asked for follow-up tomorrow.',
+        ]);
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('session.notes', 'Student asked for follow-up tomorrow.');
+    }
+
+    /** @test */
+    public function assigning_peer_counselor_keeps_the_same_case_room(): void
+    {
+        $session = CounselingSession::create([
+            'student_id' => $this->student->id,
+            'counselor_id' => $this->counselor->id,
+            'assigned_role' => 'counselor',
+            'status' => 'active',
+            'session_type' => 'chat',
+        ]);
+
+        $response = $this->actingAs($this->counselor)->postJson("/api/sessions/{$session->id}/assign-peer", [
+            'peer_counselor_id' => $this->peer->id,
+        ]);
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('id', $session->id)
+            ->assertJsonPath('peer_counselor_id', $this->peer->id)
+            ->assertJsonPath('assigned_role', 'peer_counselor');
+
+        $this->assertSame(1, CounselingSession::query()->count());
+    }
+
+    /** @test */
+    public function counselor_starting_chat_with_peer_assigned_student_reuses_case_room(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $response = $this->actingAs($this->counselor)->postJson('/api/sessions/counselor', [
+            'student_id' => $this->student->id,
+            'session_type' => 'chat',
+        ]);
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('id', $session->id)
+            ->assertJsonPath('peer_counselor_id', $this->peer->id)
+            ->assertJsonPath('assigned_role', 'peer_counselor');
+
+        $this->assertSame(1, CounselingSession::query()->count());
+    }
+
+    /** @test */
+    public function student_starting_same_counselor_chat_reuses_peer_case_room(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $response = $this->actingAs($this->student)->postJson('/api/sessions', [
+            'counselor_id' => $this->counselor->id,
+            'session_type' => 'chat',
+            'is_anonymous' => false,
+        ]);
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('id', $session->id)
+            ->assertJsonPath('peer_counselor_id', $this->peer->id)
+            ->assertJsonPath('assigned_role', 'peer_counselor');
+
+        $this->assertSame(1, CounselingSession::query()->count());
+    }
+
+    /** @test */
+    public function message_sender_snapshots_survive_counselor_join_and_assignment_changes(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $peerResponse = $this->actingAs($this->peer)->postJson(
+            "/api/sessions/{$session->id}/messages",
+            [
+                'content' => 'Peer support message.',
+                'message_type' => 'text',
+                'is_encrypted' => false,
+            ]
+        );
+
+        $peerResponse
+            ->assertStatus(201)
+            ->assertJsonPath('sender_role', 'peer_counselor')
+            ->assertJsonPath('sender_display_name', 'peer-restrict-peer');
+
+        $counselorResponse = $this->actingAs($this->counselor)->postJson(
+            "/api/sessions/{$session->id}/messages",
+            [
+                'content' => 'Counselor joining same case.',
+                'message_type' => 'text',
+                'is_encrypted' => false,
+            ]
+        );
+
+        $counselorResponse
+            ->assertStatus(201)
+            ->assertJsonPath('sender_role', 'counselor')
+            ->assertJsonPath('sender_display_name', 'peer-restrict-counselor');
+
+        $session->update([
+            'assigned_role' => 'counselor',
+            'peer_counselor_id' => null,
+        ]);
+
+        $history = $this->actingAs($this->student)->getJson("/api/sessions/{$session->id}/messages?limit=10");
+
+        $history
+            ->assertStatus(200)
+            ->assertJsonPath('0.sender_role', 'peer_counselor')
+            ->assertJsonPath('0.sender_display_name', 'peer-restrict-peer')
+            ->assertJsonPath('1.sender_role', 'counselor')
+            ->assertJsonPath('1.sender_display_name', 'peer-restrict-counselor');
+    }
+
     private function makeDelegatedPeerSession(): CounselingSession
     {
         return CounselingSession::create([

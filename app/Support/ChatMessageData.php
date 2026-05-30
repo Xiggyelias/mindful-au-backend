@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Message;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class ChatMessageData
 {
@@ -15,11 +16,17 @@ class ChatMessageData
         }
 
         $attachment = $message->chatFile?->toAttachmentPayload();
+        $senderRole = self::normalizeSenderRole($message);
+        $senderName = self::resolveSenderName($message, $senderRole);
 
         $payload = [
             'id' => (int) $message->id,
+            'case_id' => $message->case_id !== null ? (int) $message->case_id : (int) $message->session_id,
             'session_id' => (int) $message->session_id,
             'sender_id' => (int) $message->sender_id,
+            'sender_role' => $senderRole,
+            'sender_name_snapshot' => $senderName,
+            'sender_display_name' => $senderName,
             'recipient_id' => $message->recipient_id !== null ? (int) $message->recipient_id : null,
             'content' => (string) $message->content,
             'message_type' => (string) $message->message_type,
@@ -40,11 +47,59 @@ class ChatMessageData
         if ($includeSender) {
             $payload['sender'] = $message->sender ? [
                 'id' => (int) $message->sender->id,
-                'name' => $message->sender->profile->full_name ?? 'Anonymous',
+                'name' => $senderName,
+                'role' => $senderRole,
             ] : null;
         }
 
         return $payload;
+    }
+
+    private static function normalizeSenderRole(Message $message): string
+    {
+        $role = trim((string) ($message->sender_role ?? ''));
+        if (in_array($role, ['student', 'peer_counselor', 'counselor', 'admin'], true)) {
+            return $role;
+        }
+
+        $sender = $message->relationLoaded('sender') ? $message->sender : null;
+        if ($sender?->hasRole('admin')) {
+            return 'admin';
+        }
+        if ($sender?->hasRole('counselor')) {
+            return 'counselor';
+        }
+        if ($sender?->hasRole('peer_counselor')) {
+            return 'peer_counselor';
+        }
+
+        return 'student';
+    }
+
+    private static function resolveSenderName(Message $message, string $senderRole): string
+    {
+        $snapshot = trim((string) ($message->sender_name_snapshot ?? ''));
+        if ($snapshot !== '') {
+            return $snapshot;
+        }
+
+        $sender = $message->relationLoaded('sender') ? $message->sender : null;
+        $profileName = trim((string) ($sender?->profile?->full_name ?? ''));
+        if ($profileName !== '') {
+            return $profileName;
+        }
+
+        $email = trim((string) ($sender?->email ?? ''));
+        if ($email !== '') {
+            return Str::before($email, '@');
+        }
+
+        return match ($senderRole) {
+            'admin' => 'Admin',
+            'counselor' => 'Counselor',
+            'peer_counselor' => 'Peer Counselor',
+            default => 'Student',
+        };
     }
 
     /**

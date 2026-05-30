@@ -6,7 +6,6 @@ use App\Models\AiDiagnostic;
 use App\Models\Message;
 use App\Models\CounselingSession;
 use App\Models\Notification;
-use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\ChatMessageData;
 use App\Services\WebPushService;
@@ -19,6 +18,7 @@ use Illuminate\Support\Str;
 
 class MessageController extends Controller
 {
+    private const DELETE_TOMBSTONE = 'This message was deleted.';
     private const TYPING_STATE_TTL_SECONDS = 5;
     private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
     private const ANONYMOUS_SESSION_TTL_HOURS = 24;
@@ -142,8 +142,11 @@ class MessageController extends Controller
             ->with('chatFile')
             ->select([
                 'id',
+                'case_id',
                 'session_id',
                 'sender_id',
+                'sender_role',
+                'sender_name_snapshot',
                 'recipient_id',
                 'content',
                 'message_type',
@@ -155,30 +158,6 @@ class MessageController extends Controller
                 'created_at',
                 'updated_at',
             ]);
-
-        // Delegated peer-support threads should show only messages from the active
-        // peer assignment window, so counselor and peer histories stay separated.
-        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor'
-            && (int) $session->peer_counselor_id > 0;
-        $isParticipantViewer = (int) $session->student_id === (int) $user->id
-            || (int) $session->counselor_id === (int) $user->id
-            || $isAssignedPeerCounselor;
-
-        if (! $user->hasRole('admin') && $isDelegatedPeerThread && $isParticipantViewer) {
-            $targetPeerId = (int) $session->peer_counselor_id;
-            $assignment = PeerAssignment::query()
-                ->where('session_id', $session->id)
-                ->where('peer_counselor_id', $targetPeerId)
-                ->orderByRaw("CASE WHEN status = 'active' THEN 0 ELSE 1 END")
-                ->orderByDesc('assigned_at')
-                ->orderByDesc('created_at')
-                ->first(['assigned_at', 'created_at']);
-
-            $windowStart = $assignment?->assigned_at ?? $assignment?->created_at;
-            if ($windowStart) {
-                $query->where('created_at', '>=', $windowStart);
-            }
-        }
 
         if ($afterId > 0) {
             $messages = $query
@@ -263,6 +242,7 @@ class MessageController extends Controller
                 }
                 if ((int) $message->sender_id === $studentId) {
                     $message->sender_id = 0;
+                    $message->sender_name_snapshot = $this->resolveAnonymousLabel($session);
                 }
                 if ((int) $message->recipient_id === $studentId) {
                     $message->recipient_id = 0;
@@ -356,8 +336,11 @@ class MessageController extends Controller
             ->limit(40)
             ->get([
                 'id',
+                'case_id',
                 'session_id',
                 'sender_id',
+                'sender_role',
+                'sender_name_snapshot',
                 'content',
                 'message_type',
                 'is_encrypted',
@@ -402,6 +385,9 @@ class MessageController extends Controller
             if ($this->isHandshakeEnvelope((string) $message->message_type, (string) $message->content)) {
                 continue;
             }
+            if ((string) $message->content === self::DELETE_TOMBSTONE) {
+                continue;
+            }
 
             $session = $sessions->get((int) $message->session_id);
             if ($session === null) {
@@ -416,8 +402,11 @@ class MessageController extends Controller
             $senderId = (int) $message->sender_id;
             $sender = $senders->get($senderId);
 
-            $senderName = optional(optional($sender)->profile)->full_name
+            $senderName = trim((string) ($message->sender_name_snapshot ?? ''));
+            if ($senderName === '') {
+                $senderName = optional(optional($sender)->profile)->full_name
                 ?: ($sender?->email ? Str::before((string) $sender->email, '@') : 'Someone');
+            }
 
             if (
                 (int) $session->student_id === $senderId
@@ -435,8 +424,10 @@ class MessageController extends Controller
 
             $payload[] = [
                 'id' => (int) $message->id,
+                'case_id' => $message->case_id !== null ? (int) $message->case_id : (int) $message->session_id,
                 'session_id' => (int) $message->session_id,
                 'sender_label' => $senderName,
+                'sender_role' => (string) ($message->sender_role ?: 'student'),
                 'preview' => $preview,
                 'message_id' => (int) $message->id,
                 'is_encrypted' => $isEncrypted,
@@ -487,15 +478,6 @@ class MessageController extends Controller
         if (!$user->hasRole('admin') && in_array($session->status, ['completed', 'cancelled'], true)) {
             return response()->json([
                 'message' => 'This session is closed and cannot receive new messages.',
-            ], 422);
-        }
-
-        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor'
-            && (int) $session->peer_counselor_id > 0;
-        $isSessionCounselor = (int) $session->counselor_id === (int) $user->id;
-        if (!$user->hasRole('admin') && $isDelegatedPeerThread && $isSessionCounselor) {
-            return response()->json([
-                'message' => 'This case is delegated to a peer counselor. Use your counselor chat thread to message the student.',
             ], 422);
         }
 
@@ -681,12 +663,26 @@ class MessageController extends Controller
         }
 
         $deletedMessageId = (int) $message->id;
-        $this->deleteAttachmentFiles($message);
-        $message->delete();
+        $this->tombstoneMessageForEveryone($message);
+        $this->deleteMessageNotifications($deletedMessageId);
+        $message->refresh()->loadMissing('chatFile');
+
+        $legacyBroadcastEnabled = filter_var(
+            (string) env('CHAT_LEGACY_BROADCAST', false),
+            FILTER_VALIDATE_BOOL
+        );
+        if ($legacyBroadcastEnabled) {
+            try {
+                event(new \App\Events\MessageSent($message));
+            } catch (\Throwable $_) {
+                // no-op
+            }
+        }
 
         return response()->json([
             'ok' => true,
             'id' => $deletedMessageId,
+            'message' => ChatMessageData::make($message),
         ]);
     }
 
@@ -813,9 +809,8 @@ class MessageController extends Controller
         bool $isEncrypted,
         Message $message
     ): void {
-        $recipientId = $this->resolveRecipientId($session, $senderId);
-
-        if (!$recipientId || $recipientId === $senderId) {
+        $recipientIds = $this->resolveNotificationRecipientIds($session, $senderId);
+        if ($recipientIds === []) {
             return;
         }
 
@@ -828,49 +823,52 @@ class MessageController extends Controller
 
         $sender = User::with('profile')->find($senderId);
 
-        $senderName = optional(optional($sender)->profile)->full_name
-            ?: ($sender?->email ? Str::before($sender->email, '@') : 'Someone');
-
-        $isAnonymousToRecipient = false;
-        if (
-            (int) $session->student_id === (int) $senderId
-            && $this->shouldMaskStudentIdentityForRecipient($session, (int) $recipientId, $message->sent_as_anonymous)
-        ) {
-            $senderName = $this->resolveAnonymousLabel($session);
-            $isAnonymousToRecipient = true;
-        }
-
         $preview = $this->buildMessagePreview($messageType, $content, $isEncrypted);
-        $pushTitle = $isAnonymousToRecipient ? 'New anonymous message' : 'New message';
-        $pushBody = sprintf('%s: %s', $senderName, $preview);
 
-        Notification::create([
-            'user_id' => $recipientId,
-            'title' => 'New message',
-            'message' => sprintf(
-                '%s: %s',
-                $senderName,
-                $preview
-            ),
-            'meta' => [
-                'chat_session_id' => (int) $session->id,
-                'chat_message_id' => (int) $message->id,
-                'is_encrypted' => $isEncrypted,
-                'message_type' => $messageType,
-            ],
-            'type' => 'info',
-        ]);
+        foreach ($recipientIds as $recipientId) {
+            if ($recipientId === $senderId) {
+                continue;
+            }
 
-        $this->webPush->sendToUser(
-            (int) $recipientId,
-            $pushTitle,
-            $pushBody,
-            $this->chatUrlForUserId((int) $recipientId, (int) $session->id),
-            [
-                'tag' => 'cms-chat-'.(int) $session->id.'-msg-'.(int) $message->id,
-                'urgency' => 'high',
-            ]
-        );
+            $senderName = optional(optional($sender)->profile)->full_name
+                ?: ($sender?->email ? Str::before($sender->email, '@') : 'Someone');
+
+            $isAnonymousToRecipient = false;
+            if (
+                (int) $session->student_id === (int) $senderId
+                && $this->shouldMaskStudentIdentityForRecipient($session, (int) $recipientId, $message->sent_as_anonymous)
+            ) {
+                $senderName = $this->resolveAnonymousLabel($session);
+                $isAnonymousToRecipient = true;
+            }
+
+            $pushTitle = $isAnonymousToRecipient ? 'New anonymous message' : 'New message';
+            $pushBody = sprintf('%s: %s', $senderName, $preview);
+
+            Notification::create([
+                'user_id' => $recipientId,
+                'title' => 'New message',
+                'message' => $pushBody,
+                'meta' => [
+                    'chat_session_id' => (int) $session->id,
+                    'chat_message_id' => (int) $message->id,
+                    'is_encrypted' => $isEncrypted,
+                    'message_type' => $messageType,
+                ],
+                'type' => 'info',
+            ]);
+
+            $this->webPush->sendToUser(
+                (int) $recipientId,
+                $pushTitle,
+                $pushBody,
+                $this->chatUrlForUserId((int) $recipientId, (int) $session->id),
+                [
+                    'tag' => 'cms-chat-'.(int) $session->id.'-msg-'.(int) $message->id,
+                    'urgency' => 'high',
+                ]
+            );
+        }
     }
 
     private function chatUrlForUserId(int $userId, int $sessionId): string
@@ -1107,6 +1105,19 @@ class MessageController extends Controller
     /**
      * @return int[]
      */
+    private function resolveNotificationRecipientIds(CounselingSession $session, int $senderId): array
+    {
+        $participantIds = $this->resolveActiveThreadParticipantIds($session);
+
+        return array_values(array_filter(
+            $participantIds,
+            static fn (int $participantId): bool => $participantId > 0 && $participantId !== $senderId
+        ));
+    }
+
+    /**
+     * @return int[]
+     */
     private function resolveActiveThreadParticipantIds(CounselingSession $session): array
     {
         $studentId = (int) $session->student_id;
@@ -1115,7 +1126,7 @@ class MessageController extends Controller
         $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor' && $peerCounselorId > 0;
 
         $participantIds = $isDelegatedPeerThread
-            ? [$studentId, $peerCounselorId]
+            ? [$studentId, $peerCounselorId, $counselorId]
             : [$studentId, $counselorId];
 
         return array_values(
@@ -1200,6 +1211,15 @@ class MessageController extends Controller
             return;
         }
 
+        if (str_starts_with($fileUrl, 'private://')) {
+            $path = Str::after($fileUrl, 'private://');
+            if ($path !== '' && !str_contains($path, '..') && str_starts_with($path, 'voice-notes/')) {
+                Storage::disk('local')->delete($path);
+            }
+
+            return;
+        }
+
         $urlPath = parse_url($fileUrl, PHP_URL_PATH);
         if (!is_string($urlPath) || !str_starts_with($urlPath, '/storage/')) {
             return;
@@ -1213,6 +1233,55 @@ class MessageController extends Controller
         if (Storage::disk('public')->exists($path)) {
             Storage::disk('public')->delete($path);
         }
+    }
+
+    private function tombstoneMessageForEveryone(Message $message): void
+    {
+        if ((string) $message->content === self::DELETE_TOMBSTONE) {
+            return;
+        }
+
+        $this->deleteAttachmentFiles($message);
+        $message->forceFill([
+            'content' => self::DELETE_TOMBSTONE,
+            'message_type' => 'text',
+            'file_url' => null,
+            'has_file' => false,
+            'is_encrypted' => false,
+        ])->save();
+
+        Message::query()
+            ->whereKey((int) $message->id)
+            ->update(['updated_at' => now()]);
+
+        CounselingSession::query()
+            ->whereKey((int) $message->session_id)
+            ->update(['updated_at' => now()]);
+    }
+
+    private function deleteMessageNotifications(int $messageId): void
+    {
+        if ($messageId <= 0) {
+            return;
+        }
+
+        try {
+            Notification::query()
+                ->where('meta->chat_message_id', $messageId)
+                ->orWhere('meta->message_id', $messageId)
+                ->delete();
+        } catch (\Throwable) {
+            // Some SQLite versions do not support JSON path deletes consistently.
+        }
+
+        Notification::query()
+            ->whereNotNull('meta')
+            ->get(['id', 'meta'])
+            ->filter(function (Notification $notification) use ($messageId): bool {
+                $meta = is_array($notification->meta) ? $notification->meta : [];
+                return (int) ($meta['chat_message_id'] ?? $meta['message_id'] ?? 0) === $messageId;
+            })
+            ->each(static fn (Notification $notification): ?bool => $notification->delete());
     }
 
     private function triggerCrisisAlert(CounselingSession $session, User $student, array $words): void
