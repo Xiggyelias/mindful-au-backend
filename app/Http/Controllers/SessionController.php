@@ -617,6 +617,11 @@ class SessionController extends Controller
             ->where('session_type', $validated['session_type'])
             ->where('is_anonymous', $isAnonymous)
             ->whereIn('status', ['pending', 'active'])
+            ->whereNull('peer_counselor_id')
+            ->where(function ($query): void {
+                $query->whereNull('assigned_role')
+                    ->orWhere('assigned_role', 'counselor');
+            })
             ->latest('id')
             ->first();
 
@@ -719,6 +724,11 @@ class SessionController extends Controller
             ->where('session_type', $validated['session_type'])
             ->where('is_anonymous', false)
             ->whereIn('status', ['pending', 'active'])
+            ->whereNull('peer_counselor_id')
+            ->where(function ($query): void {
+                $query->whereNull('assigned_role')
+                    ->orWhere('assigned_role', 'counselor');
+            })
             ->latest('id')
             ->first();
 
@@ -1056,6 +1066,18 @@ class SessionController extends Controller
         ]);
 
         $peerCounselorId = (int) $validated['peer_counselor_id'];
+        if ($peerCounselorId === (int) $session->student_id) {
+            return response()->json(['message' => 'The student cannot be assigned as their own peer counselor'], 422);
+        }
+
+        if ($peerCounselorId === (int) $session->counselor_id) {
+            return response()->json(['message' => 'The supervising counselor cannot also be the peer counselor for this case'], 422);
+        }
+
+        if ((int) ($session->counselor_id ?? 0) <= 0) {
+            return response()->json(['message' => 'A supervising counselor is required before assigning peer support'], 422);
+        }
+
         if (!$this->isApprovedPeerCounselor($peerCounselorId)) {
             return response()->json(['message' => 'Selected peer counselor is not available'], 422);
         }
@@ -1069,30 +1091,68 @@ class SessionController extends Controller
             ], 422);
         }
 
-        $targetSession = $session;
-        $session->update([
-            'peer_counselor_id' => $peerCounselorId,
-            'assigned_by' => $user->id,
-            'assigned_role' => 'peer_counselor',
-        ]);
-        $targetSession = $session;
+        $sourceSessionId = (int) $session->id;
+        $sourceIsPeerRoom = $session->assigned_role === 'peer_counselor'
+            && (int) ($session->peer_counselor_id ?? 0) > 0;
 
-        PeerAssignment::query()
-            ->where('session_id', $targetSession->id)
-            ->where('status', 'active')
-            ->update([
-                'status' => 'reassigned',
-                'unassigned_at' => now(),
+        $targetSession = DB::transaction(function () use ($session, $user, $peerCounselorId, $sourceIsPeerRoom): CounselingSession {
+            $targetSession = $sourceIsPeerRoom
+                ? $session
+                : CounselingSession::query()
+                    ->where('student_id', $session->student_id)
+                    ->where('counselor_id', $session->counselor_id)
+                    ->where('session_type', 'chat')
+                    ->where('is_anonymous', (bool) $session->is_anonymous)
+                    ->where('assigned_role', 'peer_counselor')
+                    ->whereIn('status', ['pending', 'active'])
+                    ->latest('id')
+                    ->first();
+
+            if (!$targetSession) {
+                $targetSession = CounselingSession::query()->create([
+                    'student_id' => $session->student_id,
+                    'counselor_id' => $session->counselor_id,
+                    'peer_counselor_id' => $peerCounselorId,
+                    'assigned_by' => $user->id,
+                    'assigned_role' => 'peer_counselor',
+                    'session_type' => 'chat',
+                    'status' => 'active',
+                    'is_anonymous' => (bool) $session->is_anonymous,
+                    'anonymous_id' => $session->is_anonymous ? $this->generateAnonymousId() : null,
+                    'identity_revealed_at' => $session->identity_revealed_at,
+                    'identity_revealed_by' => $session->identity_revealed_by,
+                ]);
+            } else {
+                $targetSession->update([
+                    'peer_counselor_id' => $peerCounselorId,
+                    'assigned_by' => $user->id,
+                    'assigned_role' => 'peer_counselor',
+                    'status' => in_array((string) $targetSession->status, ['completed', 'cancelled'], true)
+                        ? $targetSession->status
+                        : 'active',
+                    'ended_at' => null,
+                ]);
+            }
+
+            PeerAssignment::query()
+                ->where('session_id', $targetSession->id)
+                ->where('status', 'active')
+                ->update([
+                    'status' => 'reassigned',
+                    'unassigned_at' => now(),
+                ]);
+
+            PeerAssignment::query()->create([
+                'session_id' => $targetSession->id,
+                'peer_counselor_id' => $peerCounselorId,
+                'assigned_by' => $user->id,
+                'status' => 'active',
+                'assigned_at' => now(),
+                'notes' => 'Assigned by counselor',
             ]);
 
-        PeerAssignment::query()->create([
-            'session_id' => $targetSession->id,
-            'peer_counselor_id' => $peerCounselorId,
-            'assigned_by' => $user->id,
-            'status' => 'active',
-            'assigned_at' => now(),
-            'notes' => 'Assigned by counselor',
-        ]);
+            return $targetSession;
+        });
 
         $this->logCaseTransition(
             $request,
@@ -1102,8 +1162,8 @@ class SessionController extends Controller
             $peerCounselorId,
             [
                 'risk_level' => $riskLevel,
-                'source_session_id' => $session->id,
-                'shared_case_room' => true,
+                'source_session_id' => $sourceSessionId,
+                'separate_peer_room' => ! $sourceIsPeerRoom,
             ]
         );
 
@@ -1196,25 +1256,42 @@ class SessionController extends Controller
             return response()->json(['message' => 'Peer counselor delegation is supported for chat cases only'], 422);
         }
 
-        $peerCounselorId = (int) ($session->peer_counselor_id ?? 0);
-        $isPeerAssigned = $session->assigned_role === 'peer_counselor' && $peerCounselorId > 0;
+        $targetSession = $session;
+        $peerCounselorId = (int) ($targetSession->peer_counselor_id ?? 0);
+        $isPeerAssigned = $targetSession->assigned_role === 'peer_counselor'
+            && $peerCounselorId > 0
+            && ! in_array((string) $targetSession->status, ['completed', 'cancelled'], true);
+
         if (!$isPeerAssigned) {
+            $targetSession = CounselingSession::with(['student.profile', 'counselor.profile', 'peerCounselor.profile'])
+                ->where('student_id', $session->student_id)
+                ->where('counselor_id', $session->counselor_id)
+                ->where('session_type', 'chat')
+                ->where('is_anonymous', (bool) $session->is_anonymous)
+                ->where('assigned_role', 'peer_counselor')
+                ->whereNotNull('peer_counselor_id')
+                ->whereIn('status', ['pending', 'active'])
+                ->latest('id')
+                ->first();
+
+            $peerCounselorId = (int) ($targetSession?->peer_counselor_id ?? 0);
+            $isPeerAssigned = $targetSession !== null && $peerCounselorId > 0;
+        }
+
+        if (!$isPeerAssigned || !$targetSession) {
             return response()->json(['message' => 'This case is not currently assigned to a peer counselor'], 422);
         }
 
         $peerCounselor = User::query()->with('profile')->find($peerCounselorId);
 
-        $session->update([
-            'peer_counselor_id' => null,
+        $targetSession->update([
             'assigned_by' => $user->id,
-            'assigned_role' => 'counselor',
-            'status' => in_array((string) $session->status, ['completed', 'cancelled'], true)
-                ? $session->status
-                : 'pending',
+            'status' => 'completed',
+            'ended_at' => now(),
         ]);
 
         PeerAssignment::query()
-            ->where('session_id', $session->id)
+            ->where('session_id', $targetSession->id)
             ->where('peer_counselor_id', $peerCounselorId)
             ->where('status', 'active')
             ->update([
@@ -1229,12 +1306,13 @@ class SessionController extends Controller
         $this->logCaseTransition(
             $request,
             'peer_counselor_unassigned_by_counselor',
-            "Counselor {$user->id} removed peer counselor {$peerCounselorId} from session {$session->id}.",
-            $session,
+            "Counselor {$user->id} removed peer counselor {$peerCounselorId} from session {$targetSession->id}.",
+            $targetSession,
             $peerCounselorId,
             [
                 'assigned_role_before' => 'peer_counselor',
-                'assigned_role_after' => 'counselor',
+                'assignment_closed' => true,
+                'source_session_id' => (int) $session->id,
             ]
         );
 
@@ -1248,22 +1326,22 @@ class SessionController extends Controller
         }
 
         Notification::query()->create([
-            'user_id' => $session->student_id,
+            'user_id' => $targetSession->student_id,
             'title' => 'Counselor resumed direct support',
             'message' => "{$peerCounselorLabel} has been removed from your peer support case. Your counselor will continue with you directly.",
             'type' => 'info',
         ]);
 
-        $session->refresh()->load([
+        $targetSession->refresh()->load([
             'student.profile',
             'counselor.profile',
             'peerCounselor.profile',
             'assignedByUser.profile',
             'identityRevealedByUser.profile',
         ]);
-        $this->appendRiskSignals($session, $user, $request);
+        $this->appendRiskSignals($targetSession, $user, $request);
 
-        return response()->json($session);
+        return response()->json($targetSession);
     }
 
     public function escalateToCounselor(Request $request, string $id): JsonResponse

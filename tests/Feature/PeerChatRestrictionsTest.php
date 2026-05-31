@@ -128,33 +128,76 @@ class PeerChatRestrictionsTest extends TestCase
     }
 
     /** @test */
-    public function assigning_peer_counselor_keeps_the_same_case_room(): void
+    public function assigning_peer_counselor_creates_a_separate_peer_room(): void
     {
-        $session = CounselingSession::create([
-            'student_id' => $this->student->id,
-            'counselor_id' => $this->counselor->id,
-            'assigned_role' => 'counselor',
-            'status' => 'active',
-            'session_type' => 'chat',
-        ]);
+        $session = $this->makeDirectCounselorSession();
 
         $response = $this->actingAs($this->counselor)->postJson("/api/sessions/{$session->id}/assign-peer", [
             'peer_counselor_id' => $this->peer->id,
         ]);
 
+        $peerSessionId = (int) $response->json('id');
+
         $response
             ->assertStatus(200)
-            ->assertJsonPath('id', $session->id)
             ->assertJsonPath('peer_counselor_id', $this->peer->id)
-            ->assertJsonPath('assigned_role', 'peer_counselor');
+            ->assertJsonPath('assigned_role', 'peer_counselor')
+            ->assertJsonPath('status', 'active');
+
+        $this->assertNotSame((int) $session->id, $peerSessionId);
+        $this->assertSame(2, CounselingSession::query()->count());
+
+        $session->refresh();
+        $this->assertNull($session->peer_counselor_id);
+        $this->assertSame('counselor', $session->assigned_role);
+        $this->assertSame('active', $session->status);
+
+        $this->assertDatabaseHas('peer_assignments', [
+            'session_id' => $peerSessionId,
+            'peer_counselor_id' => $this->peer->id,
+            'status' => 'active',
+        ]);
+    }
+
+    /** @test */
+    public function assigning_peer_counselor_rejects_the_student_as_the_peer(): void
+    {
+        $this->assignRole($this->student, 'peer_counselor');
+        $session = $this->makeDirectCounselorSession();
+
+        $response = $this->actingAs($this->counselor)->postJson("/api/sessions/{$session->id}/assign-peer", [
+            'peer_counselor_id' => $this->student->id,
+        ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'The student cannot be assigned as their own peer counselor');
 
         $this->assertSame(1, CounselingSession::query()->count());
     }
 
     /** @test */
-    public function counselor_starting_chat_with_peer_assigned_student_reuses_case_room(): void
+    public function assigning_peer_counselor_rejects_the_supervising_counselor_as_the_peer(): void
     {
-        $session = $this->makeDelegatedPeerSession();
+        $this->assignRole($this->counselor, 'peer_counselor');
+        $session = $this->makeDirectCounselorSession();
+
+        $response = $this->actingAs($this->counselor)->postJson("/api/sessions/{$session->id}/assign-peer", [
+            'peer_counselor_id' => $this->counselor->id,
+        ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'The supervising counselor cannot also be the peer counselor for this case');
+
+        $this->assertSame(1, CounselingSession::query()->count());
+    }
+
+    /** @test */
+    public function counselor_starting_chat_with_peer_assigned_student_reuses_the_direct_room(): void
+    {
+        $directSession = $this->makeDirectCounselorSession();
+        $this->makeDelegatedPeerSession();
 
         $response = $this->actingAs($this->counselor)->postJson('/api/sessions/counselor', [
             'student_id' => $this->student->id,
@@ -163,17 +206,18 @@ class PeerChatRestrictionsTest extends TestCase
 
         $response
             ->assertStatus(200)
-            ->assertJsonPath('id', $session->id)
-            ->assertJsonPath('peer_counselor_id', $this->peer->id)
-            ->assertJsonPath('assigned_role', 'peer_counselor');
+            ->assertJsonPath('id', $directSession->id)
+            ->assertJsonPath('peer_counselor_id', null)
+            ->assertJsonPath('assigned_role', 'counselor');
 
-        $this->assertSame(1, CounselingSession::query()->count());
+        $this->assertSame(2, CounselingSession::query()->count());
     }
 
     /** @test */
-    public function student_starting_same_counselor_chat_reuses_peer_case_room(): void
+    public function student_starting_same_counselor_chat_reuses_the_direct_room(): void
     {
-        $session = $this->makeDelegatedPeerSession();
+        $directSession = $this->makeDirectCounselorSession();
+        $this->makeDelegatedPeerSession();
 
         $response = $this->actingAs($this->student)->postJson('/api/sessions', [
             'counselor_id' => $this->counselor->id,
@@ -183,11 +227,43 @@ class PeerChatRestrictionsTest extends TestCase
 
         $response
             ->assertStatus(200)
-            ->assertJsonPath('id', $session->id)
-            ->assertJsonPath('peer_counselor_id', $this->peer->id)
-            ->assertJsonPath('assigned_role', 'peer_counselor');
+            ->assertJsonPath('id', $directSession->id)
+            ->assertJsonPath('peer_counselor_id', null)
+            ->assertJsonPath('assigned_role', 'counselor');
 
-        $this->assertSame(1, CounselingSession::query()->count());
+        $this->assertSame(2, CounselingSession::query()->count());
+    }
+
+    /** @test */
+    public function unassigning_peer_counselor_closes_peer_room_without_mutating_direct_room(): void
+    {
+        $directSession = $this->makeDirectCounselorSession();
+
+        $assignResponse = $this->actingAs($this->counselor)->postJson("/api/sessions/{$directSession->id}/assign-peer", [
+            'peer_counselor_id' => $this->peer->id,
+        ]);
+        $assignResponse->assertStatus(200);
+        $peerSessionId = (int) $assignResponse->json('id');
+
+        $response = $this->actingAs($this->counselor)->postJson("/api/sessions/{$directSession->id}/unassign-peer");
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('id', $peerSessionId)
+            ->assertJsonPath('peer_counselor_id', $this->peer->id)
+            ->assertJsonPath('assigned_role', 'peer_counselor')
+            ->assertJsonPath('status', 'completed');
+
+        $directSession->refresh();
+        $this->assertNull($directSession->peer_counselor_id);
+        $this->assertSame('counselor', $directSession->assigned_role);
+        $this->assertSame('active', $directSession->status);
+
+        $this->assertDatabaseHas('peer_assignments', [
+            'session_id' => $peerSessionId,
+            'peer_counselor_id' => $this->peer->id,
+            'status' => 'closed',
+        ]);
     }
 
     /** @test */
@@ -344,6 +420,18 @@ class PeerChatRestrictionsTest extends TestCase
             'counselor_id' => $this->counselor->id,
             'peer_counselor_id' => $this->peer->id,
             'assigned_role' => 'peer_counselor',
+            'status' => 'active',
+            'session_type' => 'chat',
+        ]);
+    }
+
+    private function makeDirectCounselorSession(): CounselingSession
+    {
+        return CounselingSession::create([
+            'student_id' => $this->student->id,
+            'counselor_id' => $this->counselor->id,
+            'peer_counselor_id' => null,
+            'assigned_role' => 'counselor',
             'status' => 'active',
             'session_type' => 'chat',
         ]);
