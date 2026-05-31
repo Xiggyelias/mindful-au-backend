@@ -6,6 +6,7 @@
 /storage/app/backups/
 /storage/framework/cache/data/
 /storage/framework/views/
+/storage/testing/reports/
 /vendor
 /storage/logs/*
 !/storage/logs/.gitignore
