@@ -201,9 +201,9 @@ class SecurityHardeningTest extends TestCase
         $c1 = $this->createPortalUser('counselor', 'counselor-dup1@test.com', 'C1');
         $c2 = $this->createPortalUser('counselor', 'counselor-dup2@test.com', 'C2');
         $student = $this->createPortalUser('student', 'student-dup@test.com', 'Student Dup');
+        $student->profile()->update(['anonymous_mode' => true]);
 
         $anonId1 = CounselingSession::generateUniqueAnonymousId();
-        $anonId2 = CounselingSession::generateUniqueAnonymousId();
 
         $s1 = CounselingSession::query()->create([
             'student_id' => $student->id,
@@ -219,8 +219,8 @@ class SecurityHardeningTest extends TestCase
             'counselor_id' => $c2->id,
             'status' => 'active',
             'session_type' => 'chat',
-            'is_anonymous' => true,
-            'anonymous_id' => $anonId2,
+            'is_anonymous' => false,
+            'anonymous_id' => null,
             'assigned_role' => 'counselor',
         ]);
 
@@ -231,9 +231,20 @@ class SecurityHardeningTest extends TestCase
         $s1->refresh();
         $s2->refresh();
         $this->assertTrue((bool) $s1->is_anonymous);
-        $this->assertTrue((bool) $s2->is_anonymous);
+        $this->assertFalse((bool) $s2->is_anonymous);
         $this->assertSame($anonId1, $s1->anonymous_id);
-        $this->assertSame($anonId2, $s2->anonymous_id);
+        $this->assertNull($s2->anonymous_id);
+
+        $this->actingAs($student)->putJson('/api/profile', [
+            'anonymous_mode' => true,
+        ])->assertSuccessful();
+
+        $s1->refresh();
+        $s2->refresh();
+        $this->assertTrue((bool) $s1->is_anonymous);
+        $this->assertFalse((bool) $s2->is_anonymous);
+        $this->assertSame($anonId1, $s1->anonymous_id);
+        $this->assertNull($s2->anonymous_id);
     }
 
     /** @test */

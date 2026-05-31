@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
-use App\Models\CounselingSession;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -55,7 +54,7 @@ class ProfileController extends Controller
             $newMode = (bool) $profile->anonymous_mode;
 
             if ($oldMode !== $newMode && $user->hasRole('student')) {
-                $this->syncStudentAnonymityFromProfile($user, $newMode);
+                $this->syncStudentAppointmentAnonymityFromProfile($user, $newMode);
             }
         }
 
@@ -98,10 +97,13 @@ class ProfileController extends Controller
     }
 
     /**
-     * Keep profile anonymous_mode, upcoming appointments, and open sessions aligned
-     * so counselors see the correct name when a student switches before a video call.
+     * Keep upcoming appointments aligned with the student's profile default.
+     *
+     * Chat sessions keep their own per-thread anonymity flag. A profile toggle
+     * should affect future chats and upcoming bookings only; changing every open
+     * chat would rewrite the student's current support context.
      */
-    private function syncStudentAnonymityFromProfile(User $user, bool $anonymousMode): void
+    private function syncStudentAppointmentAnonymityFromProfile(User $user, bool $anonymousMode): void
     {
         $graceStart = now()->subMinutes(15);
 
@@ -137,25 +139,6 @@ class ProfileController extends Controller
             }
         }
 
-        $sessions = CounselingSession::query()
-            ->where('student_id', $user->id)
-            ->whereIn('status', ['pending', 'active'])
-            ->get();
-
-        foreach ($sessions as $session) {
-            if ($anonymousMode) {
-                $session->is_anonymous = true;
-                if ($session->anonymous_id === null || trim((string) $session->anonymous_id) === '') {
-                    $session->anonymous_id = CounselingSession::generateUniqueAnonymousId();
-                }
-            } else {
-                $session->is_anonymous = false;
-                $session->anonymous_id = null;
-                $session->identity_revealed_at = now();
-                $session->identity_revealed_by = $user->id;
-            }
-            $session->save();
-        }
     }
 
     private function generateAnonymousIdForAppointment(): string
