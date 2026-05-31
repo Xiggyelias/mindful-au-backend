@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\CounselingSession;
 use App\Models\AiDiagnostic;
+use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -180,6 +181,8 @@ class ChatAttachmentUploadTest extends TestCase
             'message_type' => 'voice',
             'has_file' => true,
         ]);
+        $this->assertTrue($this->messageNotificationExistsFor($this->student->id, (int) $voiceResponse->json('id')));
+        $this->assertFalse($this->messageNotificationExistsFor($this->counselor->id, (int) $voiceResponse->json('id')));
 
         $endpointVoice = UploadedFile::fake()->create('endpoint-voice.webm', 128, 'audio/webm');
 
@@ -191,6 +194,8 @@ class ChatAttachmentUploadTest extends TestCase
             ->assertStatus(201)
             ->assertJsonPath('message_type', 'voice')
             ->assertJsonPath('has_file', true);
+        $this->assertTrue($this->messageNotificationExistsFor($this->student->id, (int) $endpointVoiceResponse->json('id')));
+        $this->assertFalse($this->messageNotificationExistsFor($this->counselor->id, (int) $endpointVoiceResponse->json('id')));
 
         AiDiagnostic::create([
             'student_id' => $this->student->id,
@@ -281,5 +286,13 @@ class ChatAttachmentUploadTest extends TestCase
             'role' => $role,
             'approved' => true,
         ]);
+    }
+
+    private function messageNotificationExistsFor(int $userId, int $messageId): bool
+    {
+        return Notification::query()
+            ->where('user_id', $userId)
+            ->where('meta->chat_message_id', $messageId)
+            ->exists();
     }
 }

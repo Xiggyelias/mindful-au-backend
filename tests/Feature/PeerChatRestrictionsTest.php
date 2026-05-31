@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CounselingSession;
+use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -437,6 +438,46 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('recipient_id', $this->student->id);
     }
 
+    /** @test */
+    public function peer_room_message_notifications_only_go_to_the_direct_recipient(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $studentResponse = $this->actingAs($this->student)->postJson(
+            "/api/sessions/{$session->id}/messages",
+            [
+                'content' => 'Student to peer only.',
+                'message_type' => 'text',
+                'is_encrypted' => false,
+            ]
+        );
+
+        $studentResponse
+            ->assertStatus(201)
+            ->assertJsonPath('recipient_id', $this->peer->id);
+
+        $studentMessageId = (int) $studentResponse->json('id');
+        $this->assertTrue($this->messageNotificationExistsFor($this->peer->id, $studentMessageId));
+        $this->assertFalse($this->messageNotificationExistsFor($this->counselor->id, $studentMessageId));
+
+        $peerResponse = $this->actingAs($this->peer)->postJson(
+            "/api/sessions/{$session->id}/messages",
+            [
+                'content' => 'Peer reply to student only.',
+                'message_type' => 'text',
+                'is_encrypted' => false,
+            ]
+        );
+
+        $peerResponse
+            ->assertStatus(201)
+            ->assertJsonPath('recipient_id', $this->student->id);
+
+        $peerMessageId = (int) $peerResponse->json('id');
+        $this->assertTrue($this->messageNotificationExistsFor($this->student->id, $peerMessageId));
+        $this->assertFalse($this->messageNotificationExistsFor($this->counselor->id, $peerMessageId));
+    }
+
     private function makeDelegatedPeerSession(): CounselingSession
     {
         return CounselingSession::create([
@@ -459,6 +500,14 @@ class PeerChatRestrictionsTest extends TestCase
             'status' => 'active',
             'session_type' => 'chat',
         ]);
+    }
+
+    private function messageNotificationExistsFor(int $userId, int $messageId): bool
+    {
+        return Notification::query()
+            ->where('user_id', $userId)
+            ->where('meta->chat_message_id', $messageId)
+            ->exists();
     }
 
     private function assignRole(User $user, string $role): void

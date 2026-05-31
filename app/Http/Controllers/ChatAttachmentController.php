@@ -361,18 +361,12 @@ class ChatAttachmentController extends Controller
      */
     private function resolveNotificationRecipientIds(CounselingSession $session, int $senderId): array
     {
-        $studentId = (int) $session->student_id;
-        $counselorId = (int) $session->counselor_id;
-        $peerCounselorId = $this->activeCasePeerCounselorId($session);
-        $isDelegatedPeerThread = $peerCounselorId > 0;
-        $participantIds = $isDelegatedPeerThread
-            ? [$studentId, $peerCounselorId, $counselorId]
-            : [$studentId, $counselorId];
+        $recipientId = $this->resolveRecipientId($session, $senderId);
+        if (! $recipientId || $recipientId === $senderId) {
+            return [];
+        }
 
-        return array_values(array_filter(
-            array_unique($participantIds),
-            static fn (int $participantId): bool => $participantId > 0 && $participantId !== $senderId
-        ));
+        return [$recipientId];
     }
 
     private function isAllowedMimeType(string $mimeType): bool

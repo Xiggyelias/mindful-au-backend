@@ -1143,12 +1143,12 @@ class MessageController extends Controller
      */
     private function resolveNotificationRecipientIds(CounselingSession $session, int $senderId): array
     {
-        $participantIds = $this->resolveActiveThreadParticipantIds($session);
+        $recipientId = $this->resolveRecipientId($session, $senderId);
+        if (! $recipientId || $recipientId === $senderId) {
+            return [];
+        }
 
-        return array_values(array_filter(
-            $participantIds,
-            static fn (int $participantId): bool => $participantId > 0 && $participantId !== $senderId
-        ));
+        return [$recipientId];
     }
 
     /**

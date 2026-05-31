@@ -278,37 +278,27 @@ class VoiceNotesController extends Controller
 
     private function notifyRecipients(CounselingSession $session, int $senderId, Message $message): void
     {
-        $studentId = (int) $session->student_id;
-        $counselorId = (int) $session->counselor_id;
-        $peerCounselorId = $this->activeCasePeerCounselorId($session);
-        $isDelegatedPeerThread = $peerCounselorId > 0;
-        $participantIds = $isDelegatedPeerThread
-            ? [$studentId, $peerCounselorId, $counselorId]
-            : [$studentId, $counselorId];
+        $recipientId = $this->resolveRecipientId($session, $senderId);
+        if (! $recipientId || $recipientId === $senderId) {
+            return;
+        }
 
         $sender = User::with('profile')->find($senderId);
         $senderName = optional(optional($sender)->profile)->full_name
             ?: ($sender?->email ? Str::before((string) $sender->email, '@') : 'Someone');
 
-        foreach (array_unique($participantIds) as $recipientId) {
-            $recipientId = (int) $recipientId;
-            if ($recipientId <= 0 || $recipientId === $senderId) {
-                continue;
-            }
-
-            Notification::create([
-                'user_id' => $recipientId,
-                'title' => 'New voice note',
-                'message' => "{$senderName}: sent a voice note",
-                'meta' => [
-                    'chat_session_id' => (int) $session->id,
-                    'chat_message_id' => (int) $message->id,
-                    'is_encrypted' => false,
-                    'message_type' => 'voice',
-                ],
-                'type' => 'info',
-            ]);
-        }
+        Notification::create([
+            'user_id' => $recipientId,
+            'title' => 'New voice note',
+            'message' => "{$senderName}: sent a voice note",
+            'meta' => [
+                'chat_session_id' => (int) $session->id,
+                'chat_message_id' => (int) $message->id,
+                'is_encrypted' => false,
+                'message_type' => 'voice',
+            ],
+            'type' => 'info',
+        ]);
     }
 
     private function activeCasePeerCounselorId(CounselingSession $session): int
