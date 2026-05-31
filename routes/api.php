@@ -9,6 +9,8 @@ use App\Http\Controllers\OAuthController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\AppointmentController;
+use App\Http\Controllers\CounselorSlotController;
+use App\Http\Controllers\EmergencyRequestController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\VoiceNotesController;
@@ -97,9 +99,16 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/sessions/{id}/reveal-identity', [SessionController::class, 'revealIdentity'])->middleware('throttle:messages-write');
 
     // Appointments
+    Route::get('/counselor-slots', [CounselorSlotController::class, 'index'])->middleware('throttle:messages-read');
+    Route::post('/counselor-slots/generate', [CounselorSlotController::class, 'generate'])->middleware('throttle:messages-write');
+    Route::get('/counselor-schedules', [CounselorSlotController::class, 'schedules'])->middleware('throttle:messages-read');
+    Route::put('/counselor-schedules', [CounselorSlotController::class, 'updateSchedules'])->middleware('throttle:messages-write');
     Route::post('/appointments/bulk-cancel', [AppointmentController::class, 'bulkCancel'])->middleware('throttle:messages-write');
     Route::post('/appointments/{id}/reveal-identity', [AppointmentController::class, 'revealIdentity'])->middleware('throttle:messages-write');
     Route::apiResource('appointments', AppointmentController::class);
+    Route::get('/emergency-requests', [EmergencyRequestController::class, 'index'])->middleware('throttle:messages-read');
+    Route::post('/emergency-requests', [EmergencyRequestController::class, 'store'])->middleware('throttle:messages-write');
+    Route::patch('/emergency-requests/{id}', [EmergencyRequestController::class, 'update'])->middleware('throttle:messages-write');
 
     // Intake & Triage
     Route::get('/intake-submissions', [IntakeController::class, 'index']);

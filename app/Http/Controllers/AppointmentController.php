@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Models\CounselorSlot;
 use App\Models\CounselingSession;
 use App\Models\ActivityLog;
+use App\Models\EmergencyRequest;
 use App\Models\Notification;
 use App\Events\NotificationCreated;
 use App\Support\PaginationPayload;
 use App\Models\User;
+use App\Services\CounselorSlotService;
 use App\Services\WebPushService;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Builder;
@@ -25,6 +28,7 @@ class AppointmentController extends Controller
 {
     public function __construct(
         private readonly WebPushService $webPush,
+        private readonly CounselorSlotService $slotService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -124,6 +128,7 @@ class AppointmentController extends Controller
                 },
             ],
             'duration_minutes' => 'sometimes|integer|min:15|max:120',
+            'counselor_slot_id' => 'sometimes|nullable|integer|exists:counselor_slots,id',
             'notes' => 'sometimes|nullable|string|max:2000',
             'is_anonymous' => 'sometimes|boolean',
             'call_type' => 'sometimes|in:audio,video',
@@ -147,11 +152,30 @@ class AppointmentController extends Controller
             ], 422);
         }
 
-        $durationMinutes = (int) ($validated['duration_minutes'] ?? 60);
+        $durationMinutes = (int) ($validated['duration_minutes'] ?? 30);
         $proposedStart = Carbon::parse($validated['scheduled_at']);
         $proposedEnd = (clone $proposedStart)->addMinutes($durationMinutes);
         $studentId = (int) $request->user()->id;
         $counselorId = (int) $validated['counselor_id'];
+        $slotId = !empty($validated['counselor_slot_id']) ? (int) $validated['counselor_slot_id'] : null;
+
+        $slotResolution = $this->slotService->resolveSlotForBooking($counselorId, $proposedStart, $durationMinutes);
+        if (($slotResolution['reason'] ?? null) === 'outside_hours') {
+            return $this->queueEmergencyFromAppointmentRequest(
+                $request,
+                $counselorId,
+                $proposedStart,
+                $validated['notes'] ?? null
+            );
+        }
+        if (($slotResolution['reason'] ?? null) === 'lunch_break') {
+            throw ValidationException::withMessages([
+                'scheduled_at' => ['Lunch break is locked from 13:00 to 14:00. Please choose another slot.'],
+            ]);
+        }
+        if ($slotId === null && ($slotResolution['slot'] ?? null) instanceof CounselorSlot && ($slotResolution['reason'] ?? null) === 'available') {
+            $slotId = (int) $slotResolution['slot']->id;
+        }
         $isAnonymous = array_key_exists('is_anonymous', $validated)
             ? (bool) $validated['is_anonymous']
             : (bool) ($request->user()->profile?->anonymous_mode ?? false);
@@ -189,6 +213,7 @@ class AppointmentController extends Controller
                 $proposedEnd,
                 $studentId,
                 $counselorId,
+                $slotId,
                 $isAnonymous,
                 $finalNotes,
                 $callType
@@ -200,10 +225,33 @@ class AppointmentController extends Controller
                     $proposedEnd,
                     $studentId,
                     $counselorId,
+                    $slotId,
                     $isAnonymous,
                     $finalNotes,
                     $callType
                 ) {
+                    $slot = null;
+                    if ($slotId !== null) {
+                        $slot = CounselorSlot::query()->lockForUpdate()->findOrFail($slotId);
+                        if ((int) $slot->counselor_id !== $counselorId) {
+                            throw ValidationException::withMessages([
+                                'counselor_slot_id' => ['Selected slot does not belong to this counselor.'],
+                            ]);
+                        }
+                        if ($slot->status !== 'available' || $slot->appointment_id) {
+                            throw ValidationException::withMessages([
+                                'scheduled_at' => ['That slot was just booked. Please choose another available slot.'],
+                            ]);
+                        }
+                        $slotStart = Carbon::parse($slot->start_time);
+                        $slotEnd = Carbon::parse($slot->end_time);
+                        if (!$slotStart->equalTo($proposedStart) || !$slotEnd->equalTo($proposedEnd)) {
+                            throw ValidationException::withMessages([
+                                'scheduled_at' => ['Selected slot does not match the requested appointment time.'],
+                            ]);
+                        }
+                    }
+
                     // Keep row locks to ensure overlap checks are consistent for rows already present.
                     $candidateAppointments = Appointment::query()
                         ->whereIn('status', ['scheduled', 'confirmed'])
@@ -243,6 +291,7 @@ class AppointmentController extends Controller
                     $payload = [
                         'student_id' => $studentId,
                         'counselor_id' => $counselorId,
+                        'counselor_slot_id' => $slot?->id,
                         'is_anonymous' => $isAnonymous,
                         'anonymous_id' => $isAnonymous ? $this->generateAnonymousId() : null,
                         'scheduled_at' => $proposedStart,
@@ -253,7 +302,12 @@ class AppointmentController extends Controller
                     if ($this->supportsCallTypeColumn()) {
                         $payload['call_type'] = $callType;
                     }
-                    return Appointment::query()->create($payload);
+                    $appointment = Appointment::query()->create($payload);
+                    if ($slot) {
+                        $this->slotService->markSlotBooked($slot, $appointment);
+                    }
+
+                    return $appointment;
                 });
             }
         );
@@ -302,6 +356,7 @@ class AppointmentController extends Controller
                 },
             ],
             'notes' => 'sometimes|string|max:2000',
+            'counselor_slot_id' => 'sometimes|nullable|integer|exists:counselor_slots,id',
         ]);
 
         if (isset($validated['notes']) && $appointment->is_anonymous) {
@@ -325,6 +380,9 @@ class AppointmentController extends Controller
         $previousScheduledAt = $appointment->scheduled_at?->toISOString();
 
         $appointment->update($payload);
+        if (($validated['status'] ?? null) === 'cancelled') {
+            $this->slotService->releaseSlotForAppointment($appointment);
+        }
         $appointment->refresh()->load(['student.profile', 'counselor.profile']);
 
         if (isset($validated['status']) && $validated['status'] !== $previousStatus) {
@@ -399,6 +457,13 @@ class AppointmentController extends Controller
                     'status' => 'cancelled',
                     'cancellation_reason' => $reasonStored,
                     'cancelled_at' => $now,
+                ]);
+
+            \App\Models\CounselorSlot::query()
+                ->whereIn('appointment_id', $ids)
+                ->update([
+                    'status' => 'available',
+                    'appointment_id' => null,
                 ]);
 
             $affected = Appointment::query()
@@ -490,6 +555,7 @@ class AppointmentController extends Controller
                 'status' => 'cancelled',
                 'cancellation_reason' => $reason,
             ]);
+            $this->slotService->releaseSlotForAppointment($appointment);
 
             $appointment->refresh()->load(['student.profile', 'counselor.profile']);
             try {
@@ -514,6 +580,7 @@ class AppointmentController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+        $this->slotService->releaseSlotForAppointment($appointment);
         $appointment->delete();
         try {
             $this->flushDashboardCaches();
@@ -560,6 +627,70 @@ class AppointmentController extends Controller
             'message' => 'Identity revealed successfully.',
             'appointment' => $appointment,
         ]);
+    }
+
+    private function queueEmergencyFromAppointmentRequest(
+        Request $request,
+        int $counselorId,
+        Carbon $requestedAt,
+        mixed $notes
+    ): JsonResponse {
+        $emergencyRequest = EmergencyRequest::query()->create([
+            'student_id' => $request->user()->id,
+            'counselor_id' => $counselorId,
+            'requested_at' => $requestedAt,
+            'is_after_hours' => true,
+            'priority' => 1,
+            'status' => 'queued',
+            'reason' => trim((string) ($notes ?? '')) ?: 'After-hours appointment request',
+        ]);
+
+        $studentName = trim((string) ($request->user()->profile?->full_name ?? ''));
+        if ($studentName === '') {
+            $studentName = $request->user()->email ? Str::before((string) $request->user()->email, '@') : 'A student';
+        }
+        $message = sprintf(
+            '%s requested emergency after-hours support for %s.',
+            $studentName,
+            $requestedAt->format('M j, Y g:i A')
+        );
+
+        $recipientIds = User::query()
+            ->where('id', $counselorId)
+            ->orWhereHas('roles', function ($query): void {
+                $query->where(function ($inner): void {
+                    $inner->where(function ($scoped): void {
+                        $scoped->where('role', 'counselor')->where('approved', true);
+                    })->orWhere('role', 'admin');
+                });
+            })
+            ->pluck('id')
+            ->unique()
+            ->values();
+
+        foreach ($recipientIds as $recipientId) {
+            try {
+                $notification = Notification::query()->create([
+                    'user_id' => (int) $recipientId,
+                    'title' => 'After-hours Emergency Request',
+                    'message' => $message,
+                    'type' => 'panic',
+                    'read' => false,
+                    'meta' => [
+                        'emergency_request_id' => (int) $emergencyRequest->id,
+                    ],
+                ]);
+                event(new NotificationCreated($notification));
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return response()->json([
+            'message' => 'This time is outside normal counselling hours. An emergency request has been queued instead.',
+            'emergency' => true,
+            'emergency_request' => $emergencyRequest,
+        ], 202);
     }
 
     private function isApprovedCounselor(int $userId): bool

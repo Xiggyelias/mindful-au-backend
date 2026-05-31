@@ -48,6 +48,7 @@ class Appointment extends Model
     protected $fillable = [
         'student_id',
         'counselor_id',
+        'counselor_slot_id',
         'is_anonymous',
         'anonymous_id',
         'scheduled_at',
@@ -75,5 +76,10 @@ class Appointment extends Model
     public function counselor()
     {
         return $this->belongsTo(User::class, 'counselor_id');
+    }
+
+    public function counselorSlot()
+    {
+        return $this->belongsTo(CounselorSlot::class, 'counselor_slot_id');
     }
 }
