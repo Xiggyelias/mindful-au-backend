@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'delete_for_everyone_minutes' => max(1, (int) env('CHAT_DELETE_FOR_EVERYONE_MINUTES', 15)),
+
     'attachments' => [
         'disk' => env('CHAT_UPLOAD_DISK', 'local'),
         'directory' => trim((string) env('CHAT_UPLOAD_DIRECTORY', 'uploads/chat_files'), '/'),

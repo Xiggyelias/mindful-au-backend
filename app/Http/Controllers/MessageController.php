@@ -657,10 +657,19 @@ class MessageController extends Controller
             return response()->json(['message' => 'Message not found'], 404);
         }
 
-        if (! $this->viewerCanDeleteMessage($user, $session, $message, $isAssignedPeerCounselor)) {
+        if (! $this->viewerCanDeleteMessage($user, $message)) {
             return response()->json([
                 'message' => 'You can only delete messages you sent.',
             ], 403);
+        }
+
+        if (! $this->messageIsWithinDeleteForEveryoneWindow($message)) {
+            return response()->json([
+                'message' => sprintf(
+                    'Delete for everyone is only available for %d minutes after sending.',
+                    $this->deleteForEveryoneWindowMinutes()
+                ),
+            ], 422);
         }
 
         $deletedMessageId = (int) $message->id;
@@ -960,33 +969,36 @@ class MessageController extends Controller
             || $isAssignedPeerCounselor;
     }
 
-    /**
-     * Students may delete only their own messages. Session counselor or assigned peer
-     * counselor may delete any message in the thread (moderation). Admins may delete any.
-     */
     private function viewerCanDeleteMessage(
         User $user,
-        CounselingSession $session,
-        Message $message,
-        bool $isAssignedPeerCounselor
+        Message $message
     ): bool {
-        if ($user->hasRole('admin')) {
+        return (int) $message->sender_id === (int) $user->id;
+    }
+
+    private function deleteForEveryoneWindowMinutes(): int
+    {
+        return max(1, (int) config('chat.delete_for_everyone_minutes', 15));
+    }
+
+    private function messageIsWithinDeleteForEveryoneWindow(Message $message): bool
+    {
+        if ((string) $message->content === self::DELETE_TOMBSTONE) {
             return true;
         }
 
-        if ((int) $message->sender_id === (int) $user->id) {
-            return true;
+        $createdAt = $message->created_at;
+        if (! $createdAt instanceof Carbon) {
+            try {
+                $createdAt = Carbon::parse((string) $message->created_at);
+            } catch (\Throwable) {
+                return false;
+            }
         }
 
-        if ($user->hasRole('counselor') && (int) $session->counselor_id === (int) $user->id) {
-            return true;
-        }
-
-        if ($isAssignedPeerCounselor) {
-            return true;
-        }
-
-        return false;
+        return $createdAt->copy()
+            ->addMinutes($this->deleteForEveryoneWindowMinutes())
+            ->greaterThanOrEqualTo(now());
     }
 
     private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool

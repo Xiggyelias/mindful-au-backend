@@ -652,7 +652,7 @@ CRITICAL:
         }
 
         if ($conversationTopic === 'physical_health') {
-            return 'That sounds rough. Rest if you can. What symptom is bothering you most? If anything feels severe or you’re struggling to breathe, please reach out to campus health or emergency support right away.';
+            return 'I am sorry you are feeling sick. Rest if you can. What symptoms are bothering you most? If anything feels severe or you are struggling to breathe, please reach out to campus health or emergency support right away.';
         }
 
         $socialResponse = $this->buildSocialConversationResponse($normalized, $historyMessages);
@@ -877,7 +877,7 @@ CRITICAL:
     {
         return match ($topic) {
             'crisis' => 'Your safety comes first. Can you message or call someone you trust right now and tell them you need support?',
-            'anxiety' => 'What\'s the one thought that keeps looping the most?',
+            'anxiety' => 'Let us take it step by step. Try one minute of slow breathing first, then choose one 10 to 15 minute task.',
             'study' => 'What\'s the smallest piece you could tackle for just 15 minutes?',
             'sleep' => 'Is it more that you can\'t switch off, or that you wake up and can\'t get back to sleep?',
             'physical_health' => 'What symptom is bothering you most right now?',
@@ -904,7 +904,7 @@ CRITICAL:
             ]);
 
         if ($this->isConversationResetCue($normalized)) {
-            return 'Hey — I’m here with you. How’s your day been so far?';
+            return 'Hi, I am here with you. How has your day been so far?';
         }
 
         if ($this->matchesExactIntent($normalized, [
@@ -943,7 +943,7 @@ CRITICAL:
         }
 
         if (preg_match('/\b(sick|ill|fever|flu|headache|nausea|vomiting|cough)\b/u', $normalized) === 1) {
-            return 'That sounds rough. What symptom is bothering you most? If anything feels severe or you are struggling to breathe, please reach out to a clinic or emergency support right away.';
+            return 'I am sorry you are feeling sick. Rest if you can. What symptoms are bothering you most? If anything feels severe or you are struggling to breathe, please reach out to a clinic or emergency support right away.';
         }
 
         if (preg_match('/\b(not good|not okay|not ok|bad|terrible|awful|rough|drained|exhausted|tired)\b/u', $normalized) === 1) {

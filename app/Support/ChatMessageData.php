@@ -8,6 +8,8 @@ use Illuminate\Support\Str;
 
 class ChatMessageData
 {
+    private const DELETE_TOMBSTONE = 'This message was deleted.';
+
     public static function make(Message $message, bool $includeSender = false): array
     {
         $message->loadMissing('chatFile');
@@ -18,6 +20,9 @@ class ChatMessageData
         $attachment = $message->chatFile?->toAttachmentPayload();
         $senderRole = self::normalizeSenderRole($message);
         $senderName = self::resolveSenderName($message, $senderRole);
+        $deleteWindowMinutes = max(1, (int) config('chat.delete_for_everyone_minutes', 15));
+        $deleteForEveryoneUntil = $message->created_at?->copy()->addMinutes($deleteWindowMinutes);
+        $isDeleted = (string) $message->content === self::DELETE_TOMBSTONE;
 
         $payload = [
             'id' => (int) $message->id,
@@ -42,6 +47,8 @@ class ChatMessageData
             'is_read' => $message->seen_at !== null,
             'created_at' => $message->created_at?->toISOString(),
             'updated_at' => $message->updated_at?->toISOString(),
+            'is_deleted' => $isDeleted,
+            'delete_for_everyone_until' => $isDeleted ? null : $deleteForEveryoneUntil?->toISOString(),
         ];
 
         if ($includeSender) {

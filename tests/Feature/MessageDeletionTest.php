@@ -15,6 +15,7 @@ class MessageDeletionTest extends TestCase
 
     private User $student;
     private User $counselor;
+    private User $peerCounselor;
     private User $outsider;
     private CounselingSession $session;
 
@@ -24,11 +25,15 @@ class MessageDeletionTest extends TestCase
 
         $this->student = User::factory()->create(['email' => 'student-delete@test.com']);
         $this->counselor = User::factory()->create(['email' => 'counselor-delete@test.com']);
+        $this->peerCounselor = User::factory()->create(['email' => 'peer-delete@test.com']);
         $this->outsider = User::factory()->create(['email' => 'outsider-delete@test.com']);
 
         $this->assignRole($this->student, 'student');
         $this->assignRole($this->counselor, 'counselor');
+        $this->assignRole($this->peerCounselor, 'peer_counselor');
         $this->assignRole($this->outsider, 'student');
+
+        config(['chat.delete_for_everyone_minutes' => 15]);
 
         $this->session = CounselingSession::create([
             'student_id' => $this->student->id,
@@ -64,7 +69,7 @@ class MessageDeletionTest extends TestCase
     }
 
     /** @test */
-    public function counselor_can_delete_student_message(): void
+    public function counselor_cannot_delete_student_message_for_everyone(): void
     {
         $message = $this->createMessage($this->student->id, $this->counselor->id);
 
@@ -73,18 +78,64 @@ class MessageDeletionTest extends TestCase
         );
 
         $response
-            ->assertStatus(200)
+            ->assertStatus(403)
             ->assertJson([
-                'ok' => true,
-                'id' => $message->id,
+                'message' => 'You can only delete messages you sent.',
             ]);
 
         $this->assertDatabaseHas('messages', [
             'id' => $message->id,
-            'content' => 'This message was deleted.',
-            'message_type' => 'text',
-            'has_file' => false,
-            'is_encrypted' => false,
+            'content' => 'test message',
+        ]);
+    }
+
+    /** @test */
+    public function assigned_peer_counselor_cannot_delete_student_message_for_everyone(): void
+    {
+        $this->session->update([
+            'peer_counselor_id' => $this->peerCounselor->id,
+            'assigned_role' => 'peer_counselor',
+        ]);
+        $message = $this->createMessage($this->student->id, $this->peerCounselor->id);
+
+        $response = $this->actingAs($this->peerCounselor)->deleteJson(
+            "/api/sessions/{$this->session->id}/messages/{$message->id}"
+        );
+
+        $response
+            ->assertStatus(403)
+            ->assertJson([
+                'message' => 'You can only delete messages you sent.',
+            ]);
+
+        $this->assertDatabaseHas('messages', [
+            'id' => $message->id,
+            'content' => 'test message',
+        ]);
+    }
+
+    /** @test */
+    public function sender_cannot_delete_for_everyone_after_time_limit_expires(): void
+    {
+        $message = $this->createMessage($this->student->id, $this->counselor->id);
+        $message->forceFill([
+            'created_at' => now()->subMinutes(16),
+            'updated_at' => now()->subMinutes(16),
+        ])->saveQuietly();
+
+        $response = $this->actingAs($this->student)->deleteJson(
+            "/api/sessions/{$this->session->id}/messages/{$message->id}"
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJson([
+                'message' => 'Delete for everyone is only available for 15 minutes after sending.',
+            ]);
+
+        $this->assertDatabaseHas('messages', [
+            'id' => $message->id,
+            'content' => 'test message',
         ]);
     }
 
