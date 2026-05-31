@@ -706,21 +706,37 @@ class SessionController extends Controller
     public function storeAsCounselor(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor')) {
-            return response()->json(['message' => 'Only counselors can create student sessions'], 403);
+        $isAdmin = $user->hasRole('admin');
+        $isCounselor = $user->hasRole('counselor');
+
+        if (!$isCounselor && !$isAdmin) {
+            return response()->json(['message' => 'Only counselors or administrators can create student sessions'], 403);
         }
 
         $validated = $request->validate([
             'student_id' => 'required|exists:users,id',
             'session_type' => 'required|in:chat,video,voice',
+            'counselor_id' => ($isAdmin ? 'required' : 'sometimes') . '|integer|exists:users,id',
         ]);
 
         if (!$this->isApprovedStudent((int) $validated['student_id'])) {
             return response()->json(['message' => 'Selected student is not available'], 422);
         }
 
+        $counselorId = $isAdmin
+            ? (int) $validated['counselor_id']
+            : (int) $user->id;
+
+        if (!$isAdmin && array_key_exists('counselor_id', $validated) && (int) $validated['counselor_id'] !== (int) $user->id) {
+            return response()->json(['message' => 'Only administrators can create sessions for another counselor'], 403);
+        }
+
+        if (!$this->isApprovedCounselor($counselorId)) {
+            return response()->json(['message' => 'Selected counselor is not available'], 422);
+        }
+
         $existing = CounselingSession::where('student_id', $validated['student_id'])
-            ->where('counselor_id', $user->id)
+            ->where('counselor_id', $counselorId)
             ->where('session_type', $validated['session_type'])
             ->where('is_anonymous', false)
             ->whereIn('status', ['pending', 'active'])
@@ -740,7 +756,7 @@ class SessionController extends Controller
 
         $session = CounselingSession::create([
             'student_id' => $validated['student_id'],
-            'counselor_id' => $user->id,
+            'counselor_id' => $counselorId,
             'session_type' => $validated['session_type'],
             'status' => 'pending',
             'assigned_role' => 'counselor',
