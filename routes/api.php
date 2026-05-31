@@ -90,7 +90,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/sessions/counselor', [SessionController::class, 'storeAsCounselor']);
     Route::put('/sessions/{id}/note', [SessionController::class, 'upsertNote'])->middleware('throttle:messages-write');
     Route::delete('/sessions/{id}/note', [SessionController::class, 'deleteNote'])->middleware('throttle:messages-write');
-    Route::post('/sessions/{id}/touch', [SessionController::class, 'touch'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/touch', [SessionController::class, 'touch'])->middleware('throttle:session-touch');
     Route::post('/sessions/{id}/assign-peer', [SessionController::class, 'assignPeerCounselor'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/unassign-peer', [SessionController::class, 'unassignPeerCounselor'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/escalate', [SessionController::class, 'escalateToCounselor'])->middleware('throttle:messages-write');

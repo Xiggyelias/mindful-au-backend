@@ -21,6 +21,7 @@ class RouteServiceProvider extends ServiceProvider
         $oauthTicketExchangePerMinute = max(5, (int) env('OAUTH_TICKET_EXCHANGE_RATE_LIMIT_PER_MINUTE', 30));
         $messagesReadPerMinute = max(30, (int) env('MESSAGES_READ_RATE_LIMIT_PER_MINUTE', 120));
         $messagesWritePerMinute = max(10, (int) env('MESSAGES_WRITE_RATE_LIMIT_PER_MINUTE', 60));
+        $sessionTouchPerMinute = max(30, (int) env('SESSION_TOUCH_RATE_LIMIT_PER_MINUTE', 120));
         $presencePerMinute = max(10, (int) env('PRESENCE_RATE_LIMIT_PER_MINUTE', 30));
         $aiChatPerMinute = max(5, (int) env('AI_CHAT_RATE_LIMIT_PER_MINUTE', 20));
         $aiReadPerMinute = max(10, (int) env('AI_READ_RATE_LIMIT_PER_MINUTE', 60));
@@ -35,6 +36,7 @@ class RouteServiceProvider extends ServiceProvider
             $oauthTicketExchangePerMinute = 100000;
             $messagesReadPerMinute = 100000;
             $messagesWritePerMinute = 100000;
+            $sessionTouchPerMinute = 100000;
             $presencePerMinute = 100000;
             $aiChatPerMinute = 100000;
             $aiReadPerMinute = 100000;
@@ -73,6 +75,12 @@ class RouteServiceProvider extends ServiceProvider
 
         RateLimiter::for('messages-write', function (Request $request) use ($messagesWritePerMinute) {
             return Limit::perMinute($messagesWritePerMinute)->by($request->user()?->id ?: $request->ip());
+        });
+
+        RateLimiter::for('session-touch', function (Request $request) use ($sessionTouchPerMinute) {
+            $sessionId = (string) $request->route('id');
+            return Limit::perMinute($sessionTouchPerMinute)
+                ->by(($request->user()?->id ?: $request->ip()) . '|session-touch|' . $sessionId);
         });
 
         RateLimiter::for('presence', function (Request $request) use ($presencePerMinute) {

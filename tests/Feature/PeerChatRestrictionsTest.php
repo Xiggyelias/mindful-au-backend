@@ -143,6 +143,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertStatus(200)
             ->assertJsonPath('peer_counselor_id', $this->peer->id)
             ->assertJsonPath('assigned_role', 'peer_counselor')
+            ->assertJsonPath('is_anonymous', true)
             ->assertJsonPath('status', 'active');
 
         $this->assertNotSame((int) $session->id, $peerSessionId);
@@ -152,6 +153,11 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertNull($session->peer_counselor_id);
         $this->assertSame('counselor', $session->assigned_role);
         $this->assertSame('active', $session->status);
+
+        $peerRoom = CounselingSession::query()->findOrFail($peerSessionId);
+        $this->assertTrue((bool) $peerRoom->is_anonymous);
+        $this->assertNotEmpty($peerRoom->anonymous_id);
+        $this->assertNull($peerRoom->identity_revealed_at);
 
         $this->assertDatabaseHas('peer_assignments', [
             'session_id' => $peerSessionId,
@@ -402,6 +408,63 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('0.peer_counselor_id', null)
             ->assertJsonPath('0.case_peer_counselor_id', $this->peer->id)
             ->assertJsonPath('0.case_peer_counselor.email', $this->peer->email);
+    }
+
+    /** @test */
+    public function peer_chat_list_masks_student_identity_even_for_legacy_nonanonymous_peer_rooms(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $response = $this->actingAs($this->peer)->getJson('/api/sessions/chat-list?as_role=peer_counselor&open_only=1&limit=20');
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('0.id', $session->id)
+            ->assertJsonPath('0.is_anonymous', true)
+            ->assertJsonPath('0.identity_visible_to_viewer', false)
+            ->assertJsonPath('0.student_id', 0)
+            ->assertJsonPath('0.student.email', null)
+            ->assertJsonPath('0.student.profile.full_name', 'Anonymous User');
+    }
+
+    /** @test */
+    public function counselor_chat_list_masks_shared_peer_room_until_identity_is_revealed(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $response = $this->actingAs($this->counselor)->getJson('/api/sessions/chat-list?as_role=counselor&open_only=1&limit=20');
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('0.id', $session->id)
+            ->assertJsonPath('0.is_anonymous', true)
+            ->assertJsonPath('0.identity_visible_to_viewer', false)
+            ->assertJsonPath('0.student_id', 0)
+            ->assertJsonPath('0.student.email', null)
+            ->assertJsonPath('0.student.profile.full_name', 'Anonymous User');
+    }
+
+    /** @test */
+    public function peer_counselor_sees_student_messages_masked_in_delegated_session(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        $this->actingAs($this->student)->postJson(
+            "/api/sessions/{$session->id}/messages",
+            [
+                'content' => 'I need peer support.',
+                'message_type' => 'text',
+                'is_encrypted' => false,
+            ]
+        )->assertStatus(201);
+
+        $history = $this->actingAs($this->peer)->getJson("/api/sessions/{$session->id}/messages?limit=10");
+
+        $history
+            ->assertStatus(200)
+            ->assertJsonPath('0.sender_id', 0)
+            ->assertJsonPath('0.sender_display_name', 'Anonymous User')
+            ->assertJsonPath('0.sent_as_anonymous', true);
     }
 
     /** @test */
