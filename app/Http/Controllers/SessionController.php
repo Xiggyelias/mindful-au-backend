@@ -1373,6 +1373,15 @@ class SessionController extends Controller
                 : 'active',
         ]);
 
+        PeerAssignment::query()
+            ->where('session_id', (int) $session->id)
+            ->where('peer_counselor_id', (int) $user->id)
+            ->where('status', 'active')
+            ->update([
+                'status' => 'escalated',
+                'notes' => 'Escalated to supervising counselor',
+            ]);
+
         Escalation::query()->create([
             'session_id' => $session->id,
             'escalated_by' => $user->id,
@@ -1456,6 +1465,15 @@ class SessionController extends Controller
                 ? $session->status
                 : 'active',
         ]);
+
+        PeerAssignment::query()
+            ->where('session_id', (int) $session->id)
+            ->where('peer_counselor_id', (int) $user->id)
+            ->where('status', 'active')
+            ->update([
+                'status' => 'escalated',
+                'notes' => 'Urgent concern flagged for supervising counselor',
+            ]);
 
         Escalation::query()->create([
             'session_id' => $session->id,

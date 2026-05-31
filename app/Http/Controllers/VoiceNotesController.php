@@ -6,7 +6,9 @@ use App\Models\Message;
 use App\Models\CounselingSession;
 use App\Models\AiDiagnostic;
 use App\Models\Notification;
+use App\Models\PeerAssignment;
 use App\Models\User;
+use App\Support\ChatMessageData;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
@@ -25,9 +27,7 @@ class VoiceNotesController extends Controller
             return true;
         }
 
-        return $user->hasRole('peer_counselor')
-            && (int) $session->peer_counselor_id === $uid
-            && $session->assigned_role === 'peer_counselor';
+        return $this->isAssignedPeerCounselor($user, $session);
     }
 
     public function upload(Request $request, string $sessionId): JsonResponse
@@ -97,7 +97,7 @@ class VoiceNotesController extends Controller
 
         $this->notifyRecipients($session, (int) $user->id, $message);
 
-        return response()->json($message->load('sender'), 201);
+        return response()->json(ChatMessageData::make($message->load('sender.profile'), true), 201);
     }
 
     public function download(Request $request, string $messageId): JsonResponse
@@ -222,12 +222,13 @@ class VoiceNotesController extends Controller
     private function resolveRecipientId(CounselingSession $session, int $senderId): ?int
     {
         if ((int) $session->student_id === $senderId) {
-            return $session->assigned_role === 'peer_counselor' && $session->peer_counselor_id
-                ? (int) $session->peer_counselor_id
+            $peerCounselorId = $this->activeCasePeerCounselorId($session);
+            return $peerCounselorId > 0
+                ? $peerCounselorId
                 : ($session->counselor_id ? (int) $session->counselor_id : null);
         }
 
-        if ((int) $session->peer_counselor_id === $senderId || (int) $session->counselor_id === $senderId) {
+        if ($this->activeCasePeerCounselorId($session) === $senderId || (int) $session->counselor_id === $senderId) {
             return (int) $session->student_id;
         }
 
@@ -236,9 +237,22 @@ class VoiceNotesController extends Controller
 
     private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool
     {
-        return $user->hasRole('peer_counselor')
-            && (int) $session->peer_counselor_id === (int) $user->id
-            && $session->assigned_role === 'peer_counselor';
+        if (! $user->hasRole('peer_counselor')) {
+            return false;
+        }
+
+        if (
+            (int) $session->peer_counselor_id === (int) $user->id
+            && $session->assigned_role === 'peer_counselor'
+        ) {
+            return true;
+        }
+
+        return PeerAssignment::query()
+            ->where('session_id', (int) $session->id)
+            ->where('peer_counselor_id', (int) $user->id)
+            ->whereIn('status', ['active', 'escalated'])
+            ->exists();
     }
 
     private function latestRiskLevel(CounselingSession $session): ?string
@@ -266,8 +280,8 @@ class VoiceNotesController extends Controller
     {
         $studentId = (int) $session->student_id;
         $counselorId = (int) $session->counselor_id;
-        $peerCounselorId = (int) $session->peer_counselor_id;
-        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor' && $peerCounselorId > 0;
+        $peerCounselorId = $this->activeCasePeerCounselorId($session);
+        $isDelegatedPeerThread = $peerCounselorId > 0;
         $participantIds = $isDelegatedPeerThread
             ? [$studentId, $peerCounselorId, $counselorId]
             : [$studentId, $counselorId];
@@ -295,6 +309,22 @@ class VoiceNotesController extends Controller
                 'type' => 'info',
             ]);
         }
+    }
+
+    private function activeCasePeerCounselorId(CounselingSession $session): int
+    {
+        $peerCounselorId = (int) ($session->peer_counselor_id ?? 0);
+        if ($peerCounselorId > 0 && $session->assigned_role === 'peer_counselor') {
+            return $peerCounselorId;
+        }
+
+        return (int) (PeerAssignment::query()
+            ->where('session_id', (int) $session->id)
+            ->whereNotNull('peer_counselor_id')
+            ->whereIn('status', ['active', 'escalated'])
+            ->orderByDesc('assigned_at')
+            ->orderByDesc('id')
+            ->value('peer_counselor_id') ?? 0);
     }
 }
 

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\CounselingSession;
 use App\Models\AiDiagnostic;
+use App\Models\PeerAssignment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -216,6 +217,62 @@ class ChatAttachmentUploadTest extends TestCase
         ]);
 
         $documentResponse->assertStatus(422);
+    }
+
+    /** @test */
+    public function peer_assignment_table_access_uses_same_voice_and_attachment_rules(): void
+    {
+        $legacySession = CounselingSession::create([
+            'student_id' => $this->student->id,
+            'counselor_id' => $this->counselor->id,
+            'peer_counselor_id' => null,
+            'assigned_role' => 'counselor',
+            'status' => 'active',
+            'session_type' => 'chat',
+        ]);
+
+        PeerAssignment::create([
+            'session_id' => $legacySession->id,
+            'peer_counselor_id' => $this->peerCounselor->id,
+            'assigned_by' => $this->counselor->id,
+            'status' => 'active',
+            'assigned_at' => now(),
+        ]);
+
+        $peerVoice = UploadedFile::fake()->create('legacy-peer.webm', 128, 'audio/webm');
+        $peerVoiceResponse = $this->actingAs($this->peerCounselor)->post("/api/sessions/{$legacySession->id}/voice-notes", [
+            'audio' => $peerVoice,
+        ]);
+
+        $peerVoiceResponse
+            ->assertStatus(201)
+            ->assertJsonPath('sender_id', $this->peerCounselor->id)
+            ->assertJsonPath('recipient_id', $this->student->id)
+            ->assertJsonPath('message_type', 'voice');
+
+        $studentVoice = UploadedFile::fake()->create('legacy-student.webm', 128, 'audio/webm');
+        $studentVoiceResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $legacySession->id,
+            'message_type' => 'voice',
+            'file' => $studentVoice,
+        ]);
+
+        $studentVoiceResponse
+            ->assertStatus(201)
+            ->assertJsonPath('sender_id', $this->student->id)
+            ->assertJsonPath('recipient_id', $this->peerCounselor->id)
+            ->assertJsonPath('message_type', 'voice');
+
+        $document = UploadedFile::fake()->create('legacy-notes.pdf', 64, 'application/pdf');
+        $documentResponse = $this->actingAs($this->peerCounselor)->post('/api/chat/upload-file', [
+            'session_id' => $legacySession->id,
+            'message_type' => 'file',
+            'file' => $document,
+        ]);
+
+        $documentResponse
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Peer counselors can send voice notes, but cannot upload file attachments in supervised chat.');
     }
 
     private function assignRole(User $user, string $role): void

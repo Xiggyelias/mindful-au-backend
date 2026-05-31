@@ -7,6 +7,7 @@ use App\Models\AiDiagnostic;
 use App\Models\Message;
 use App\Models\CounselingSession;
 use App\Models\Notification;
+use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\ChatMessageData;
 use Illuminate\Http\Request;
@@ -90,10 +91,7 @@ class ChatAttachmentController extends Controller
             ], 422);
         }
 
-        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor'
-            && (int) $session->peer_counselor_id > 0;
-
-        if (!$user->hasRole('admin') && $isDelegatedPeerThread && $isAssignedPeerCounselor) {
+        if (!$user->hasRole('admin') && $isAssignedPeerCounselor) {
             if ($messageType !== 'voice' || !$this->isVoiceUploadMimeType($mimeType)) {
                 return response()->json([
                     'message' => 'Peer counselors can send voice notes, but cannot upload file attachments in supervised chat.',
@@ -266,12 +264,13 @@ class ChatAttachmentController extends Controller
         $recipientId = null;
 
         if ((int) $session->student_id === $senderId) {
-            if ($session->assigned_role === 'peer_counselor' && $session->peer_counselor_id) {
-                $recipientId = (int) $session->peer_counselor_id;
+            $peerCounselorId = $this->activeCasePeerCounselorId($session);
+            if ($peerCounselorId > 0) {
+                $recipientId = $peerCounselorId;
             } else {
                 $recipientId = $session->counselor_id ? (int) $session->counselor_id : null;
             }
-        } elseif ((int) $session->peer_counselor_id === $senderId) {
+        } elseif ($this->activeCasePeerCounselorId($session) === $senderId) {
             $recipientId = (int) $session->student_id;
         } elseif ((int) $session->counselor_id === $senderId) {
             $recipientId = (int) $session->student_id;
@@ -299,9 +298,22 @@ class ChatAttachmentController extends Controller
 
     private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool
     {
-        return $user->hasRole('peer_counselor')
-            && (int) $session->peer_counselor_id === (int) $user->id
-            && $session->assigned_role === 'peer_counselor';
+        if (! $user->hasRole('peer_counselor')) {
+            return false;
+        }
+
+        if (
+            (int) $session->peer_counselor_id === (int) $user->id
+            && $session->assigned_role === 'peer_counselor'
+        ) {
+            return true;
+        }
+
+        return PeerAssignment::query()
+            ->where('session_id', (int) $session->id)
+            ->where('peer_counselor_id', (int) $user->id)
+            ->whereIn('status', ['active', 'escalated'])
+            ->exists();
     }
 
     private function notifyRecipient(
@@ -351,8 +363,8 @@ class ChatAttachmentController extends Controller
     {
         $studentId = (int) $session->student_id;
         $counselorId = (int) $session->counselor_id;
-        $peerCounselorId = (int) $session->peer_counselor_id;
-        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor' && $peerCounselorId > 0;
+        $peerCounselorId = $this->activeCasePeerCounselorId($session);
+        $isDelegatedPeerThread = $peerCounselorId > 0;
         $participantIds = $isDelegatedPeerThread
             ? [$studentId, $peerCounselorId, $counselorId]
             : [$studentId, $counselorId];
@@ -460,5 +472,21 @@ class ChatAttachmentController extends Controller
     private function resolveAnonymousLabel(CounselingSession $_session): string
     {
         return 'Anonymous User';
+    }
+
+    private function activeCasePeerCounselorId(CounselingSession $session): int
+    {
+        $peerCounselorId = (int) ($session->peer_counselor_id ?? 0);
+        if ($peerCounselorId > 0 && $session->assigned_role === 'peer_counselor') {
+            return $peerCounselorId;
+        }
+
+        return (int) (PeerAssignment::query()
+            ->where('session_id', (int) $session->id)
+            ->whereNotNull('peer_counselor_id')
+            ->whereIn('status', ['active', 'escalated'])
+            ->orderByDesc('assigned_at')
+            ->orderByDesc('id')
+            ->value('peer_counselor_id') ?? 0);
     }
 }

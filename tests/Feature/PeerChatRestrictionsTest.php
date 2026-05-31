@@ -270,6 +270,13 @@ class PeerChatRestrictionsTest extends TestCase
     public function peer_escalation_keeps_peer_and_counselor_in_shared_case_room(): void
     {
         $session = $this->makeDelegatedPeerSession();
+        PeerAssignment::create([
+            'session_id' => $session->id,
+            'peer_counselor_id' => $this->peer->id,
+            'assigned_by' => $this->counselor->id,
+            'status' => 'active',
+            'assigned_at' => now(),
+        ]);
 
         $response = $this->actingAs($this->peer)->postJson("/api/sessions/{$session->id}/escalate", [
             'reason' => 'Student asked for counselor support.',
@@ -283,12 +290,24 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('status', 'active');
 
         $this->assertSame(1, CounselingSession::query()->count());
+        $this->assertDatabaseHas('peer_assignments', [
+            'session_id' => $session->id,
+            'peer_counselor_id' => $this->peer->id,
+            'status' => 'escalated',
+        ]);
     }
 
     /** @test */
     public function urgent_peer_flag_keeps_peer_visible_in_shared_case_room(): void
     {
         $session = $this->makeDelegatedPeerSession();
+        PeerAssignment::create([
+            'session_id' => $session->id,
+            'peer_counselor_id' => $this->peer->id,
+            'assigned_by' => $this->counselor->id,
+            'status' => 'active',
+            'assigned_at' => now(),
+        ]);
 
         $response = $this->actingAs($this->peer)->postJson("/api/sessions/{$session->id}/flag-urgent", [
             'reason' => 'Needs urgent counselor review.',
@@ -302,6 +321,11 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('status', 'active');
 
         $this->assertSame(1, CounselingSession::query()->count());
+        $this->assertDatabaseHas('peer_assignments', [
+            'session_id' => $session->id,
+            'peer_counselor_id' => $this->peer->id,
+            'status' => 'escalated',
+        ]);
     }
 
     /** @test */

@@ -130,9 +130,9 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/analytics/export', [ReportExportController::class, 'export'])->middleware('admin');
 
     // Voice Notes
-    Route::post('/sessions/{id}/voice-notes', [VoiceNotesController::class, 'upload']);
-    Route::get('/messages/{id}/voice-note', [VoiceNotesController::class, 'download']);
-    Route::get('/messages/{id}/voice-note/stream', [VoiceNotesController::class, 'stream']);
+    Route::post('/sessions/{id}/voice-notes', [VoiceNotesController::class, 'upload'])->middleware('throttle:messages-write');
+    Route::get('/messages/{id}/voice-note', [VoiceNotesController::class, 'download'])->middleware('throttle:messages-read');
+    Route::get('/messages/{id}/voice-note/stream', [VoiceNotesController::class, 'stream'])->middleware('throttle:messages-read');
 
     // Video Calls
     Route::post('/video-calls/authorize', [VideoCallController::class, 'authorizeCall'])->middleware('throttle:messages-write');
