@@ -662,8 +662,8 @@ class SessionController extends Controller
     }
 
     /**
-     * Student: update anonymity for one open chat session (chat-level flag).
-     * Also aligns profile anonymous_mode so dashboard and new chats stay consistent.
+     * Student: update anonymity for one open chat session only.
+     * The profile anonymous_mode default for new chats is managed separately.
      */
     public function updateChatAnonymity(Request $request, string $id): JsonResponse
     {
@@ -694,11 +694,6 @@ class SessionController extends Controller
 
         $this->applyChatAnonymity($session, $isAnonymous);
         $session->save();
-
-        $profile = $user->profile;
-        if ($profile) {
-            $profile->forceFill(['anonymous_mode' => $isAnonymous])->save();
-        }
 
         $session->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
         $this->appendRiskSignals($session, $user, $request);

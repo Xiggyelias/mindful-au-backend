@@ -81,10 +81,11 @@ class SecurityHardeningTest extends TestCase
     }
 
     /** @test */
-    public function student_can_update_chat_anonymity_and_profile_syncs(): void
+    public function student_can_update_chat_anonymity_without_changing_profile_default(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-chat-anon-toggle@test.com', 'Counselor Chat Anon');
         $student = $this->createPortalUser('student', 'student-chat-anon-toggle@test.com', 'Student Chat Anon');
+        $student->profile()->update(['anonymous_mode' => false]);
 
         $created = $this->actingAs($student)->postJson('/api/sessions', [
             'counselor_id' => $counselor->id,
@@ -115,7 +116,7 @@ class SecurityHardeningTest extends TestCase
 
         $student->refresh();
         $student->load('profile');
-        $this->assertTrue((bool) ($student->profile?->anonymous_mode));
+        $this->assertFalse((bool) ($student->profile?->anonymous_mode));
     }
 
     /** @test */
