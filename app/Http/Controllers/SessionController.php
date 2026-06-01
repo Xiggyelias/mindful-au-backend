@@ -410,20 +410,14 @@ class SessionController extends Controller
         $queryDurationMs = (microtime(true) - $queryStart) * 1000;
 
         $viewerIsAdmin = $isAdmin;
-        $viewerIsPeerCounselor = $effectiveRole === 'peer_counselor';
         $studentOnlineThreshold = now()->subMinutes(
             max(1, (int) env('CHAT_PARTICIPANT_ONLINE_WINDOW_MINUTES', 10))
         );
 
         $transformStart = microtime(true);
-        $sessions = $rows->map(function ($row) use ($viewerId, $viewerIsAdmin, $viewerIsPeerCounselor, $studentOnlineThreshold) {
+        $sessions = $rows->map(function ($row) use ($viewerId, $viewerIsAdmin, $studentOnlineThreshold) {
             $isAnonymous = (bool) $row->is_anonymous;
-            $isPeerSupportCase = (string) $row->assigned_role === 'peer_counselor'
-                && (int) ($row->peer_counselor_id ?? 0) > 0;
-            $forcePeerMask = $viewerIsPeerCounselor
-                && $isPeerSupportCase
-                && (int) $row->peer_counselor_id === $viewerId;
-            $isAnonymousForViewer = $isAnonymous || $isPeerSupportCase || $forcePeerMask;
+            $isAnonymousForViewer = $isAnonymous;
             $dbAnonymousId = trim((string) ($row->anonymous_id ?? ''));
 
             $identityVisible = !$isAnonymousForViewer
@@ -802,7 +796,7 @@ class SessionController extends Controller
             }
 
             $identityVisible = $this->canViewerSeeAnonymousIdentity($request->user(), $session);
-            $treatAsAnonymous = $session->is_anonymous || $this->isPeerSupportCase($session);
+            $treatAsAnonymous = (bool) $session->is_anonymous;
             $visibleStudentId = $identityVisible ? (int) $session->student_id : 0;
 
             // chat_peer_student_id mirrors the chatList projection so the E2E hook can
@@ -1321,6 +1315,8 @@ class SessionController extends Controller
 
         $targetSession->update([
             'assigned_by' => $user->id,
+            'assigned_role' => 'counselor',
+            'peer_counselor_id' => null,
             'status' => 'completed',
             'ended_at' => now(),
         ]);
@@ -1729,7 +1725,7 @@ class SessionController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (!$session->is_anonymous && !$this->isPeerSupportCase($session)) {
+        if (!$session->is_anonymous) {
             return response()->json(['message' => 'Identity reveal is only available for anonymous sessions.'], 422);
         }
 
@@ -1835,7 +1831,7 @@ class SessionController extends Controller
             $identityVisible = $this->canViewerSeeAnonymousIdentity($viewer, $session);
             $session->setAttribute('identity_visible_to_viewer', $identityVisible);
             // Preserve the real student user id for E2E/chat routing when anonymous projection masks student_id to 0.
-            $treatAsAnonymous = $session->is_anonymous || $this->isPeerSupportCase($session);
+            $treatAsAnonymous = (bool) $session->is_anonymous;
             if ($treatAsAnonymous) {
                 $session->setAttribute('chat_peer_student_id', (int) $session->student_id);
             }
@@ -1860,7 +1856,7 @@ class SessionController extends Controller
         if ($viewer) {
             $identityVisible = $this->canViewerSeeAnonymousIdentity($viewer, $session);
             $session->setAttribute('identity_visible_to_viewer', $identityVisible);
-            $treatAsAnonymous = $session->is_anonymous || $this->isPeerSupportCase($session);
+            $treatAsAnonymous = (bool) $session->is_anonymous;
             if ($treatAsAnonymous) {
                 $session->setAttribute('chat_peer_student_id', (int) $session->student_id);
             }
@@ -1937,7 +1933,7 @@ class SessionController extends Controller
         Request $request,
         ?string $riskLevel
     ): void {
-        if ((!$session->is_anonymous && !$this->isPeerSupportCase($session)) || $session->identity_revealed_at) {
+        if (!$session->is_anonymous || $session->identity_revealed_at) {
             return;
         }
 
@@ -2001,7 +1997,7 @@ class SessionController extends Controller
 
     private function canViewerSeeAnonymousIdentity(User $viewer, CounselingSession $session): bool
     {
-        $treatAsAnonymous = $session->is_anonymous || $this->isPeerSupportCase($session);
+        $treatAsAnonymous = (bool) $session->is_anonymous;
 
         if (!$treatAsAnonymous) {
             return true;
@@ -2026,18 +2022,12 @@ class SessionController extends Controller
         return false;
     }
 
-    private function isPeerSupportCase(CounselingSession $session): bool
-    {
-        return (string) $session->assigned_role === 'peer_counselor'
-            && (int) ($session->peer_counselor_id ?? 0) > 0;
-    }
-
     private function applyAnonymousProjection(
         CounselingSession $session,
         User $viewer,
         bool $identityVisible
     ): void {
-        $treatAsAnonymous = $session->is_anonymous || $this->isPeerSupportCase($session);
+        $treatAsAnonymous = (bool) $session->is_anonymous;
 
         if (!$treatAsAnonymous) {
             return;
@@ -2069,7 +2059,7 @@ class SessionController extends Controller
 
     private function resolveAnonymousDisplayId(CounselingSession $session): string
     {
-        if (!$session->is_anonymous && !$this->isPeerSupportCase($session)) {
+        if (!$session->is_anonymous) {
             return '';
         }
 

@@ -538,7 +538,7 @@ class MessageController extends Controller
             'file_url' => $validated['file_url'] ?? null,
             'has_file' => !empty($validated['file_url']),
             'is_encrypted' => $isEncrypted,
-            'sent_as_anonymous' => (bool) $session->is_anonymous || $this->isPeerSupportCase($session),
+            'sent_as_anonymous' => (bool) $session->is_anonymous,
             'seen_at' => null,
         ]);
 
@@ -1051,10 +1051,9 @@ class MessageController extends Controller
         int $recipientId,
         ?bool $sentAsAnonymousSnapshot = null,
     ): bool {
-        $peerSupportCase = $this->isPeerSupportCase($session);
-        $effectiveAnonymous = $sentAsAnonymousSnapshot ?? ((bool) $session->is_anonymous || $peerSupportCase);
+        $effectiveAnonymous = $sentAsAnonymousSnapshot ?? (bool) $session->is_anonymous;
 
-        if (! $effectiveAnonymous && ! $peerSupportCase) {
+        if (! $effectiveAnonymous) {
             return false;
         }
 
@@ -1064,14 +1063,6 @@ class MessageController extends Controller
 
         $recipient = User::with('roles')->find($recipientId);
         if (!$recipient) {
-            return true;
-        }
-
-        if (
-            $peerSupportCase
-            && $recipient->hasRole('peer_counselor')
-            && (int) $session->peer_counselor_id === $recipientId
-        ) {
             return true;
         }
 
@@ -1091,12 +1082,6 @@ class MessageController extends Controller
     private function resolveAnonymousLabel(CounselingSession $_session): string
     {
         return 'Anonymous User';
-    }
-
-    private function isPeerSupportCase(CounselingSession $session): bool
-    {
-        return (string) $session->assigned_role === 'peer_counselor'
-            && (int) ($session->peer_counselor_id ?? 0) > 0;
     }
 
     private function isAnonymousSessionExpired(CounselingSession $session): bool
