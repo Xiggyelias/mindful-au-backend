@@ -141,7 +141,7 @@ class MessageController extends Controller
         $query = Message::query()
             ->where('session_id', $sessionId)
             ->with('chatFile')
-            ->select([
+            ->select(Message::selectableColumns([
                 'id',
                 'case_id',
                 'session_id',
@@ -158,7 +158,7 @@ class MessageController extends Controller
                 'seen_at',
                 'created_at',
                 'updated_at',
-            ]);
+            ]));
 
         if ($afterId > 0) {
             $messages = $query
@@ -335,7 +335,7 @@ class MessageController extends Controller
             })
             ->orderBy('id')
             ->limit(40)
-            ->get([
+            ->get(Message::selectableColumns([
                 'id',
                 'case_id',
                 'session_id',
@@ -347,7 +347,7 @@ class MessageController extends Controller
                 'is_encrypted',
                 'sent_as_anonymous',
                 'created_at',
-            ]);
+            ]));
 
         if ($rows->isEmpty()) {
             return response()->json([

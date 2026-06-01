@@ -149,6 +149,40 @@ class ChatAttachmentUploadTest extends TestCase
     }
 
     /** @test */
+    public function missing_attachment_blob_does_not_emit_broken_signed_urls(): void
+    {
+        $file = UploadedFile::fake()->create('missing-report.pdf', 256, 'application/pdf');
+
+        $uploadResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'file' => $file,
+        ]);
+
+        $uploadResponse->assertStatus(201);
+        $messageId = (int) $uploadResponse->json('id');
+        $storedPath = (string) $uploadResponse->json('attachment.file_path');
+        Storage::disk('local')->delete($storedPath);
+
+        $messagesResponse = $this->actingAs($this->counselor)->getJson(
+            '/api/chat/messages?session_id=' . $this->session->id
+        );
+
+        $messagesResponse
+            ->assertStatus(200)
+            ->assertJsonPath('0.id', $messageId)
+            ->assertJsonPath('0.has_file', true)
+            ->assertJsonPath('0.attachment.available', false)
+            ->assertJsonPath('0.attachment.url', null)
+            ->assertJsonPath('0.attachment.download_url', null);
+
+        $downloadResponse = $this->actingAs($this->counselor)->getJson("/api/messages/{$messageId}/attachment");
+
+        $downloadResponse
+            ->assertStatus(404)
+            ->assertJson(['message' => 'File not found']);
+    }
+
+    /** @test */
     public function assigned_peer_counselor_can_upload_voice_note_but_not_file_attachment(): void
     {
         $peerSession = CounselingSession::create([

@@ -34,6 +34,8 @@ class ChatFile extends Model
 
     public function toAttachmentPayload(): array
     {
+        $available = $this->storedFileExists();
+
         return [
             'id' => (int) $this->id,
             'message_id' => (int) $this->message_id,
@@ -42,8 +44,9 @@ class ChatFile extends Model
             'file_type' => $this->file_type,
             'file_size' => (int) $this->file_size,
             'uploaded_at' => $this->uploaded_at?->toISOString(),
-            'url' => $this->signedUrl(),
-            'download_url' => $this->signedUrl(true),
+            'available' => $available,
+            'url' => $available ? $this->signedUrl() : null,
+            'download_url' => $available ? $this->signedUrl(true) : null,
         ];
     }
 
@@ -81,6 +84,20 @@ class ChatFile extends Model
         $disk = (string) config('chat.attachments.disk', 'local');
         if ($this->file_path && Storage::disk($disk)->exists($this->file_path)) {
             Storage::disk($disk)->delete($this->file_path);
+        }
+    }
+
+    public function storedFileExists(): bool
+    {
+        if (! $this->file_path) {
+            return false;
+        }
+
+        try {
+            $disk = (string) config('chat.attachments.disk', 'local');
+            return Storage::disk($disk)->exists($this->file_path);
+        } catch (\Throwable) {
+            return false;
         }
     }
 }

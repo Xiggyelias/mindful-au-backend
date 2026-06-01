@@ -4,20 +4,30 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class Message extends Model
 {
     use HasFactory;
 
+    private static ?array $databaseColumns = null;
+
     protected static function booted(): void
     {
         static::creating(function (self $message): void {
-            if (empty($message->case_id) && !empty($message->session_id)) {
+            $hasCaseId = self::databaseHasColumn('case_id');
+            $hasSenderRole = self::databaseHasColumn('sender_role');
+            $hasSenderNameSnapshot = self::databaseHasColumn('sender_name_snapshot');
+
+            if ($hasCaseId && empty($message->case_id) && !empty($message->session_id)) {
                 $message->case_id = (int) $message->session_id;
             }
 
-            if (!empty($message->sender_role) && !empty($message->sender_name_snapshot)) {
+            if (
+                (! $hasSenderRole || ! empty($message->sender_role))
+                && (! $hasSenderNameSnapshot || ! empty($message->sender_name_snapshot))
+            ) {
                 return;
             }
 
@@ -28,11 +38,11 @@ class Message extends Model
                 ? $message->sender
                 : User::query()->with(['profile', 'roles'])->find($message->sender_id);
 
-            if (empty($message->sender_role)) {
+            if ($hasSenderRole && empty($message->sender_role)) {
                 $message->sender_role = self::resolveSenderRoleSnapshot($sender, $session, (int) $message->sender_id);
             }
 
-            if (empty($message->sender_name_snapshot)) {
+            if ($hasSenderNameSnapshot && empty($message->sender_name_snapshot)) {
                 $message->sender_name_snapshot = self::resolveSenderNameSnapshot($sender, (string) $message->sender_role);
             }
         });
@@ -65,6 +75,27 @@ class Message extends Model
         'is_encrypted' => 'boolean',
         'seen_at' => 'datetime',
     ];
+
+    public static function databaseHasColumn(string $column): bool
+    {
+        if (self::$databaseColumns === null) {
+            try {
+                self::$databaseColumns = Schema::getColumnListing((new self())->getTable());
+            } catch (\Throwable) {
+                self::$databaseColumns = [];
+            }
+        }
+
+        return in_array($column, self::$databaseColumns, true);
+    }
+
+    public static function selectableColumns(array $columns): array
+    {
+        return array_values(array_filter(
+            $columns,
+            static fn (string $column): bool => self::databaseHasColumn($column)
+        ));
+    }
 
     private static function resolveSenderRoleSnapshot(?User $sender, ?CounselingSession $session, int $senderId): string
     {

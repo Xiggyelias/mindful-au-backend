@@ -794,6 +794,7 @@ class SessionController extends Controller
                     'assigned_role',
                     'is_anonymous',
                     'status',
+                    'identity_revealed_at',
                     'updated_at',
                 ])
                 ->findOrFail($id);
@@ -2287,6 +2288,31 @@ class SessionController extends Controller
                 'status' => 'cancelled',
                 'ended_at' => now(),
             ]);
+    }
+
+    private function isAnonymousSessionExpired(CounselingSession $session): bool
+    {
+        if (! $session->is_anonymous) {
+            return false;
+        }
+
+        $ttlHours = max(1, (int) env('ANONYMOUS_SESSION_TTL_HOURS', self::ANONYMOUS_SESSION_TTL_HOURS));
+        $updatedAt = $session->updated_at instanceof \DateTimeInterface
+            ? Carbon::instance($session->updated_at)
+            : now();
+
+        if ($updatedAt->greaterThanOrEqualTo(now()->subHours($ttlHours))) {
+            return false;
+        }
+
+        if (in_array((string) $session->status, ['pending', 'active'], true)) {
+            $session->forceFill([
+                'status' => 'cancelled',
+                'ended_at' => now(),
+            ])->saveQuietly();
+        }
+
+        return true;
     }
 
     private function logCaseTransition(
