@@ -143,7 +143,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertStatus(200)
             ->assertJsonPath('peer_counselor_id', $this->peer->id)
             ->assertJsonPath('assigned_role', 'peer_counselor')
-            ->assertJsonPath('is_anonymous', true)
+            ->assertJsonPath('is_anonymous', false)
             ->assertJsonPath('status', 'active');
 
         $this->assertNotSame((int) $session->id, $peerSessionId);
@@ -155,8 +155,8 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertSame('active', $session->status);
 
         $peerRoom = CounselingSession::query()->findOrFail($peerSessionId);
-        $this->assertTrue((bool) $peerRoom->is_anonymous);
-        $this->assertNotEmpty($peerRoom->anonymous_id);
+        $this->assertFalse((bool) $peerRoom->is_anonymous);
+        $this->assertNull($peerRoom->anonymous_id);
         $this->assertNull($peerRoom->identity_revealed_at);
 
         $this->assertDatabaseHas('peer_assignments', [
@@ -271,6 +271,32 @@ class PeerChatRestrictionsTest extends TestCase
             'peer_counselor_id' => $this->peer->id,
             'status' => 'closed',
         ]);
+    }
+
+    /** @test */
+    public function assigning_peer_counselor_preserves_anonymous_source_chat(): void
+    {
+        $session = $this->makeDirectCounselorSession();
+        $anonymousId = CounselingSession::generateUniqueAnonymousId();
+        $session->update([
+            'is_anonymous' => true,
+            'anonymous_id' => $anonymousId,
+        ]);
+
+        $response = $this->actingAs($this->counselor)->postJson("/api/sessions/{$session->id}/assign-peer", [
+            'peer_counselor_id' => $this->peer->id,
+        ]);
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('peer_counselor_id', $this->peer->id)
+            ->assertJsonPath('assigned_role', 'peer_counselor')
+            ->assertJsonPath('is_anonymous', true);
+
+        $peerRoom = CounselingSession::query()->findOrFail((int) $response->json('id'));
+        $this->assertTrue((bool) $peerRoom->is_anonymous);
+        $this->assertNotEmpty($peerRoom->anonymous_id);
+        $this->assertNotSame($anonymousId, $peerRoom->anonymous_id);
     }
 
     /** @test */
@@ -475,6 +501,10 @@ class PeerChatRestrictionsTest extends TestCase
     public function student_can_turn_off_anonymous_mode_for_supervised_peer_room(): void
     {
         $directSession = $this->makeDirectCounselorSession();
+        $directSession->update([
+            'is_anonymous' => true,
+            'anonymous_id' => CounselingSession::generateUniqueAnonymousId(),
+        ]);
 
         $assignResponse = $this->actingAs($this->counselor)->postJson("/api/sessions/{$directSession->id}/assign-peer", [
             'peer_counselor_id' => $this->peer->id,

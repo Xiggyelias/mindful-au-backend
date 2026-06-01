@@ -247,17 +247,6 @@ class UserController extends Controller
                 ->get();
         }
 
-        // Apply anonymous mode for counselors
-        if ($user->hasRole('counselor') && !$user->hasRole('admin')) {
-            $students = $students->map(function($student) {
-                if ($student->profile && $student->profile->anonymous_mode) {
-                    $student->profile->full_name = 'Anonymous #' . substr($student->id, -4);
-                    $student->email = 'anonymous@africau.edu';
-                }
-                return $student;
-            });
-        }
-
         if ($usePagination) {
             $payload = PaginationPayload::fromPaginator($paginator, $request, []);
             $payload['data'] = $students->values()->all();

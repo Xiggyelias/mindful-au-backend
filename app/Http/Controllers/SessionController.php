@@ -1116,11 +1116,10 @@ class SessionController extends Controller
         $sourceSessionId = (int) $session->id;
         $sourceIsPeerRoom = $session->assigned_role === 'peer_counselor'
             && (int) ($session->peer_counselor_id ?? 0) > 0;
-        $peerAnonymousId = trim((string) ($session->anonymous_id ?? '')) !== ''
-            ? (string) $session->anonymous_id
-            : $this->generateAnonymousId();
+        $peerIsAnonymous = (bool) $session->is_anonymous;
+        $peerAnonymousId = $peerIsAnonymous ? $this->generateAnonymousId() : null;
 
-        $targetSession = DB::transaction(function () use ($session, $user, $peerCounselorId, $sourceIsPeerRoom, $peerAnonymousId): CounselingSession {
+        $targetSession = DB::transaction(function () use ($session, $user, $peerCounselorId, $sourceIsPeerRoom, $peerIsAnonymous, $peerAnonymousId): CounselingSession {
             $targetSession = $sourceIsPeerRoom
                 ? $session
                 : CounselingSession::query()
@@ -1141,7 +1140,7 @@ class SessionController extends Controller
                     'assigned_role' => 'peer_counselor',
                     'session_type' => 'chat',
                     'status' => 'active',
-                    'is_anonymous' => true,
+                    'is_anonymous' => $peerIsAnonymous,
                     'anonymous_id' => $peerAnonymousId,
                     'identity_revealed_at' => null,
                     'identity_revealed_by' => null,
@@ -1151,10 +1150,14 @@ class SessionController extends Controller
                     'peer_counselor_id' => $peerCounselorId,
                     'assigned_by' => $user->id,
                     'assigned_role' => 'peer_counselor',
-                    'is_anonymous' => true,
-                    'anonymous_id' => trim((string) ($targetSession->anonymous_id ?? '')) !== ''
-                        ? $targetSession->anonymous_id
-                        : $peerAnonymousId,
+                    'is_anonymous' => $peerIsAnonymous,
+                    'anonymous_id' => $peerIsAnonymous
+                        ? (
+                            trim((string) ($targetSession->anonymous_id ?? '')) !== ''
+                                ? $targetSession->anonymous_id
+                                : $peerAnonymousId
+                        )
+                        : null,
                     'identity_revealed_at' => null,
                     'identity_revealed_by' => null,
                     'status' => in_array((string) $targetSession->status, ['completed', 'cancelled'], true)

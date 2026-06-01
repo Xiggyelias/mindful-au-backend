@@ -248,6 +248,24 @@ class SecurityHardeningTest extends TestCase
     }
 
     /** @test */
+    public function counselor_student_roster_does_not_mask_profile_anonymous_mode(): void
+    {
+        $counselor = $this->createPortalUser('counselor', 'counselor-roster-anon@test.com', 'Counselor Roster');
+        $student = $this->createPortalUser('student', 'student-roster-anon@test.com', 'Roster Visible Student');
+        $student->profile()->update(['anonymous_mode' => true]);
+
+        $response = $this->actingAs($counselor)->getJson('/api/users/students?limit=50');
+
+        $response->assertStatus(200);
+        $rows = collect($response->json());
+        $row = $rows->first(fn ($item) => (int) ($item['id'] ?? 0) === (int) $student->id);
+
+        $this->assertNotNull($row);
+        $this->assertSame('Roster Visible Student', $row['profile']['full_name'] ?? null);
+        $this->assertSame('student-roster-anon@test.com', $row['email'] ?? null);
+    }
+
+    /** @test */
     public function counselor_cannot_patch_chat_anonymity(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-no-anon-patch@test.com', 'Counselor No Anon Patch');
