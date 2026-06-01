@@ -363,6 +363,7 @@ class SessionController extends Controller
             ->leftJoin('profiles as peer_profile', 'peer_profile.user_id', '=', 's.peer_counselor_id')
             ->leftJoin('users as case_peer', 'case_peer.id', '=', 'case_peer_assignment.peer_counselor_id')
             ->leftJoin('profiles as case_peer_profile', 'case_peer_profile.user_id', '=', 'case_peer_assignment.peer_counselor_id')
+            ->distinct()
             ->select([
                 's.id',
                 's.student_id',
@@ -528,6 +529,7 @@ class SessionController extends Controller
                 ] : null,
             ];
         })->values();
+        $sessions = $this->deduplicateChatListSessions($sessions);
         $transformDurationMs = (microtime(true) - $transformStart) * 1000;
         $totalDurationMs = (microtime(true) - $requestStart) * 1000;
 
@@ -544,6 +546,7 @@ class SessionController extends Controller
                 'per_page' => $usePagination ? $perPage : null,
                 'total' => $total,
                 'rows' => $rows->count(),
+                'deduped_rows' => $sessions->count(),
                 'query_ms' => round($queryDurationMs, 2),
                 'transform_ms' => round($transformDurationMs, 2),
                 'total_ms' => round($totalDurationMs, 2),
@@ -575,7 +578,7 @@ class SessionController extends Controller
             ->header('X-Chat-List-Total-Ms', (string) round($totalDurationMs, 2))
             ->header('X-Chat-List-Query-Ms', (string) round($queryDurationMs, 2))
             ->header('X-Chat-List-Transform-Ms', (string) round($transformDurationMs, 2))
-            ->header('X-Chat-List-Count', (string) $rows->count());
+            ->header('X-Chat-List-Count', (string) $sessions->count());
 
         if ($usePagination) {
             $currentPage = (int) ($rowsPaginator?->currentPage() ?? $page);
@@ -615,27 +618,27 @@ class SessionController extends Controller
         $isAnonymous = array_key_exists('is_anonymous', $validated)
             ? (bool) $validated['is_anonymous']
             : (bool) ($request->user()->profile?->anonymous_mode ?? false);
-        $forceNew = $isAnonymous && (bool) ($validated['force_new'] ?? false);
+        $existing = CounselingSession::where('student_id', $request->user()->id)
+            ->where('counselor_id', $validated['counselor_id'])
+            ->where('session_type', $validated['session_type'])
+            ->whereIn('status', ['pending', 'active'])
+            ->whereNull('peer_counselor_id')
+            ->where(function ($query): void {
+                $query->whereNull('assigned_role')
+                    ->orWhere('assigned_role', 'counselor');
+            })
+            ->latest('id')
+            ->first();
 
-        if (! $forceNew) {
-            $existing = CounselingSession::where('student_id', $request->user()->id)
-                ->where('counselor_id', $validated['counselor_id'])
-                ->where('session_type', $validated['session_type'])
-                ->where('is_anonymous', $isAnonymous)
-                ->whereIn('status', ['pending', 'active'])
-                ->whereNull('peer_counselor_id')
-                ->where(function ($query): void {
-                    $query->whereNull('assigned_role')
-                        ->orWhere('assigned_role', 'counselor');
-                })
-                ->latest('id')
-                ->first();
-
-            if ($existing) {
-                $existing->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
-                $this->appendRiskSignals($existing, $request->user(), $request);
-                return response()->json($existing);
+        if ($existing) {
+            if ((bool) $existing->is_anonymous !== $isAnonymous) {
+                $this->applyChatAnonymity($existing, $isAnonymous);
+                $existing->save();
             }
+
+            $existing->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
+            $this->appendRiskSignals($existing, $request->user(), $request);
+            return response()->json($existing);
         }
 
         // Student requests remain pending until reviewed by a professional counselor.
@@ -689,14 +692,7 @@ class SessionController extends Controller
 
         $isAnonymous = (bool) $validated['is_anonymous'];
 
-        $session->is_anonymous = $isAnonymous;
-        if ($isAnonymous) {
-            if ($session->anonymous_id === null || trim((string) $session->anonymous_id) === '') {
-                $session->anonymous_id = CounselingSession::generateUniqueAnonymousId();
-            }
-        } else {
-            $session->anonymous_id = null;
-        }
+        $this->applyChatAnonymity($session, $isAnonymous);
         $session->save();
 
         $profile = $user->profile;
@@ -745,7 +741,6 @@ class SessionController extends Controller
         $existing = CounselingSession::where('student_id', $validated['student_id'])
             ->where('counselor_id', $counselorId)
             ->where('session_type', $validated['session_type'])
-            ->where('is_anonymous', false)
             ->whereIn('status', ['pending', 'active'])
             ->whereNull('peer_counselor_id')
             ->where(function ($query): void {
@@ -2270,6 +2265,22 @@ class SessionController extends Controller
         return CounselingSession::generateUniqueAnonymousId();
     }
 
+    private function applyChatAnonymity(CounselingSession $session, bool $isAnonymous): void
+    {
+        $session->is_anonymous = $isAnonymous;
+        $session->identity_revealed_at = null;
+        $session->identity_revealed_by = null;
+
+        if ($isAnonymous) {
+            if ($session->anonymous_id === null || trim((string) $session->anonymous_id) === '') {
+                $session->anonymous_id = $this->generateAnonymousId();
+            }
+            return;
+        }
+
+        $session->anonymous_id = null;
+    }
+
     private function buildEmergencyMessage(CounselingSession $session, string $reason): string
     {
         if ($session->is_anonymous) {
@@ -2402,6 +2413,84 @@ class SessionController extends Controller
         }
 
         return $filters;
+    }
+
+    private function deduplicateChatListSessions(\Illuminate\Support\Collection $sessions): \Illuminate\Support\Collection
+    {
+        $deduped = [];
+
+        foreach ($sessions as $session) {
+            if (! is_array($session)) {
+                continue;
+            }
+
+            $key = $this->chatListSessionDedupeKey($session);
+            if (
+                ! array_key_exists($key, $deduped)
+                || $this->chatListSessionIsNewer($session, $deduped[$key])
+            ) {
+                $deduped[$key] = $session;
+            }
+        }
+
+        return collect(array_values($deduped))
+            ->sort(function (array $a, array $b): int {
+                $activity = $this->chatListTimestamp($b) <=> $this->chatListTimestamp($a);
+                if ($activity !== 0) {
+                    return $activity;
+                }
+
+                return ((int) ($b['id'] ?? 0)) <=> ((int) ($a['id'] ?? 0));
+            })
+            ->values();
+    }
+
+    private function chatListSessionDedupeKey(array $session): string
+    {
+        $studentId = (int) (
+            $session['chat_peer_student_id']
+            ?? $session['student_id']
+            ?? $session['student']['id']
+            ?? 0
+        );
+        $sessionType = (string) ($session['session_type'] ?? 'chat');
+        $assignedRole = (string) ($session['assigned_role'] ?? 'counselor');
+        $peerCounselorId = (int) ($session['peer_counselor_id'] ?? 0);
+        $counselorId = (int) ($session['counselor_id'] ?? 0);
+
+        if ($assignedRole === 'peer_counselor' && $peerCounselorId > 0) {
+            return "peer:{$studentId}:{$peerCounselorId}:{$sessionType}";
+        }
+
+        if ($counselorId > 0) {
+            return "counselor:{$studentId}:{$counselorId}:{$sessionType}";
+        }
+
+        $encoded = json_encode($session, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return 'session:' . (string) ($session['id'] ?? md5(is_string($encoded) ? $encoded : serialize($session)));
+    }
+
+    private function chatListSessionIsNewer(array $candidate, array $current): bool
+    {
+        $candidateTime = $this->chatListTimestamp($candidate);
+        $currentTime = $this->chatListTimestamp($current);
+
+        if ($candidateTime !== $currentTime) {
+            return $candidateTime > $currentTime;
+        }
+
+        return (int) ($candidate['id'] ?? 0) > (int) ($current['id'] ?? 0);
+    }
+
+    private function chatListTimestamp(array $session): int
+    {
+        $raw = (string) ($session['updated_at'] ?? $session['created_at'] ?? '');
+        if ($raw === '') {
+            return 0;
+        }
+
+        $timestamp = strtotime($raw);
+        return $timestamp === false ? 0 : $timestamp;
     }
 
     private function normalizeCachePayload(mixed $value): mixed

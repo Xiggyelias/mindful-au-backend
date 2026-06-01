@@ -141,12 +141,12 @@ class SessionKeepAliveTest extends TestCase
         $this->assertSame('cancelled', $expired->fresh()->status);
     }
 
-    public function test_student_can_force_new_anonymous_chat_even_when_one_is_open(): void
+    public function test_student_reuses_open_chat_when_anonymous_start_is_requested(): void
     {
         $student = $this->createUserWithRole('student');
         $counselor = $this->createUserWithRole('counselor');
         $existing = $this->createSession($student, $counselor, [
-            'is_anonymous' => true,
+            'is_anonymous' => false,
             'status' => 'active',
         ]);
 
@@ -157,9 +157,14 @@ class SessionKeepAliveTest extends TestCase
             'force_new' => true,
         ]);
 
-        $response->assertCreated();
-        $this->assertNotSame((int) $existing->id, (int) $response->json('id'));
-        $this->assertSame('active', $existing->fresh()->status);
+        $response->assertOk()
+            ->assertJsonPath('id', $existing->id)
+            ->assertJsonPath('is_anonymous', true);
+
+        $existing->refresh();
+        $this->assertTrue((bool) $existing->is_anonymous);
+        $this->assertNotEmpty($existing->anonymous_id);
+        $this->assertSame(1, CounselingSession::query()->count());
     }
 
     public function test_minimal_session_show_handles_active_anonymous_chat(): void

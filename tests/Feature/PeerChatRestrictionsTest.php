@@ -7,6 +7,7 @@ use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -323,6 +324,65 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('assigned_role', 'counselor');
 
         $this->assertSame(2, CounselingSession::query()->count());
+    }
+
+    /** @test */
+    public function active_direct_counselor_session_constraint_rejects_duplicate_relationships(): void
+    {
+        $this->makeDirectCounselorSession();
+
+        $this->expectException(QueryException::class);
+
+        CounselingSession::create([
+            'student_id' => $this->student->id,
+            'counselor_id' => $this->counselor->id,
+            'peer_counselor_id' => null,
+            'assigned_role' => 'counselor',
+            'status' => 'pending',
+            'session_type' => 'chat',
+            'is_anonymous' => true,
+        ]);
+    }
+
+    /** @test */
+    public function active_peer_support_session_constraint_rejects_duplicate_relationships(): void
+    {
+        $this->makeDelegatedPeerSession();
+
+        $this->expectException(QueryException::class);
+
+        CounselingSession::create([
+            'student_id' => $this->student->id,
+            'counselor_id' => $this->counselor->id,
+            'peer_counselor_id' => $this->peer->id,
+            'assigned_role' => 'peer_counselor',
+            'status' => 'pending',
+            'session_type' => 'chat',
+        ]);
+    }
+
+    /** @test */
+    public function active_peer_assignment_constraint_rejects_duplicate_rows(): void
+    {
+        $session = $this->makeDelegatedPeerSession();
+
+        PeerAssignment::create([
+            'session_id' => $session->id,
+            'peer_counselor_id' => $this->peer->id,
+            'assigned_by' => $this->counselor->id,
+            'status' => 'active',
+            'assigned_at' => now(),
+        ]);
+
+        $this->expectException(QueryException::class);
+
+        PeerAssignment::create([
+            'session_id' => $session->id,
+            'peer_counselor_id' => $this->peer->id,
+            'assigned_by' => $this->counselor->id,
+            'status' => 'active',
+            'assigned_at' => now(),
+        ]);
     }
 
     /** @test */
