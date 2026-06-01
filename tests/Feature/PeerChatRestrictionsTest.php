@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CounselingSession;
+use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
@@ -164,6 +165,89 @@ class PeerChatRestrictionsTest extends TestCase
             'peer_counselor_id' => $this->peer->id,
             'status' => 'active',
         ]);
+    }
+
+    /** @test */
+    public function student_chat_list_returns_direct_and_peer_rooms_as_separate_rows(): void
+    {
+        $directSession = $this->makeDirectCounselorSession();
+
+        $assignResponse = $this->actingAs($this->counselor)->postJson("/api/sessions/{$directSession->id}/assign-peer", [
+            'peer_counselor_id' => $this->peer->id,
+        ]);
+        $assignResponse->assertStatus(200);
+        $peerSessionId = (int) $assignResponse->json('id');
+
+        $response = $this->actingAs($this->student)
+            ->getJson('/api/sessions/chat-list?as_role=student&open_only=1&page=1&per_page=20');
+
+        $response->assertStatus(200);
+        $rows = collect($response->json('data'));
+        $directRow = $rows->firstWhere('id', $directSession->id);
+        $peerRow = $rows->firstWhere('id', $peerSessionId);
+
+        $this->assertNotNull($directRow, 'Direct counselor session is missing from the student chat list.');
+        $this->assertNotNull($peerRow, 'Peer support session is missing from the student chat list.');
+        $this->assertNotSame((int) $directRow['id'], (int) $peerRow['id']);
+        $this->assertNull($directRow['peer_counselor_id']);
+        $this->assertSame('counselor', $directRow['assigned_role']);
+        $this->assertSame($this->peer->id, (int) $peerRow['peer_counselor_id']);
+        $this->assertSame('peer_counselor', $peerRow['assigned_role']);
+    }
+
+    /** @test */
+    public function student_chat_list_keeps_unread_counts_per_session(): void
+    {
+        $directSession = $this->makeDirectCounselorSession();
+
+        $assignResponse = $this->actingAs($this->counselor)->postJson("/api/sessions/{$directSession->id}/assign-peer", [
+            'peer_counselor_id' => $this->peer->id,
+        ]);
+        $assignResponse->assertStatus(200);
+        $peerSessionId = (int) $assignResponse->json('id');
+
+        Message::create([
+            'session_id' => $directSession->id,
+            'sender_id' => $this->counselor->id,
+            'recipient_id' => $this->student->id,
+            'content' => 'Direct counselor unread.',
+            'message_type' => 'text',
+            'is_encrypted' => false,
+            'seen_at' => null,
+        ]);
+
+        Message::create([
+            'session_id' => $peerSessionId,
+            'sender_id' => $this->peer->id,
+            'recipient_id' => $this->student->id,
+            'content' => 'Peer support unread.',
+            'message_type' => 'text',
+            'is_encrypted' => false,
+            'seen_at' => null,
+        ]);
+
+        Message::create([
+            'session_id' => $peerSessionId,
+            'sender_id' => $this->peer->id,
+            'recipient_id' => $this->student->id,
+            'content' => 'Peer support already seen.',
+            'message_type' => 'text',
+            'is_encrypted' => false,
+            'seen_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->student)
+            ->getJson('/api/sessions/chat-list?as_role=student&open_only=1&page=1&per_page=20');
+
+        $response->assertStatus(200);
+        $rows = collect($response->json('data'));
+        $directRow = $rows->firstWhere('id', $directSession->id);
+        $peerRow = $rows->firstWhere('id', $peerSessionId);
+
+        $this->assertNotNull($directRow, 'Direct counselor session is missing from the student chat list.');
+        $this->assertNotNull($peerRow, 'Peer support session is missing from the student chat list.');
+        $this->assertSame(1, (int) $directRow['unread_count']);
+        $this->assertSame(1, (int) $peerRow['unread_count']);
     }
 
     /** @test */
