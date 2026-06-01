@@ -74,11 +74,11 @@ class MessageController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $this->maybeBumpAnonymousSessionActivity($session);
-
         if ($this->isAnonymousSessionExpired($session)) {
             return response()->json(['message' => 'This anonymous session has expired.'], 410);
         }
+
+        $this->maybeBumpAnonymousSessionActivity($session);
 
         $this->markInboundMessagesReadForViewer((int) $session->id, (int) $user->id);
 
@@ -107,12 +107,12 @@ class MessageController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // Throttled: avoid writing counseling_sessions on every poll while keeping 24h TTL alive.
-        $this->maybeBumpAnonymousSessionActivity($session);
-
         if ($this->isAnonymousSessionExpired($session)) {
             return response()->json(['message' => 'This anonymous session has expired.'], 410);
         }
+
+        // Throttled: avoid writing counseling_sessions on every poll while keeping 24h TTL alive.
+        $this->maybeBumpAnonymousSessionActivity($session);
 
         $validated = $request->validate([
             'after_id' => 'nullable|integer|min:0',

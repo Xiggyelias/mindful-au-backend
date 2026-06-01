@@ -200,6 +200,11 @@ class ChatAttachmentController extends Controller
         $message->loadMissing('chatFile');
 
         if ($message->chatFile) {
+            $disk = (string) config('chat.attachments.disk', 'local');
+            if (!Storage::disk($disk)->exists($message->chatFile->file_path)) {
+                return response()->json(['message' => 'File not found'], 404);
+            }
+
             return response()->json([
                 'download_url' => $message->chatFile->signedUrl(true),
                 'message' => ChatMessageData::make($message, true),

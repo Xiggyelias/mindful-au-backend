@@ -119,6 +119,49 @@ class SessionKeepAliveTest extends TestCase
             ->assertJson(['message' => 'This anonymous session has expired.']);
     }
 
+    public function test_student_create_session_does_not_reuse_expired_anonymous_chat(): void
+    {
+        $student = $this->createUserWithRole('student');
+        $counselor = $this->createUserWithRole('counselor');
+        $expired = $this->createSession($student, $counselor, [
+            'is_anonymous' => true,
+            'status' => 'active',
+        ]);
+        $ttlHours = max(1, (int) env('ANONYMOUS_SESSION_TTL_HOURS', 24));
+        $this->setSessionUpdatedAt($expired, now()->subHours($ttlHours + 1));
+
+        $response = $this->actingAs($student)->postJson('/api/sessions', [
+            'counselor_id' => $counselor->id,
+            'session_type' => 'chat',
+            'is_anonymous' => true,
+        ]);
+
+        $response->assertCreated();
+        $this->assertNotSame((int) $expired->id, (int) $response->json('id'));
+        $this->assertSame('cancelled', $expired->fresh()->status);
+    }
+
+    public function test_student_can_force_new_anonymous_chat_even_when_one_is_open(): void
+    {
+        $student = $this->createUserWithRole('student');
+        $counselor = $this->createUserWithRole('counselor');
+        $existing = $this->createSession($student, $counselor, [
+            'is_anonymous' => true,
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($student)->postJson('/api/sessions', [
+            'counselor_id' => $counselor->id,
+            'session_type' => 'chat',
+            'is_anonymous' => true,
+            'force_new' => true,
+        ]);
+
+        $response->assertCreated();
+        $this->assertNotSame((int) $existing->id, (int) $response->json('id'));
+        $this->assertSame('active', $existing->fresh()->status);
+    }
+
     public function test_touch_resets_expiration_timer(): void
     {
         $student = $this->createUserWithRole('student');

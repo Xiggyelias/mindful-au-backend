@@ -595,10 +595,13 @@ class SessionController extends Controller
             return response()->json(['message' => 'Only students can create sessions'], 403);
         }
 
+        $this->expireStaleAnonymousSessions();
+
         $validated = $request->validate([
             'counselor_id' => 'required|exists:users,id',
             'session_type' => 'required|in:chat,video,voice',
             'is_anonymous' => 'sometimes|boolean',
+            'force_new' => 'sometimes|boolean',
         ]);
 
         if (!$this->isApprovedCounselor((int) $validated['counselor_id'])) {
@@ -612,24 +615,27 @@ class SessionController extends Controller
         $isAnonymous = array_key_exists('is_anonymous', $validated)
             ? (bool) $validated['is_anonymous']
             : (bool) ($request->user()->profile?->anonymous_mode ?? false);
+        $forceNew = $isAnonymous && (bool) ($validated['force_new'] ?? false);
 
-        $existing = CounselingSession::where('student_id', $request->user()->id)
-            ->where('counselor_id', $validated['counselor_id'])
-            ->where('session_type', $validated['session_type'])
-            ->where('is_anonymous', $isAnonymous)
-            ->whereIn('status', ['pending', 'active'])
-            ->whereNull('peer_counselor_id')
-            ->where(function ($query): void {
-                $query->whereNull('assigned_role')
-                    ->orWhere('assigned_role', 'counselor');
-            })
-            ->latest('id')
-            ->first();
+        if (! $forceNew) {
+            $existing = CounselingSession::where('student_id', $request->user()->id)
+                ->where('counselor_id', $validated['counselor_id'])
+                ->where('session_type', $validated['session_type'])
+                ->where('is_anonymous', $isAnonymous)
+                ->whereIn('status', ['pending', 'active'])
+                ->whereNull('peer_counselor_id')
+                ->where(function ($query): void {
+                    $query->whereNull('assigned_role')
+                        ->orWhere('assigned_role', 'counselor');
+                })
+                ->latest('id')
+                ->first();
 
-        if ($existing) {
-            $existing->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
-            $this->appendRiskSignals($existing, $request->user(), $request);
-            return response()->json($existing);
+            if ($existing) {
+                $existing->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
+                $this->appendRiskSignals($existing, $request->user(), $request);
+                return response()->json($existing);
+            }
         }
 
         // Student requests remain pending until reviewed by a professional counselor.
@@ -788,11 +794,16 @@ class SessionController extends Controller
                     'assigned_role',
                     'is_anonymous',
                     'status',
+                    'updated_at',
                 ])
                 ->findOrFail($id);
 
             if (!$this->canViewSession($request->user(), $session)) {
                 return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            if ($this->isAnonymousSessionExpired($session)) {
+                return response()->json(['message' => 'This anonymous session has expired.'], 410);
             }
 
             $identityVisible = $this->canViewerSeeAnonymousIdentity($request->user(), $session);
