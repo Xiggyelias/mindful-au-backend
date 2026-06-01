@@ -826,20 +826,48 @@ class SessionController extends Controller
             ]);
         }
 
-        $this->expireStaleAnonymousSessions();
-        $session = CounselingSession::with([
-            'student.profile',
-            'counselor.profile',
-            'peerCounselor.profile',
-            'assignedByUser.profile',
-            'identityRevealedByUser.profile',
-        ])->findOrFail($id);
+        try {
+            $this->expireStaleAnonymousSessions();
+        } catch (\Exception $e) {
+            // Log but don't fail - session expiry is maintenance, not critical to retrieval
+            \Log::warning('Failed to expire stale anonymous sessions', ['error' => $e->getMessage()]);
+        }
+        
+        try {
+            $session = CounselingSession::with([
+                'student.profile',
+                'counselor.profile',
+                'peerCounselor.profile',
+                'assignedByUser.profile',
+                'identityRevealedByUser.profile',
+            ])->findOrFail($id);
+        } catch (\Illuminate\Database\Eloquent\RelationshipNotFoundException $e) {
+            // If a relationship fails to load (e.g., related user was deleted),
+            // load the session without those relationships to provide graceful degradation
+            $session = CounselingSession::findOrFail($id);
+            
+            // Try loading relationships individually, skipping any that fail
+            try { $session->load('student.profile'); } catch (\Exception $ex) {}
+            try { $session->load('counselor.profile'); } catch (\Exception $ex) {}
+            try { $session->load('peerCounselor.profile'); } catch (\Exception $ex) {}
+            try { $session->load('assignedByUser.profile'); } catch (\Exception $ex) {}
+            try { $session->load('identityRevealedByUser.profile'); } catch (\Exception $ex) {}
+        }
 
         if (!$this->canViewSession($request->user(), $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $this->appendRiskSignals($session, $request->user(), $request);
+        try {
+            $this->appendRiskSignals($session, $request->user(), $request);
+        } catch (\Exception $e) {
+            // Log the error but continue - risk signals are nice-to-have but shouldn't block session loading
+            \Log::warning('Failed to append risk signals for session ' . $id, [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+        
         return response()->json($session);
     }
 
