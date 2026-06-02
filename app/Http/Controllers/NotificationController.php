@@ -132,4 +132,21 @@ class NotificationController extends Controller
             'unread_count' => 0,
         ]);
     }
+
+    public function preferences(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email_enabled' => 'required|boolean',
+        ]);
+
+        $user = $request->user();
+        $user->forceFill([
+            'email_notifications_enabled' => $validated['email_enabled'],
+        ])->save();
+
+        return response()->json([
+            'ok' => true,
+            'email_notifications_enabled' => (bool) $user->email_notifications_enabled,
+        ]);
+    }
 }

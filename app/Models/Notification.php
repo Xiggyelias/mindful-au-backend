@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\NotificationEmailService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -22,6 +23,13 @@ class Notification extends Model
         'read' => 'boolean',
         'meta' => 'array',
     ];
+
+    protected static function booted(): void
+    {
+        static::created(function (Notification $notification): void {
+            app(NotificationEmailService::class)->sendForNotification($notification);
+        });
+    }
 
     public function user()
     {

@@ -23,6 +23,7 @@ class User extends Authenticatable
         'password',
         'last_seen_at',
         'needs_assessment',
+        'email_notifications_enabled',
     ];
 
     protected $hidden = [
@@ -35,6 +36,7 @@ class User extends Authenticatable
         'last_seen_at' => 'datetime',
         'password' => 'hashed',
         'web_push_enabled' => 'boolean',
+        'email_notifications_enabled' => 'boolean',
         'needs_assessment' => 'boolean',
     ];
 
