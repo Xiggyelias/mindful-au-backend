@@ -14,7 +14,7 @@ return new class extends Migration
             $table->unsignedTinyInteger('day_of_week');
             $table->boolean('is_working_day')->default(true);
             $table->time('start_time')->default('08:00:00');
-            $table->time('end_time')->default('16:30:00');
+            $table->time('end_time')->default('16:00:00');
             $table->time('break_start')->nullable()->default('13:00:00');
             $table->time('break_end')->nullable()->default('14:00:00');
             $table->unsignedSmallInteger('slot_duration_minutes')->default(30);

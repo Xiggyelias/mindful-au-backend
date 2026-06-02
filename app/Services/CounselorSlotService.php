@@ -12,10 +12,11 @@ class CounselorSlotService
 {
     private const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5];
     private const DEFAULT_START_TIME = '08:00:00';
-    private const DEFAULT_END_TIME = '16:30:00';
+    private const DEFAULT_END_TIME = '16:00:00';
     private const DEFAULT_BREAK_START = '13:00:00';
     private const DEFAULT_BREAK_END = '14:00:00';
     private const DEFAULT_SLOT_DURATION_MINUTES = 30;
+    private const DEFAULT_MAX_SLOTS_PER_DAY = 6;
 
     public function schedulesFor(int $counselorId): Collection
     {
@@ -30,7 +31,7 @@ class CounselorSlotService
     public function ensureDefaultSchedules(int $counselorId): void
     {
         for ($day = 1; $day <= 7; $day++) {
-            CounselorSchedule::query()->firstOrCreate(
+            $schedule = CounselorSchedule::query()->firstOrCreate(
                 [
                     'counselor_id' => $counselorId,
                     'day_of_week' => $day,
@@ -44,6 +45,10 @@ class CounselorSlotService
                     'slot_duration_minutes' => self::DEFAULT_SLOT_DURATION_MINUTES,
                 ]
             );
+
+            if ($this->minutesSinceMidnight((string) $schedule->end_time) > $this->minutesSinceMidnight(self::DEFAULT_END_TIME)) {
+                $schedule->update(['end_time' => self::DEFAULT_END_TIME]);
+            }
         }
     }
 
@@ -65,7 +70,7 @@ class CounselorSlotService
                 [
                     'is_working_day' => (bool) ($row['is_working_day'] ?? true),
                     'start_time' => $this->normalizeTime($row['start_time'] ?? null, self::DEFAULT_START_TIME),
-                    'end_time' => $this->normalizeTime($row['end_time'] ?? null, self::DEFAULT_END_TIME),
+                    'end_time' => $this->capEndTime($this->normalizeTime($row['end_time'] ?? null, self::DEFAULT_END_TIME)),
                     'break_start' => $this->normalizeNullableTime($row['break_start'] ?? null),
                     'break_end' => $this->normalizeNullableTime($row['break_end'] ?? null),
                     'slot_duration_minutes' => max(15, min(120, (int) ($row['slot_duration_minutes'] ?? self::DEFAULT_SLOT_DURATION_MINUTES))),
@@ -88,11 +93,13 @@ class CounselorSlotService
             /** @var CounselorSchedule|null $schedule */
             $schedule = $schedules->get($dayOfWeek);
             if (!$schedule || !$schedule->is_working_day) {
+                $this->deleteStaleGeneratedSlotsForDate($counselorId, $cursor, []);
                 $cursor->addDay();
                 continue;
             }
 
-            foreach ($this->slotWindowsForDate($schedule, $cursor) as $window) {
+            $windows = $this->slotWindowsForDate($schedule, $cursor);
+            foreach ($windows as $window) {
                 [$slotStart, $slotEnd] = $window;
                 $slot = CounselorSlot::query()->firstOrNew([
                     'counselor_id' => $counselorId,
@@ -109,6 +116,7 @@ class CounselorSlotService
                 $slot->save();
                 $createdOrUpdated->push($slot);
             }
+            $this->deleteStaleGeneratedSlotsForDate($counselorId, $cursor, $windows);
 
             $cursor->addDay();
         }
@@ -134,7 +142,7 @@ class CounselorSlotService
 
         $this->refreshSlotStatuses($slots);
 
-        return $slots;
+        return $this->filterSlotsToCurrentSchedule($slots, $counselorId);
     }
 
     /**
@@ -143,7 +151,7 @@ class CounselorSlotService
     public function resolveSlotForBooking(int $counselorId, Carbon $start, int $durationMinutes): array
     {
         $durationMinutes = max(15, min(120, $durationMinutes));
-        if ($this->isOutsideNormalBookingWindow($counselorId, $start)) {
+        if ($this->isOutsideNormalBookingWindow($counselorId, $start, $durationMinutes)) {
             return ['slot' => null, 'reason' => 'outside_hours'];
         }
 
@@ -170,7 +178,7 @@ class CounselorSlotService
         return ['slot' => $slot, 'reason' => 'available'];
     }
 
-    public function isOutsideNormalBookingWindow(int $counselorId, Carbon $start): bool
+    public function isOutsideNormalBookingWindow(int $counselorId, Carbon $start, int $durationMinutes = 0): bool
     {
         $schedule = $this->scheduleForDate($counselorId, $start);
         if (!$schedule || !$schedule->is_working_day) {
@@ -178,6 +186,18 @@ class CounselorSlotService
         }
 
         $minute = $this->minutesSinceMidnight($start->format('H:i:s'));
+        $startMinute = $this->minutesSinceMidnight((string) $schedule->start_time);
+        $endMinute = $this->minutesSinceMidnight((string) $schedule->end_time);
+        if ($durationMinutes > 0) {
+            $end = $start->copy()->addMinutes(max(15, min(120, $durationMinutes)));
+            if ($end->toDateString() !== $start->toDateString()) {
+                return true;
+            }
+
+            return $minute < $startMinute
+                || $this->minutesSinceMidnight($end->format('H:i:s')) > $endMinute;
+        }
+
         return $minute < $this->minutesSinceMidnight((string) $schedule->start_time)
             || $minute >= $this->minutesSinceMidnight((string) $schedule->end_time);
     }
@@ -243,11 +263,67 @@ class CounselorSlotService
             $overlapsBreak = $breakStart && $breakEnd && $slotStart->lt($breakEnd) && $slotEnd->gt($breakStart);
             if (!$overlapsBreak) {
                 $windows[] = [$slotStart, $slotEnd];
+                if (count($windows) >= self::DEFAULT_MAX_SLOTS_PER_DAY) {
+                    break;
+                }
             }
             $cursor->addMinutes($duration);
         }
 
         return $windows;
+    }
+
+    /**
+     * @param  array<int, array{0: Carbon, 1: Carbon}>  $windows
+     */
+    private function deleteStaleGeneratedSlotsForDate(int $counselorId, Carbon $date, array $windows): void
+    {
+        $allowedKeys = [];
+        foreach ($windows as [$slotStart, $slotEnd]) {
+            $allowedKeys[$this->slotKey($slotStart, $slotEnd)] = true;
+        }
+
+        CounselorSlot::query()
+            ->where('counselor_id', $counselorId)
+            ->where('slot_date', $date->toDateString())
+            ->whereNull('appointment_id')
+            ->where('status', '!=', 'booked')
+            ->get()
+            ->each(function (CounselorSlot $slot) use ($allowedKeys): void {
+                $key = $this->slotKey(Carbon::parse($slot->start_time), Carbon::parse($slot->end_time));
+                if (! isset($allowedKeys[$key])) {
+                    $slot->delete();
+                }
+            });
+    }
+
+    private function filterSlotsToCurrentSchedule(Collection $slots, int $counselorId): Collection
+    {
+        if ($slots->isEmpty()) {
+            return $slots;
+        }
+
+        $schedules = $this->schedulesFor($counselorId)->keyBy('day_of_week');
+        $allowedByDate = [];
+
+        return $slots
+            ->filter(function (CounselorSlot $slot) use ($schedules, &$allowedByDate): bool {
+                $slotDate = $slot->slot_date?->toDateString() ?: Carbon::parse($slot->start_time)->toDateString();
+                if (! isset($allowedByDate[$slotDate])) {
+                    $dayOfWeek = (int) Carbon::parse($slotDate)->isoWeekday();
+                    $schedule = $schedules->get($dayOfWeek);
+                    $allowedByDate[$slotDate] = [];
+                    if ($schedule && $schedule->is_working_day) {
+                        foreach ($this->slotWindowsForDate($schedule, Carbon::parse($slotDate)) as [$slotStart, $slotEnd]) {
+                            $allowedByDate[$slotDate][$this->slotKey($slotStart, $slotEnd)] = true;
+                        }
+                    }
+                }
+
+                $key = $this->slotKey(Carbon::parse($slot->start_time), Carbon::parse($slot->end_time));
+                return isset($allowedByDate[$slotDate][$key]);
+            })
+            ->values();
     }
 
     private function refreshSlotStatuses(Collection $slots): void
@@ -313,6 +389,18 @@ class CounselorSlotService
         }
 
         return $this->normalizeTime((string) $value, self::DEFAULT_BREAK_START);
+    }
+
+    private function capEndTime(string $time): string
+    {
+        return $this->minutesSinceMidnight($time) > $this->minutesSinceMidnight(self::DEFAULT_END_TIME)
+            ? self::DEFAULT_END_TIME
+            : $time;
+    }
+
+    private function slotKey(Carbon $start, Carbon $end): string
+    {
+        return $start->toDateTimeString().'|'.$end->toDateTimeString();
     }
 
     private function minutesSinceMidnight(string $time): int

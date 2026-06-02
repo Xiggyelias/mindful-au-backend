@@ -62,9 +62,10 @@ class CounselorSlotController extends Controller
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
                 'slot_duration_minutes' => 30,
+                'max_slots_per_day' => 6,
                 'working_hours' => [
                     'start' => '08:00',
-                    'end' => '16:30',
+                    'end' => '16:00',
                     'lunch_start' => '13:00',
                     'lunch_end' => '14:00',
                 ],
@@ -104,6 +105,9 @@ class CounselorSlotController extends Controller
         foreach ($validated['schedules'] as $schedule) {
             if (strcmp((string) $schedule['end_time'], (string) $schedule['start_time']) <= 0) {
                 return response()->json(['message' => 'Schedule end time must be after start time.'], 422);
+            }
+            if (strcmp((string) $schedule['end_time'], '16:00') > 0) {
+                return response()->json(['message' => 'Schedule end time cannot be after 16:00.'], 422);
             }
             if (!empty($schedule['break_start']) && !empty($schedule['break_end']) && strcmp($schedule['break_end'], $schedule['break_start']) <= 0) {
                 return response()->json(['message' => 'Lunch break end time must be after break start time.'], 422);

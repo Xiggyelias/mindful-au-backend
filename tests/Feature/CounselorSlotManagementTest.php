@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CounselorSlot;
+use App\Models\CounselorSchedule;
 use App\Models\EmergencyRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,7 +27,11 @@ class CounselorSlotManagementTest extends TestCase
 
         $slotsResponse->assertOk();
         $slots = collect($slotsResponse->json('data'));
-        $this->assertNotEmpty($slots);
+        $this->assertCount(6, $slots);
+        $this->assertFalse(
+            $slots->contains(fn (array $slot) => Carbon::parse($slot['start_time'])->format('H:i') >= '16:00'),
+            'Slots must not start at or after the 16:00 school close.'
+        );
         $this->assertFalse(
             $slots->contains(fn (array $slot) => Carbon::parse($slot['start_time'])->format('H:i') === '13:00'),
             'Lunch break slots must not be generated.'
@@ -58,6 +63,37 @@ class CounselorSlotManagementTest extends TestCase
 
         $secondBooking->assertStatus(422)
             ->assertJsonValidationErrors(['scheduled_at']);
+    }
+
+    public function test_existing_late_schedule_is_capped_to_six_slots_before_school_close(): void
+    {
+        $student = $this->createUserWithRole('student');
+        $counselor = $this->createUserWithRole('counselor');
+        $date = now()->next(Carbon::MONDAY)->toDateString();
+
+        CounselorSchedule::query()->create([
+            'counselor_id' => $counselor->id,
+            'day_of_week' => Carbon::MONDAY,
+            'is_working_day' => true,
+            'start_time' => '10:00:00',
+            'end_time' => '18:00:00',
+            'break_start' => '13:00:00',
+            'break_end' => '14:00:00',
+            'slot_duration_minutes' => 30,
+        ]);
+
+        $slotsResponse = $this->actingAs($student)->getJson(
+            "/api/counselor-slots?counselor_id={$counselor->id}&from={$date}&to={$date}"
+        );
+
+        $slotsResponse->assertOk();
+        $slots = collect($slotsResponse->json('data'));
+
+        $this->assertSame(
+            ['10:00', '10:30', '11:00', '11:30', '12:00', '12:30'],
+            $slots->map(fn (array $slot) => Carbon::parse($slot['start_time'])->format('H:i'))->values()->all()
+        );
+        $this->assertSame('16:00:00', (string) CounselorSchedule::query()->where('counselor_id', $counselor->id)->where('day_of_week', Carbon::MONDAY)->value('end_time'));
     }
 
     public function test_after_hours_booking_is_queued_as_emergency_request(): void
