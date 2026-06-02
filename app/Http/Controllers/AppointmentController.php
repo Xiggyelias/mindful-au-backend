@@ -670,6 +670,7 @@ class AppointmentController extends Controller
 
         foreach ($recipientIds as $recipientId) {
             try {
+                $recipient = User::query()->find((int) $recipientId);
                 $notification = Notification::query()->create([
                     'user_id' => (int) $recipientId,
                     'title' => 'After-hours Emergency Request',
@@ -678,6 +679,7 @@ class AppointmentController extends Controller
                     'read' => false,
                     'meta' => [
                         'emergency_request_id' => (int) $emergencyRequest->id,
+                        'path' => $recipient?->hasRole('admin') ? '/admin/alerts' : '/counselor/alerts',
                     ],
                 ]);
                 event(new NotificationCreated($notification));

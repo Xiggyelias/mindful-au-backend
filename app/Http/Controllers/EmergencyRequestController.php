@@ -137,6 +137,7 @@ class EmergencyRequestController extends Controller
         $notified = 0;
         foreach ($recipientIds as $recipientId) {
             try {
+                $recipient = User::query()->find((int) $recipientId);
                 $notification = Notification::query()->create([
                     'user_id' => (int) $recipientId,
                     'title' => 'Emergency Support Request',
@@ -145,6 +146,7 @@ class EmergencyRequestController extends Controller
                     'read' => false,
                     'meta' => [
                         'emergency_request_id' => (int) $emergencyRequest->id,
+                        'path' => $recipient?->hasRole('admin') ? '/admin/alerts' : '/counselor/alerts',
                     ],
                 ]);
                 event(new NotificationCreated($notification));

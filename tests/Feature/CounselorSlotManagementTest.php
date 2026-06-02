@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\CounselorSlot;
 use App\Models\CounselorSchedule;
 use App\Models\EmergencyRequest;
+use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -118,6 +119,14 @@ class CounselorSlotManagementTest extends TestCase
             'status' => 'queued',
         ]);
         $this->assertSame(1, EmergencyRequest::query()->count());
+
+        $notification = Notification::query()
+            ->where('user_id', $counselor->id)
+            ->where('title', 'After-hours Emergency Request')
+            ->first();
+
+        $this->assertNotNull($notification);
+        $this->assertSame('/counselor/alerts', $notification->meta['path'] ?? null);
     }
 
     private function createUserWithRole(string $role): User
