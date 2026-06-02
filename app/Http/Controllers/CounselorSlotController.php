@@ -99,7 +99,7 @@ class CounselorSlotController extends Controller
             'schedules.*.end_time' => 'required|date_format:H:i',
             'schedules.*.break_start' => 'nullable|date_format:H:i',
             'schedules.*.break_end' => 'nullable|date_format:H:i',
-            'schedules.*.slot_duration_minutes' => 'required|integer|min:15|max:120',
+            'schedules.*.slot_duration_minutes' => 'required|integer|min:30|max:360',
         ]);
 
         foreach ($validated['schedules'] as $schedule) {

@@ -127,7 +127,7 @@ class AppointmentController extends Controller
                     }
                 },
             ],
-            'duration_minutes' => 'sometimes|integer|min:15|max:120',
+            'duration_minutes' => 'sometimes|integer|min:30|max:360',
             'counselor_slot_id' => 'sometimes|nullable|integer|exists:counselor_slots,id',
             'notes' => 'sometimes|nullable|string|max:2000',
             'is_anonymous' => 'sometimes|boolean',

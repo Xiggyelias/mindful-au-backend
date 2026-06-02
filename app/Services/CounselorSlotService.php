@@ -73,7 +73,7 @@ class CounselorSlotService
                     'end_time' => $this->capEndTime($this->normalizeTime($row['end_time'] ?? null, self::DEFAULT_END_TIME)),
                     'break_start' => $this->normalizeNullableTime($row['break_start'] ?? null),
                     'break_end' => $this->normalizeNullableTime($row['break_end'] ?? null),
-                    'slot_duration_minutes' => max(15, min(120, (int) ($row['slot_duration_minutes'] ?? self::DEFAULT_SLOT_DURATION_MINUTES))),
+                    'slot_duration_minutes' => max(30, min(360, (int) ($row['slot_duration_minutes'] ?? self::DEFAULT_SLOT_DURATION_MINUTES))),
                 ]
             );
         }
@@ -150,7 +150,7 @@ class CounselorSlotService
      */
     public function resolveSlotForBooking(int $counselorId, Carbon $start, int $durationMinutes): array
     {
-        $durationMinutes = max(15, min(120, $durationMinutes));
+        $durationMinutes = max(30, min(360, $durationMinutes));
         if ($this->isOutsideNormalBookingWindow($counselorId, $start, $durationMinutes)) {
             return ['slot' => null, 'reason' => 'outside_hours'];
         }
@@ -189,7 +189,7 @@ class CounselorSlotService
         $startMinute = $this->minutesSinceMidnight((string) $schedule->start_time);
         $endMinute = $this->minutesSinceMidnight((string) $schedule->end_time);
         if ($durationMinutes > 0) {
-            $end = $start->copy()->addMinutes(max(15, min(120, $durationMinutes)));
+            $end = $start->copy()->addMinutes(max(30, min(360, $durationMinutes)));
             if ($end->toDateString() !== $start->toDateString()) {
                 return true;
             }
@@ -249,7 +249,7 @@ class CounselorSlotService
      */
     private function slotWindowsForDate(CounselorSchedule $schedule, Carbon $date): array
     {
-        $duration = max(15, min(120, (int) $schedule->slot_duration_minutes));
+        $duration = max(30, min(360, (int) $schedule->slot_duration_minutes));
         $dayStart = $this->dateTimeFor($date, (string) $schedule->start_time);
         $dayEnd = $this->dateTimeFor($date, (string) $schedule->end_time);
         $breakStart = $schedule->break_start ? $this->dateTimeFor($date, (string) $schedule->break_start) : null;

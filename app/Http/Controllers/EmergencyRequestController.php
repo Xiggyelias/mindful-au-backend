@@ -89,6 +89,8 @@ class EmergencyRequestController extends Controller
             'assigned_to' => 'sometimes|nullable|integer|exists:users,id',
         ]);
 
+        $oldStatus = $emergencyRequest->status;
+
         if (($validated['status'] ?? null) === 'resolved' && $emergencyRequest->status !== 'resolved') {
             $validated['resolved_by'] = $user->id;
             $validated['resolved_at'] = now();
@@ -99,6 +101,94 @@ class EmergencyRequestController extends Controller
         }
 
         $emergencyRequest->update($validated);
+
+        if (($validated['status'] ?? null) === 'assigned' && $oldStatus !== 'assigned') {
+            $counselorId = $emergencyRequest->assigned_to;
+            $studentId = $emergencyRequest->student_id;
+            $requestedAt = $emergencyRequest->requested_at ?? now();
+
+            $dayOfWeek = (int) $requestedAt->isoWeekday();
+            $schedule = \App\Models\CounselorSchedule::query()
+                ->where('counselor_id', $counselorId)
+                ->where('day_of_week', $dayOfWeek)
+                ->first();
+
+            $duration = 60; // Default to 60 minutes
+            if ($schedule) {
+                $duration = max(30, (int) $schedule->slot_duration_minutes);
+            }
+
+            $endTime = $requestedAt->copy()->addMinutes($duration);
+
+            $slot = \App\Models\CounselorSlot::query()->create([
+                'counselor_id' => $counselorId,
+                'counselor_schedule_id' => $schedule?->id,
+                'slot_date' => $requestedAt->toDateString(),
+                'day_of_week' => $dayOfWeek,
+                'start_time' => $requestedAt,
+                'end_time' => $endTime,
+                'status' => 'available',
+            ]);
+
+            $session = \App\Models\CounselingSession::query()
+                ->where('student_id', $studentId)
+                ->where('counselor_id', $counselorId)
+                ->where('session_type', 'chat')
+                ->whereNotIn('status', ['completed', 'cancelled'])
+                ->latest('id')
+                ->first();
+
+            if (!$session) {
+                $session = \App\Models\CounselingSession::query()->create([
+                    'student_id' => $studentId,
+                    'counselor_id' => $counselorId,
+                    'session_type' => 'chat',
+                    'status' => 'active',
+                    'assigned_role' => 'counselor',
+                    'is_anonymous' => false,
+                ]);
+            } elseif ($session->status === 'pending') {
+                $session->update(['status' => 'active', 'started_at' => now()]);
+            }
+
+            $formattedTime = $requestedAt->format('M j, Y g:i A');
+            $messageContent = "Hello, I have accepted your emergency support request. I have created a bookable slot for you at {$formattedTime} ({$duration} minutes). Please book your appointment now.";
+
+            $message = \App\Models\Message::query()->create([
+                'session_id' => $session->id,
+                'sender_id' => $counselorId,
+                'recipient_id' => $studentId,
+                'content' => $messageContent,
+                'message_type' => 'text',
+                'is_encrypted' => false,
+                'sent_as_anonymous' => false,
+                'seen_at' => null,
+            ]);
+
+            try {
+                event(new \App\Events\MessageSent($message));
+            } catch (\Throwable $_) {
+                // no-op
+            }
+
+            try {
+                $notification = \App\Models\Notification::query()->create([
+                    'user_id' => $studentId,
+                    'title' => 'Emergency Request Accepted',
+                    'message' => "Counselor accepted your emergency request. Please book your slot at {$formattedTime}.",
+                    'meta' => [
+                        'chat_session_id' => (int) $session->id,
+                        'chat_message_id' => (int) $message->id,
+                        'is_encrypted' => false,
+                        'message_type' => 'text',
+                    ],
+                    'type' => 'info',
+                ]);
+                event(new \App\Events\NotificationCreated($notification));
+            } catch (\Throwable $_) {
+                // no-op
+            }
+        }
 
         return response()->json($emergencyRequest->refresh()->load(['student.profile', 'counselor.profile', 'assignee.profile', 'resolver.profile']));
     }

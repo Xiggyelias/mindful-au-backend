@@ -173,6 +173,7 @@ class MessageDeletionTest extends TestCase
     /** @test */
     public function message_must_belong_to_the_selected_session(): void
     {
+        $this->session->update(['status' => 'completed']);
         $otherSession = CounselingSession::create([
             'student_id' => $this->student->id,
             'counselor_id' => $this->counselor->id,

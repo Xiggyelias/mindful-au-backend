@@ -261,6 +261,7 @@ class ChatAttachmentUploadTest extends TestCase
     /** @test */
     public function peer_assignment_table_access_uses_same_voice_and_attachment_rules(): void
     {
+        $this->session->update(['status' => 'completed']);
         $legacySession = CounselingSession::create([
             'student_id' => $this->student->id,
             'counselor_id' => $this->counselor->id,
