@@ -794,6 +794,10 @@ class AppointmentController extends Controller
             'title' => 'Session cancelled',
             'message' => $message,
             'type' => 'warning',
+            'meta' => [
+                'appointment_id' => (int) $appointment->id,
+                'path' => '/student/appointments',
+            ],
         ]);
         event(new NotificationCreated($notification));
 

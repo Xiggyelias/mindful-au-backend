@@ -505,6 +505,10 @@ class VideoCallController extends Controller
                 $this->formatAppointmentTime($appointment->scheduled_at)
             ),
             'type' => 'success',
+            'meta' => [
+                'appointment_id' => (int) $appointment->id,
+                'path' => '/student/appointments',
+            ],
         ]);
     }
 

@@ -1368,6 +1368,10 @@ class MessageController extends Controller
                     $wordList
                 ),
                 'type' => 'error', // High priority
+                'meta' => [
+                    'chat_session_id' => (int) $session->id,
+                    'path' => $this->chatUrlForUserId((int) $recipientId, (int) $session->id),
+                ],
             ]);
 
             $this->webPush->sendToUser(

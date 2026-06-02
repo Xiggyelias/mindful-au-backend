@@ -1129,6 +1129,11 @@ CRITICAL:
         )));
 
         foreach ($recipients as $recipientId) {
+            $recipient = User::find((int) $recipientId);
+            $recipientPath = $recipient && $recipient->hasRole('admin')
+                ? '/admin/alerts'
+                : '/counselor/alerts';
+
             Notification::create([
                 'user_id' => $recipientId,
                 'title' => '🚨 Crisis Alert: AI Chat Trigger',
@@ -1138,6 +1143,9 @@ CRITICAL:
                     $wordList
                 ),
                 'type' => 'error', // High priority
+                'meta' => [
+                    'path' => $recipientPath,
+                ],
             ]);
 
             try {

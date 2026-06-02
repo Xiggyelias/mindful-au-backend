@@ -128,12 +128,20 @@ class PanicLogController extends Controller
 
             foreach ($recipientIds as $recipientId) {
                 try {
+                    $recipient = User::find((int) $recipientId);
+                    $recipientPath = $recipient && $recipient->hasRole('admin')
+                        ? '/admin/alerts'
+                        : '/counselor/alerts';
+
                     $notification = Notification::create([
                         'user_id' => (int) $recipientId,
                         'title' => 'Panic Button Triggered!',
                         'message' => $alertMessage,
                         'type' => 'panic',
                         'read' => false,
+                        'meta' => [
+                            'path' => $recipientPath,
+                        ],
                     ]);
 
                     // Real-time push so dashboards/toasts update without waiting

@@ -152,24 +152,6 @@ class EmergencyRequestController extends Controller
             }
 
             $formattedTime = $requestedAt->format('M j, Y g:i A');
-            $messageContent = "Hello, I have accepted your emergency support request. I have created a bookable slot for you at {$formattedTime} ({$duration} minutes). Please book your appointment now.";
-
-            $message = \App\Models\Message::query()->create([
-                'session_id' => $session->id,
-                'sender_id' => $counselorId,
-                'recipient_id' => $studentId,
-                'content' => $messageContent,
-                'message_type' => 'text',
-                'is_encrypted' => false,
-                'sent_as_anonymous' => false,
-                'seen_at' => null,
-            ]);
-
-            try {
-                event(new \App\Events\MessageSent($message));
-            } catch (\Throwable $_) {
-                // no-op
-            }
 
             try {
                 $notification = \App\Models\Notification::query()->create([
@@ -177,10 +159,9 @@ class EmergencyRequestController extends Controller
                     'title' => 'Emergency Request Accepted',
                     'message' => "Counselor accepted your emergency request. Please book your slot at {$formattedTime}.",
                     'meta' => [
-                        'chat_session_id' => (int) $session->id,
-                        'chat_message_id' => (int) $message->id,
-                        'is_encrypted' => false,
-                        'message_type' => 'text',
+                        'counselor_id' => (int) $counselorId,
+                        'slot_id' => (int) $slot->id,
+                        'path' => "/student/appointments?book=1&counselor_id={$counselorId}&slot_id={$slot->id}",
                     ],
                     'type' => 'info',
                 ]);

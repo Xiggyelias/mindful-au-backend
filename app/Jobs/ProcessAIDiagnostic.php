@@ -44,6 +44,9 @@ class ProcessAIDiagnostic implements ShouldQueue
                         'title' => 'High Risk Alert',
                         'message' => "AI analysis detected {$diagnostic->risk_level} risk indicators for a student session.",
                         'type' => 'warning',
+                        'meta' => [
+                            'path' => '/counselor/alerts',
+                        ],
                     ]);
                 }
             }
