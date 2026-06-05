@@ -224,6 +224,35 @@ class VideoCallController extends Controller
                 ->lockForUpdate()
                 ->findOrFail($appointment->id);
 
+            // Clean up any pending counseling calls and notify callee of missed call
+            $pendingCall = CounselingCall::query()
+                ->where('appointment_id', $lockedAppointment->id)
+                ->where('status', CounselingCall::STATUS_PENDING)
+                ->first();
+
+            if ($pendingCall) {
+                $pendingCall->update(['status' => 'declined']);
+                $isStudentCaller = $pendingCall->caller_role === CounselingCall::CALLER_STUDENT;
+                $notifyUserId = $isStudentCaller ? (int) $lockedAppointment->counselor_id : (int) $lockedAppointment->student_id;
+                $notifyBody = $isStudentCaller ? 'Missed audio/video call from student.' : 'Missed audio/video call from counselor.';
+                
+                try {
+                    $this->webPush->sendToUser(
+                        $notifyUserId,
+                        'Missed call',
+                        $notifyBody,
+                        $isStudentCaller ? '/counselor/video' : '/student/video-call',
+                        [
+                            'tag'                => 'cms-call-apt-' . (int) $lockedAppointment->id,
+                            'urgency'            => 'high',
+                            'requireInteraction' => false,
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    Log::warning('[VideoCall] web push for missed call failed', ['error' => $e->getMessage()]);
+                }
+            }
+
             $session = CounselingSession::query()
                 ->where('student_id', $lockedAppointment->student_id)
                 ->where('counselor_id', $lockedAppointment->counselor_id)

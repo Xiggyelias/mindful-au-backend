@@ -648,7 +648,7 @@ CRITICAL:
         $conversationTopic = $this->resolveConversationTopic($normalized, $historyMessages);
 
         if ($conversationTopic === 'crisis') {
-            return 'Your safety comes first. Please contact emergency services or a trusted counselor right now. If you’re alone, move toward another person and tell them clearly you need support now.';
+            return 'Your safety comes first. An emergency alert has been sent to your counselor automatically. If you’re alone, move toward another person and tell them clearly you need support now, or reach out to emergency services.';
         }
 
         if ($conversationTopic === 'physical_health') {
@@ -876,7 +876,7 @@ CRITICAL:
     private function buildFollowUpFallbackResponse(?string $topic): string
     {
         return match ($topic) {
-            'crisis' => 'Your safety comes first. Can you message or call someone you trust right now and tell them you need support?',
+            'crisis' => 'Your safety comes first. We have automatically notified your counselor of this alert. Please stay safe and get closer to another person if you can.',
             'anxiety' => 'Let us take it step by step. Try one minute of slow breathing first, then choose one 10 to 15 minute task.',
             'study' => 'What\'s the smallest piece you could tackle for just 15 minutes?',
             'sleep' => 'Is it more that you can\'t switch off, or that you wake up and can\'t get back to sleep?',
@@ -1025,8 +1025,8 @@ CRITICAL:
             'I am really glad you said this.',
             'I am concerned you may be in immediate danger.',
             $firstStep,
-            'Contact emergency services, campus security, a counselor, or a trusted person right now and tell them clearly that you need immediate support.',
-            'If you can use the emergency help button in the student dashboard, do that now.',
+            'An emergency alert has been sent to your counselor automatically.',
+            'Please also contact emergency services, campus security, or a trusted person right now and tell them clearly that you need immediate support.',
         ];
 
         $hotline = $this->resolveCrisisHotline();
