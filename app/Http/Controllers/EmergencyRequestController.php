@@ -23,7 +23,7 @@ class EmergencyRequestController extends Controller
     {
         $user = $request->user();
         $query = EmergencyRequest::query()
-            ->with(['student.profile', 'counselor.profile', 'assignee.profile', 'resolver.profile'])
+            ->with(['student.profile', 'counselor.profile', 'assignee.profile', 'resolver.profile', 'slot'])
             ->orderByRaw("CASE status WHEN 'queued' THEN 0 WHEN 'assigned' THEN 1 WHEN 'resolved' THEN 2 ELSE 3 END")
             ->orderBy('priority')
             ->orderByDesc('requested_at');
@@ -106,8 +106,14 @@ class EmergencyRequestController extends Controller
             $counselorId = $emergencyRequest->assigned_to;
             $studentId = $emergencyRequest->student_id;
             $requestedAt = $emergencyRequest->requested_at ?? now();
+            $slotStart = $requestedAt->copy();
+            $minimumStart = now()->addMinutes(10);
+            if ($slotStart->lessThan($minimumStart)) {
+                $slotStart = $minimumStart;
+            }
+            $slotStart->second(0);
 
-            $dayOfWeek = (int) $requestedAt->isoWeekday();
+            $dayOfWeek = (int) $slotStart->isoWeekday();
             $schedule = \App\Models\CounselorSchedule::query()
                 ->where('counselor_id', $counselorId)
                 ->where('day_of_week', $dayOfWeek)
@@ -118,17 +124,41 @@ class EmergencyRequestController extends Controller
                 $duration = max(30, (int) $schedule->slot_duration_minutes);
             }
 
-            $endTime = $requestedAt->copy()->addMinutes($duration);
+            $slot = null;
+            $endTime = null;
+            for ($attempt = 0; $attempt < 6; $attempt++) {
+                $endTime = $slotStart->copy()->addMinutes($duration);
+                $existingSlot = \App\Models\CounselorSlot::query()
+                    ->where('counselor_id', $counselorId)
+                    ->where('start_time', $slotStart->toDateTimeString())
+                    ->where('end_time', $endTime->toDateTimeString())
+                    ->first();
 
-            $slot = \App\Models\CounselorSlot::query()->create([
-                'counselor_id' => $counselorId,
-                'counselor_schedule_id' => $schedule?->id,
-                'slot_date' => $requestedAt->toDateString(),
-                'day_of_week' => $dayOfWeek,
-                'start_time' => $requestedAt,
-                'end_time' => $endTime,
-                'status' => 'available',
-            ]);
+                if ($existingSlot) {
+                    if ($existingSlot->status === 'available' && empty($existingSlot->appointment_id)) {
+                        $slot = $existingSlot;
+                        break;
+                    }
+                    $slotStart->addMinutes($duration);
+                    continue;
+                }
+
+                $slot = \App\Models\CounselorSlot::query()->create([
+                    'counselor_id' => $counselorId,
+                    'counselor_schedule_id' => null,
+                    'slot_date' => $slotStart->toDateString(),
+                    'day_of_week' => (int) $slotStart->isoWeekday(),
+                    'start_time' => $slotStart,
+                    'end_time' => $endTime,
+                    'status' => 'available',
+                ]);
+                break;
+            }
+
+            if (!$slot || !$endTime) {
+                return response()->json(['message' => 'No emergency slot is currently available for this counselor.'], 422);
+            }
+            $emergencyRequest->update(['counselor_slot_id' => $slot->id]);
 
             $session = \App\Models\CounselingSession::query()
                 ->where('student_id', $studentId)
@@ -151,7 +181,7 @@ class EmergencyRequestController extends Controller
                 $session->update(['status' => 'active', 'started_at' => now()]);
             }
 
-            $formattedTime = $requestedAt->format('M j, Y g:i A');
+            $formattedTime = $slotStart->format('M j, Y g:i A');
 
             try {
                 $notification = \App\Models\Notification::query()->create([
@@ -171,7 +201,7 @@ class EmergencyRequestController extends Controller
             }
         }
 
-        return response()->json($emergencyRequest->refresh()->load(['student.profile', 'counselor.profile', 'assignee.profile', 'resolver.profile']));
+        return response()->json($emergencyRequest->refresh()->load(['student.profile', 'counselor.profile', 'assignee.profile', 'resolver.profile', 'slot']));
     }
 
     private function notifyEmergencyQueue(EmergencyRequest $emergencyRequest): int

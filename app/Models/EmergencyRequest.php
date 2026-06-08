@@ -13,6 +13,7 @@ class EmergencyRequest extends Model
         'student_id',
         'counselor_id',
         'assigned_to',
+        'counselor_slot_id',
         'requested_at',
         'is_after_hours',
         'priority',
@@ -43,6 +44,11 @@ class EmergencyRequest extends Model
     public function assignee()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    public function slot()
+    {
+        return $this->belongsTo(CounselorSlot::class, 'counselor_slot_id');
     }
 
     public function resolver()

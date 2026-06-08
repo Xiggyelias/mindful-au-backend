@@ -129,6 +129,70 @@ class CounselorSlotManagementTest extends TestCase
         $this->assertSame('/counselor/alerts', $notification->meta['path'] ?? null);
     }
 
+    public function test_assigned_emergency_request_creates_bookable_priority_slot(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-08 10:00:00'));
+
+        try {
+            $student = $this->createUserWithRole('student');
+            $counselor = $this->createUserWithRole('counselor');
+            $emergencyRequest = EmergencyRequest::query()->create([
+                'student_id' => $student->id,
+                'counselor_id' => null,
+                'requested_at' => now()->subMinutes(20),
+                'is_after_hours' => true,
+                'priority' => 1,
+                'status' => 'queued',
+                'reason' => 'Urgent support needed',
+            ]);
+
+            $acceptResponse = $this->actingAs($counselor)->patchJson("/api/emergency-requests/{$emergencyRequest->id}", [
+                'status' => 'assigned',
+            ]);
+
+            $acceptResponse->assertOk()
+                ->assertJsonPath('status', 'assigned')
+                ->assertJsonPath('assigned_to', $counselor->id);
+
+            $slotId = (int) $acceptResponse->json('counselor_slot_id');
+            $this->assertGreaterThan(0, $slotId);
+
+            $slot = CounselorSlot::query()->findOrFail($slotId);
+            $this->assertNull($slot->counselor_schedule_id);
+            $this->assertTrue(Carbon::parse($slot->start_time)->greaterThan(now()));
+
+            $slotsResponse = $this->actingAs($student)->getJson(
+                "/api/counselor-slots?counselor_id={$counselor->id}&from=2026-06-08&to=2026-06-08&generate=1"
+            );
+
+            $slotsResponse->assertOk();
+            $this->assertTrue(
+                collect($slotsResponse->json('data'))->contains(fn (array $row) => (int) $row['id'] === $slotId),
+                'Accepted emergency slots should remain visible after normal slot generation.'
+            );
+
+            $bookingResponse = $this->actingAs($student)->postJson('/api/appointments', [
+                'counselor_id' => $counselor->id,
+                'counselor_slot_id' => $slotId,
+                'scheduled_at' => $slot->start_time->toIso8601String(),
+                'duration_minutes' => max(30, $slot->start_time->diffInMinutes($slot->end_time)),
+                'notes' => 'Online emergency support',
+            ]);
+
+            $bookingResponse->assertCreated()
+                ->assertJsonPath('counselor_slot_id', $slotId);
+
+            $this->assertDatabaseHas('appointments', [
+                'student_id' => $student->id,
+                'counselor_id' => $counselor->id,
+                'counselor_slot_id' => $slotId,
+                'status' => 'scheduled',
+            ]);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     private function createUserWithRole(string $role): User
     {
         $user = User::factory()->create();

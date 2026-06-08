@@ -158,23 +158,40 @@ class AppointmentController extends Controller
         $studentId = (int) $request->user()->id;
         $counselorId = (int) $validated['counselor_id'];
         $slotId = !empty($validated['counselor_slot_id']) ? (int) $validated['counselor_slot_id'] : null;
+        $explicitSlot = null;
+        if ($slotId !== null) {
+            $explicitSlot = CounselorSlot::query()->find($slotId);
+            if (!$explicitSlot) {
+                throw ValidationException::withMessages([
+                    'counselor_slot_id' => ['Selected slot could not be found.'],
+                ]);
+            }
+            if ((int) $explicitSlot->counselor_id !== $counselorId) {
+                throw ValidationException::withMessages([
+                    'counselor_slot_id' => ['Selected slot does not belong to this counselor.'],
+                ]);
+            }
+        }
 
-        $slotResolution = $this->slotService->resolveSlotForBooking($counselorId, $proposedStart, $durationMinutes);
-        if (($slotResolution['reason'] ?? null) === 'outside_hours') {
-            return $this->queueEmergencyFromAppointmentRequest(
-                $request,
-                $counselorId,
-                $proposedStart,
-                $validated['notes'] ?? null
-            );
-        }
-        if (($slotResolution['reason'] ?? null) === 'lunch_break') {
-            throw ValidationException::withMessages([
-                'scheduled_at' => ['Lunch break is locked from 13:00 to 14:00. Please choose another slot.'],
-            ]);
-        }
-        if ($slotId === null && ($slotResolution['slot'] ?? null) instanceof CounselorSlot && ($slotResolution['reason'] ?? null) === 'available') {
-            $slotId = (int) $slotResolution['slot']->id;
+        $isExplicitEmergencySlot = $explicitSlot instanceof CounselorSlot && $explicitSlot->counselor_schedule_id === null;
+        if (!$isExplicitEmergencySlot) {
+            $slotResolution = $this->slotService->resolveSlotForBooking($counselorId, $proposedStart, $durationMinutes);
+            if (($slotResolution['reason'] ?? null) === 'outside_hours') {
+                return $this->queueEmergencyFromAppointmentRequest(
+                    $request,
+                    $counselorId,
+                    $proposedStart,
+                    $validated['notes'] ?? null
+                );
+            }
+            if (($slotResolution['reason'] ?? null) === 'lunch_break') {
+                throw ValidationException::withMessages([
+                    'scheduled_at' => ['Lunch break is locked from 13:00 to 14:00. Please choose another slot.'],
+                ]);
+            }
+            if ($slotId === null && ($slotResolution['slot'] ?? null) instanceof CounselorSlot && ($slotResolution['reason'] ?? null) === 'available') {
+                $slotId = (int) $slotResolution['slot']->id;
+            }
         }
         $isAnonymous = array_key_exists('is_anonymous', $validated)
             ? (bool) $validated['is_anonymous']

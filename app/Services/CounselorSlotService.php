@@ -287,6 +287,7 @@ class CounselorSlotService
             ->where('counselor_id', $counselorId)
             ->where('slot_date', $date->toDateString())
             ->whereNull('appointment_id')
+            ->whereNotNull('counselor_schedule_id')
             ->where('status', '!=', 'booked')
             ->get()
             ->each(function (CounselorSlot $slot) use ($allowedKeys): void {
@@ -308,6 +309,10 @@ class CounselorSlotService
 
         return $slots
             ->filter(function (CounselorSlot $slot) use ($schedules, &$allowedByDate): bool {
+                if ($slot->counselor_schedule_id === null) {
+                    return true;
+                }
+
                 $slotDate = $slot->slot_date?->toDateString() ?: Carbon::parse($slot->start_time)->toDateString();
                 if (! isset($allowedByDate[$slotDate])) {
                     $dayOfWeek = (int) Carbon::parse($slotDate)->isoWeekday();
