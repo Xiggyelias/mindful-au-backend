@@ -100,10 +100,14 @@ class EmergencyRequestController extends Controller
             $validated['assigned_to'] = $user->id;
         }
 
-        $emergencyRequest->update($validated);
+        $slot = null;
+        $slotStart = null;
+        $shouldPreparePrioritySlot =
+            ($validated['status'] ?? null) === 'assigned'
+            && ($oldStatus !== 'assigned' || empty($emergencyRequest->counselor_slot_id));
 
-        if (($validated['status'] ?? null) === 'assigned' && $oldStatus !== 'assigned') {
-            $counselorId = $emergencyRequest->assigned_to;
+        if ($shouldPreparePrioritySlot) {
+            $counselorId = (int) ($validated['assigned_to'] ?? $emergencyRequest->assigned_to ?? 0);
             $studentId = $emergencyRequest->student_id;
             $requestedAt = $emergencyRequest->requested_at ?? now();
             $slotStart = $requestedAt->copy();
@@ -158,8 +162,14 @@ class EmergencyRequestController extends Controller
             if (!$slot || !$endTime) {
                 return response()->json(['message' => 'No emergency slot is currently available for this counselor.'], 422);
             }
-            $emergencyRequest->update(['counselor_slot_id' => $slot->id]);
+            $validated['counselor_slot_id'] = $slot->id;
+        }
 
+        $emergencyRequest->update($validated);
+
+        if ($shouldPreparePrioritySlot && $slot && $slotStart) {
+            $counselorId = (int) ($validated['assigned_to'] ?? $emergencyRequest->assigned_to);
+            $studentId = $emergencyRequest->student_id;
             $session = \App\Models\CounselingSession::query()
                 ->where('student_id', $studentId)
                 ->where('counselor_id', $counselorId)
