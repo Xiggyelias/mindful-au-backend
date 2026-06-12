@@ -193,6 +193,35 @@ class CounselorSlotManagementTest extends TestCase
         }
     }
 
+    public function test_counselor_can_get_and_update_schedules_and_generate_slots(): void
+    {
+        $counselor = $this->createUserWithRole('counselor');
+
+        $responseGet = $this->actingAs($counselor)->getJson('/api/counselor-schedules');
+        $responseGet->assertOk()
+            ->assertJsonStructure(['data']);
+
+        $schedules = $responseGet->json('data');
+        $this->assertCount(7, $schedules);
+
+        $responsePut = $this->actingAs($counselor)->putJson('/api/counselor-schedules', [
+            'schedules' => collect($schedules)->map(fn ($s) => [
+                'day_of_week' => $s['day_of_week'],
+                'is_working_day' => $s['is_working_day'],
+                'start_time' => '09:00',
+                'end_time' => '15:00',
+                'slot_duration_minutes' => 60,
+            ])->all(),
+        ]);
+        $responsePut->assertOk();
+
+        $responseGenerate = $this->actingAs($counselor)->postJson('/api/counselor-slots/generate', [
+            'weeks' => 1,
+        ]);
+        $responseGenerate->assertStatus(201);
+    }
+
+
     private function createUserWithRole(string $role): User
     {
         $user = User::factory()->create();

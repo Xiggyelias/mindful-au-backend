@@ -105,6 +105,13 @@ class Handler extends ExceptionHandler
         }
 
         if ($e instanceof ModelNotFoundException || $e instanceof NotFoundHttpException) {
+            Log::warning('404 Not Found Exception caught in Handler:', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'url' => $request->fullUrl(),
+                'method' => $request->method(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'message' => 'Resource not found.',
             ], 404);
