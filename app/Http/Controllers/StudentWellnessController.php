@@ -15,14 +15,13 @@ class StudentWellnessController extends Controller
 {
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService
-    ) {
-    }
+    ) {}
 
     public function summary(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        if (!$user->hasRole('student') && !$user->hasRole('counselor') && !$user->hasRole('admin')) {
+        if (! $user->hasRole('student') && ! $user->hasRole('counselor') && ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -45,13 +44,13 @@ class StudentWellnessController extends Controller
                 ->where('student_id', $studentId)
                 ->exists();
 
-            if (!$assignedBySession && !$assignedByAppointment) {
+            if (! $assignedBySession && ! $assignedByAppointment) {
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
         }
 
         $student = User::findOrFail($studentId);
-        if (!$student->hasRole('student')) {
+        if (! $student->hasRole('student')) {
             return response()->json(['message' => 'Target user is not a student'], 422);
         }
 
@@ -107,11 +106,11 @@ class StudentWellnessController extends Controller
         $burnoutSeed = is_numeric($latestAiDiagnostic->depression_level ?? null)
             ? (int) $latestAiDiagnostic->depression_level
             : (is_numeric($latestAiDiagnostic->anxiety_level ?? null) ? (int) $latestAiDiagnostic->anxiety_level : $stressLevel);
-        
+
         $burnoutRisk = $this->clampInt(
             (int) round(($stressLevel * 0.55) + ($burnoutSeed * 0.25) + ($cancelRate * 100 * 0.20))
         );
-        
+
         $wellnessScore = $this->clampInt(
             100 - (int) round(($riskScore * 0.4) + ($stressLevel * 0.35) + ($burnoutRisk * 0.25))
         );
@@ -214,8 +213,8 @@ class StudentWellnessController extends Controller
             0,
             2
         );
-        if (!empty($dominantTopics)) {
-            $insightParts[] = 'Recent support themes: ' . implode(', ', $dominantTopics) . '.';
+        if (! empty($dominantTopics)) {
+            $insightParts[] = 'Recent support themes: '.implode(', ', $dominantTopics).'.';
         }
 
         return implode(' ', $insightParts);
@@ -244,7 +243,7 @@ class StudentWellnessController extends Controller
             $recommendations[] = 'Stress is moderate. Practice daily mindfulness and maintain regular check-ins.';
         }
 
-        if (!empty($mlActions)) {
+        if (! empty($mlActions)) {
             $recommendations[] = $mlActions[0];
         }
 
@@ -257,41 +256,65 @@ class StudentWellnessController extends Controller
 
     private function wellnessLabel(int $score): string
     {
-        if ($score >= 80) return 'Excellent';
-        if ($score >= 60) return 'Good';
-        if ($score >= 40) return 'Fair';
-        if ($score >= 20) return 'Needs Attention';
+        if ($score >= 80) {
+            return 'Excellent';
+        }
+        if ($score >= 60) {
+            return 'Good';
+        }
+        if ($score >= 40) {
+            return 'Fair';
+        }
+        if ($score >= 20) {
+            return 'Needs Attention';
+        }
+
         return 'Critical';
     }
 
     private function pressureLabel(int $score): string
     {
-        if ($score >= 80) return 'Critical';
-        if ($score >= 60) return 'High';
-        if ($score >= 40) return 'Moderate';
-        if ($score >= 20) return 'Low';
+        if ($score >= 80) {
+            return 'Critical';
+        }
+        if ($score >= 60) {
+            return 'High';
+        }
+        if ($score >= 40) {
+            return 'Moderate';
+        }
+        if ($score >= 20) {
+            return 'Low';
+        }
+
         return 'Minimal';
     }
 
     private function parseDiagnosticRecommendations(mixed $value): string
     {
-        if (!$value) return '';
-        if (is_string($value)) return trim($value);
-        if (!is_array($value)) return '';
+        if (! $value) {
+            return '';
+        }
+        if (is_string($value)) {
+            return trim($value);
+        }
+        if (! is_array($value)) {
+            return '';
+        }
 
         $parts = [];
-        if (!empty($value['primary']) && is_string($value['primary'])) {
+        if (! empty($value['primary']) && is_string($value['primary'])) {
             $parts[] = $this->cleanText($value['primary']);
         }
 
-        if (!empty($value['actions']) && is_array($value['actions'])) {
+        if (! empty($value['actions']) && is_array($value['actions'])) {
             $actions = array_slice(
                 array_values(array_filter($value['actions'], fn ($item) => is_string($item) && trim($item) !== '')),
                 0,
                 2
             );
-            if (!empty($actions)) {
-                $parts[] = 'Next steps: ' . implode(' ', array_map(fn ($item) => $this->cleanText($item), $actions));
+            if (! empty($actions)) {
+                $parts[] = 'Next steps: '.implode(' ', array_map(fn ($item) => $this->cleanText($item), $actions));
             }
         }
 
@@ -300,7 +323,10 @@ class StudentWellnessController extends Controller
 
     private function cleanText(?string $text): string
     {
-        if (!$text) return '';
+        if (! $text) {
+            return '';
+        }
+
         return trim(preg_replace('/\s+/', ' ', $text));
     }
 

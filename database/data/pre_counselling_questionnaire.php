@@ -4,7 +4,6 @@
  * Concise Pre-counselling intake questionnaire (7 highly clinical, direct questions).
  * Stored under diagnostic_questionnaires.questions alongside top-level meta.
  */
-
 $freqOpts = fn () => [
     ['value' => 'never', 'label' => 'Never'],
     ['value' => 'rarely', 'label' => 'Rarely'],

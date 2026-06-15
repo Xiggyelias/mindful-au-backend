@@ -10,7 +10,7 @@ class ForceHttps
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (!$this->shouldForceHttps()) {
+        if (! $this->shouldForceHttps()) {
             return $next($request);
         }
 

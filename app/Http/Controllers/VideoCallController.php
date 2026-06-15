@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NotificationCreated;
 use App\Models\Appointment;
 use App\Models\CounselingCall;
 use App\Models\CounselingSession;
 use App\Models\Notification;
-use App\Events\NotificationCreated;
+use App\Services\WebPushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -18,13 +19,17 @@ use Illuminate\Support\Str;
 class VideoCallController extends Controller
 {
     private const MIN_DURATION_MINUTES = 15;
+
     private const MAX_DURATION_MINUTES = 120;
+
     private const DEFAULT_DURATION_MINUTES = 60;
+
     private const JOIN_EARLY_MINUTES = 15;
+
     private const JOIN_LATE_GRACE_MINUTES = 15;
 
     public function __construct(
-        private readonly \App\Services\WebPushService $webPush,
+        private readonly WebPushService $webPush,
     ) {}
 
     public function authorizeCall(Request $request): JsonResponse
@@ -37,25 +42,28 @@ class VideoCallController extends Controller
         $user = $request->user();
         $appointment = Appointment::findOrFail($validated['appointment_id']);
 
-        if (!$this->isParticipant($appointment, (int) $user->id)) {
+        if (! $this->isParticipant($appointment, (int) $user->id)) {
             Log::warning('[VideoCall] User not participant', ['user_id' => $user->id, 'appointment_id' => $appointment->id]);
+
             return response()->json(['message' => 'Unauthorized for this video call.'], 403);
         }
 
-        if (!$this->isVideoEnabledAppointment((string) ($appointment->notes ?? ''))) {
+        if (! $this->isVideoEnabledAppointment((string) ($appointment->notes ?? ''))) {
             return response()->json(['message' => 'This appointment is not configured for video calls.'], 422);
         }
 
-        if (!in_array($appointment->status, ['scheduled', 'confirmed'], true)) {
+        if (! in_array($appointment->status, ['scheduled', 'confirmed'], true)) {
             Log::info('[VideoCall] Appointment status invalid', ['status' => $appointment->status, 'id' => $appointment->id]);
+
             return response()->json([
-                'message' => 'Only scheduled or confirmed appointments can start a video call. Current status: ' . $appointment->status,
+                'message' => 'Only scheduled or confirmed appointments can start a video call. Current status: '.$appointment->status,
             ], 422);
         }
 
         $window = $this->getWindow($appointment);
-        if (!$window['can_start']) {
+        if (! $window['can_start']) {
             Log::info('[VideoCall] Window closed', ['window' => $window, 'id' => $appointment->id]);
+
             return response()->json([
                 'message' => $window['message'],
                 'window' => $window,
@@ -74,7 +82,7 @@ class VideoCallController extends Controller
                 ->latest('id')
                 ->first();
 
-            if (!$session) {
+            if (! $session) {
                 $isAnonymous = (bool) $appointment->is_anonymous;
                 $session = CounselingSession::create([
                     'student_id' => $appointment->student_id,
@@ -85,7 +93,7 @@ class VideoCallController extends Controller
                     'notes' => "Video appointment #{$appointment->id}",
                     'is_anonymous' => $isAnonymous,
                     'anonymous_id' => $isAnonymous
-                        ? ($appointment->anonymous_id ?: 'User_' . str_pad((string) ((int) $appointment->id % 10000), 4, '0', STR_PAD_LEFT))
+                        ? ($appointment->anonymous_id ?: 'User_'.str_pad((string) ((int) $appointment->id % 10000), 4, '0', STR_PAD_LEFT))
                         : null,
                 ]);
             } elseif ($session->status !== 'active') {
@@ -94,7 +102,7 @@ class VideoCallController extends Controller
                     'started_at' => $session->started_at ?? now(),
                     'notes' => "Video appointment #{$appointment->id}",
                 ]);
-            } elseif (!$session->started_at) {
+            } elseif (! $session->started_at) {
                 $session->update([
                     'started_at' => now(),
                     'notes' => "Video appointment #{$appointment->id}",
@@ -116,7 +124,7 @@ class VideoCallController extends Controller
             )
         );
 
-        $isStudent  = (int) $appointment->student_id  === (int) $user->id && $user->hasRole('student');
+        $isStudent = (int) $appointment->student_id === (int) $user->id && $user->hasRole('student');
         $isCounselor = $user->hasRole('counselor') && (int) $appointment->counselor_id === (int) $user->id;
 
         if ($isStudent || $isCounselor) {
@@ -140,17 +148,17 @@ class VideoCallController extends Controller
 
             CounselingCall::create([
                 'appointment_id' => $appointment->id,
-                'student_id'     => $appointment->student_id,
-                'counselor_id'   => $appointment->counselor_id,
-                'status'         => CounselingCall::STATUS_PENDING,
-                'call_type'      => $callTypeResult,
-                'caller_role'    => $callerRole,
+                'student_id' => $appointment->student_id,
+                'counselor_id' => $appointment->counselor_id,
+                'status' => CounselingCall::STATUS_PENDING,
+                'call_type' => $callTypeResult,
+                'caller_role' => $callerRole,
             ]);
 
-            $isAudio      = $callTypeResult === 'audio';
+            $isAudio = $callTypeResult === 'audio';
             $notifyUserId = $isStudent ? (int) $appointment->counselor_id : (int) $appointment->student_id;
-            $notifyRoute  = $isStudent ? '/counselor/video' : '/student/video-call';
-            $notifyBody   = $isStudent
+            $notifyRoute = $isStudent ? '/counselor/video' : '/student/video-call';
+            $notifyBody = $isStudent
                 ? sprintf('A student is calling you for %s.', $isAudio ? 'an audio session' : 'a video session')
                 : sprintf('Your counselor is calling you for %s.', $isAudio ? 'an audio session' : 'a video session');
 
@@ -161,37 +169,37 @@ class VideoCallController extends Controller
                     $notifyBody,
                     $notifyRoute,
                     [
-                        'tag'                => 'cms-call-apt-' . (int) $appointment->id,
-                        'urgency'            => 'high',
+                        'tag' => 'cms-call-apt-'.(int) $appointment->id,
+                        'urgency' => 'high',
                         'requireInteraction' => true,
                     ]
                 );
             } catch (\Throwable $e) {
                 Log::warning('[VideoCall] web push failed', [
                     'appointment_id' => $appointment->id,
-                    'caller_role'    => $callerRole,
-                    'error'          => $e->getMessage(),
+                    'caller_role' => $callerRole,
+                    'error' => $e->getMessage(),
                 ]);
             }
 
             try {
                 $notification = Notification::create([
                     'user_id' => $notifyUserId,
-                    'title'   => $isAudio ? 'Incoming audio call' : 'Incoming video call',
+                    'title' => $isAudio ? 'Incoming audio call' : 'Incoming video call',
                     'message' => $notifyBody,
-                    'type'    => 'warning',
-                    'meta'    => [
-                        'kind'           => 'incoming_call',
+                    'type' => 'warning',
+                    'meta' => [
+                        'kind' => 'incoming_call',
                         'appointment_id' => (int) $appointment->id,
-                        'call_type'      => $callTypeResult,
-                        'caller_role'    => $callerRole,
+                        'call_type' => $callTypeResult,
+                        'caller_role' => $callerRole,
                     ],
                 ]);
                 event(new NotificationCreated($notification));
             } catch (\Throwable $e) {
                 Log::warning('[VideoCall] in-app notification failed', [
                     'appointment_id' => $appointment->id,
-                    'error'          => $e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -214,7 +222,7 @@ class VideoCallController extends Controller
         $user = $request->user();
         $appointment = Appointment::findOrFail($validated['appointment_id']);
 
-        if (!$this->isParticipant($appointment, (int) $user->id)) {
+        if (! $this->isParticipant($appointment, (int) $user->id)) {
             return response()->json(['message' => 'Unauthorized for this video call.'], 403);
         }
 
@@ -235,7 +243,7 @@ class VideoCallController extends Controller
                 $isStudentCaller = $pendingCall->caller_role === CounselingCall::CALLER_STUDENT;
                 $notifyUserId = $isStudentCaller ? (int) $lockedAppointment->counselor_id : (int) $lockedAppointment->student_id;
                 $notifyBody = $isStudentCaller ? 'Missed audio/video call from student.' : 'Missed audio/video call from counselor.';
-                
+
                 try {
                     $this->webPush->sendToUser(
                         $notifyUserId,
@@ -243,8 +251,8 @@ class VideoCallController extends Controller
                         $notifyBody,
                         $isStudentCaller ? '/counselor/video' : '/student/video-call',
                         [
-                            'tag'                => 'cms-call-apt-' . (int) $lockedAppointment->id,
-                            'urgency'            => 'high',
+                            'tag' => 'cms-call-apt-'.(int) $lockedAppointment->id,
+                            'urgency' => 'high',
                             'requireInteraction' => false,
                         ]
                     );
@@ -333,7 +341,8 @@ class VideoCallController extends Controller
     private function isVideoEnabledAppointment(string $notes): bool
     {
         $normalized = Str::lower(trim($notes));
-        return !Str::startsWith($normalized, 'physical');
+
+        return ! Str::startsWith($normalized, 'physical');
     }
 
     /**
@@ -345,7 +354,7 @@ class VideoCallController extends Controller
      */
     private function resolveCallType(string $requested, Appointment $appointment): ?string
     {
-        if (!in_array($requested, ['video', 'audio'], true)) {
+        if (! in_array($requested, ['video', 'audio'], true)) {
             $requested = 'video';
         }
 
@@ -373,7 +382,7 @@ class VideoCallController extends Controller
         ?CounselingSession $session,
         bool $allowInferenceWithoutAppointmentNote = false
     ): bool {
-        if (!$session) {
+        if (! $session) {
             return false;
         }
 
@@ -385,11 +394,11 @@ class VideoCallController extends Controller
             return false;
         }
 
-        if (!$this->counselingSessionMatchesAppointmentParticipants($appointment, $session)) {
+        if (! $this->counselingSessionMatchesAppointmentParticipants($appointment, $session)) {
             return false;
         }
 
-        if (!$session->started_at && !$session->ended_at) {
+        if (! $session->started_at && ! $session->ended_at) {
             return false;
         }
 
@@ -399,7 +408,7 @@ class VideoCallController extends Controller
             return true;
         }
 
-        if (!$allowInferenceWithoutAppointmentNote) {
+        if (! $allowInferenceWithoutAppointmentNote) {
             return false;
         }
 
@@ -429,8 +438,8 @@ class VideoCallController extends Controller
         $id = (int) $appointment->id;
         $idPattern = preg_quote((string) $id, '/');
 
-        return (bool) preg_match('/video\s+appointment\s*#\s*' . $idPattern . '(?!\d)/iu', $sessionNotes)
-            || (bool) preg_match('/appointment\s*#\s*' . $idPattern . '(?!\d)/iu', $sessionNotes);
+        return (bool) preg_match('/video\s+appointment\s*#\s*'.$idPattern.'(?!\d)/iu', $sessionNotes)
+            || (bool) preg_match('/appointment\s*#\s*'.$idPattern.'(?!\d)/iu', $sessionNotes);
     }
 
     private function counselingSessionNotesExplicitlyReferToAnotherAppointmentId(
@@ -440,7 +449,7 @@ class VideoCallController extends Controller
         $myId = (int) $appointment->id;
         $pattern = '/(?:video\s+)?appointment\s*#\s*(\d+)(?!\d)/iu';
 
-        if (!preg_match_all($pattern, $sessionNotes, $matches)) {
+        if (! preg_match_all($pattern, $sessionNotes, $matches)) {
             return false;
         }
 
@@ -455,7 +464,7 @@ class VideoCallController extends Controller
 
     private function normalizeDurationMinutes(?int $durationMinutes): int
     {
-        if (!$durationMinutes) {
+        if (! $durationMinutes) {
             return self::DEFAULT_DURATION_MINUTES;
         }
 
@@ -518,7 +527,7 @@ class VideoCallController extends Controller
 
     private function notifyStudentOnAppointmentCompleted(Appointment $appointment): void
     {
-        if (!$appointment->student_id) {
+        if (! $appointment->student_id) {
             return;
         }
 
@@ -543,7 +552,7 @@ class VideoCallController extends Controller
 
     private function formatAppointmentTime(mixed $scheduledAt): string
     {
-        if (!$scheduledAt) {
+        if (! $scheduledAt) {
             return 'a recent session';
         }
 

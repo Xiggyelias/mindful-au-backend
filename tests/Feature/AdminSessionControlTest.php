@@ -6,13 +6,14 @@ use App\Models\CounselingSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class AdminSessionControlTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function admin_can_open_a_student_chat_case_for_a_selected_counselor(): void
     {
         $admin = $this->createPortalUser('admin', 'admin-case-control@test.com', 'Admin Case Control');
@@ -40,7 +41,7 @@ class AdminSessionControlTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function admin_must_choose_a_supervising_counselor_when_opening_a_case(): void
     {
         $admin = $this->createPortalUser('admin', 'admin-missing-counselor@test.com', 'Admin Missing Counselor');
@@ -58,7 +59,7 @@ class AdminSessionControlTest extends TestCase
         $this->assertSame(0, CounselingSession::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function counselor_cannot_open_a_case_on_behalf_of_another_counselor(): void
     {
         $student = $this->createPortalUser('student', 'student-cross-counselor@test.com', 'Student Cross Counselor');

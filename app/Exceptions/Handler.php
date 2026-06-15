@@ -5,11 +5,11 @@ namespace App\Exceptions;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
-use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -23,6 +23,7 @@ use Throwable;
 class Handler extends ExceptionHandler
 {
     private const GENERIC_SERVER_ERROR_MESSAGE = 'An unexpected error occurred.';
+
     private const VALIDATION_ERROR_MESSAGE = 'The given data was invalid.';
 
     protected $dontReport = [
@@ -42,7 +43,7 @@ class Handler extends ExceptionHandler
         });
 
         $this->renderable(function (Throwable $e, Request $request) {
-            if (!$this->shouldRenderApiResponse($request)) {
+            if (! $this->shouldRenderApiResponse($request)) {
                 return null;
             }
 
@@ -88,6 +89,7 @@ class Handler extends ExceptionHandler
 
         if ($e instanceof ValidationException) {
             $status = (int) ($e->status ?? 422);
+
             return response()->json([
                 'message' => self::VALIDATION_ERROR_MESSAGE,
                 'errors' => $e->errors(),
@@ -112,6 +114,7 @@ class Handler extends ExceptionHandler
                 'method' => $request->method(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'message' => 'Resource not found.',
             ], 404);
@@ -187,6 +190,7 @@ class Handler extends ExceptionHandler
         }
 
         $allowExposure = filter_var($rawExposure, FILTER_VALIDATE_BOOL);
+
         return $allowExposure && (bool) config('app.debug');
     }
 

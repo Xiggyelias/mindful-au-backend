@@ -58,7 +58,7 @@ class ChatConversation extends Model
             return $this->aiModel->name;
         }
 
-        if (!empty($this->model)) {
+        if (! empty($this->model)) {
             return (string) $this->model;
         }
 

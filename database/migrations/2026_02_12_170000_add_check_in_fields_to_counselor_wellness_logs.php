@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('counselor_wellness_logs', function (Blueprint $table) {
-            if (!Schema::hasColumn('counselor_wellness_logs', 'check_in_answers')) {
+            if (! Schema::hasColumn('counselor_wellness_logs', 'check_in_answers')) {
                 $table->json('check_in_answers')->nullable()->after('notes');
             }
 
-            if (!Schema::hasColumn('counselor_wellness_logs', 'check_in_version')) {
+            if (! Schema::hasColumn('counselor_wellness_logs', 'check_in_version')) {
                 $table->string('check_in_version', 40)->nullable()->after('check_in_answers');
             }
         });

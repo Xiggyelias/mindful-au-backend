@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AiReport;
 use App\Models\AiDiagnostic;
+use App\Models\AiReport;
 use App\Models\CounselingSession;
 use App\Models\User;
 use App\Support\PaginationPayload;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AIReportController extends Controller
@@ -17,7 +17,7 @@ class AIReportController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -49,7 +49,7 @@ class AIReportController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -62,7 +62,7 @@ class AIReportController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -88,7 +88,7 @@ class AIReportController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -172,7 +172,7 @@ class AIReportController extends Controller
 
         return [
             'name' => 'Monthly Trend Analysis',
-            'summary' => "This month: {$diagnosticTotal} diagnostics, {$sessions} counseling sessions. Average stress: " . round($avgStress, 1),
+            'summary' => "This month: {$diagnosticTotal} diagnostics, {$sessions} counseling sessions. Average stress: ".round($avgStress, 1),
             'data' => [
                 'period' => 'month',
                 'start_date' => $startOfMonth->toDateString(),
@@ -201,7 +201,7 @@ class AIReportController extends Controller
             ->pluck('count', 'risk_level')
             ->toArray();
 
-        $totalStudents = User::whereHas('roles', fn($q) => $q->where('role', 'student'))->count();
+        $totalStudents = User::whereHas('roles', fn ($q) => $q->where('role', 'student'))->count();
         $studentsWithDiagnostics = AiDiagnostic::distinct('student_id')->count('student_id');
 
         return [
@@ -212,7 +212,7 @@ class AIReportController extends Controller
                 'students_assessed' => $studentsWithDiagnostics,
                 'risk_distribution' => $riskDistribution,
                 'high_risk_count' => $highRiskStudents->count(),
-                'high_risk_students' => $highRiskStudents->map(fn($d) => [
+                'high_risk_students' => $highRiskStudents->map(fn ($d) => [
                     'student_id' => $d->student_id,
                     'student_name' => $d->student->profile->full_name ?? 'Anonymous',
                     'risk_level' => $d->risk_level,
@@ -227,7 +227,7 @@ class AIReportController extends Controller
 
     private function generateCounselorBurnout(): array
     {
-        $counselors = User::whereHas('roles', fn($q) => $q->where('role', 'counselor'))
+        $counselors = User::whereHas('roles', fn ($q) => $q->where('role', 'counselor'))
             ->with('profile')
             ->withCount(['counselorSessions', 'appointmentsAsCounselor'])
             ->get();
@@ -235,19 +235,19 @@ class AIReportController extends Controller
         $avgSessionsPerCounselor = $counselors->avg('counselor_sessions_count') ?? 0;
         $maxSessions = $counselors->max('counselor_sessions_count') ?? 0;
 
-        $overloadedCounselors = $counselors->filter(function($c) use ($avgSessionsPerCounselor) {
+        $overloadedCounselors = $counselors->filter(function ($c) use ($avgSessionsPerCounselor) {
             return $c->counselor_sessions_count > ($avgSessionsPerCounselor * 1.5);
         });
 
         return [
             'name' => 'Counselor Burnout Analysis',
-            'summary' => "Workload analysis: {$overloadedCounselors->count()} counselors above 150% average workload. Average: " . round($avgSessionsPerCounselor, 1) . " sessions.",
+            'summary' => "Workload analysis: {$overloadedCounselors->count()} counselors above 150% average workload. Average: ".round($avgSessionsPerCounselor, 1).' sessions.',
             'data' => [
                 'total_counselors' => $counselors->count(),
                 'average_sessions_per_counselor' => round($avgSessionsPerCounselor, 2),
                 'max_sessions' => $maxSessions,
                 'overloaded_counselors_count' => $overloadedCounselors->count(),
-                'counselor_workload' => $counselors->map(fn($c) => [
+                'counselor_workload' => $counselors->map(fn ($c) => [
                     'counselor_id' => $c->id,
                     'counselor_name' => $c->profile->full_name ?? 'Unknown',
                     'total_sessions' => $c->counselor_sessions_count,

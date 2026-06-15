@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AiModel;
+use App\Models\ChatConversation;
 use App\Services\OpenRouterService;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 
@@ -35,7 +37,7 @@ class OpenRouterChatController extends Controller
         $model = OpenRouterService::resolveChatModel($request->input('model'));
         $conversationId = $request->input('conversation_id');
 
-        if ($conversationId && !$this->conversationBelongsToUser((int) $conversationId, (int) $user->id)) {
+        if ($conversationId && ! $this->conversationBelongsToUser((int) $conversationId, (int) $user->id)) {
             return response()->json([
                 'success' => false,
                 'error' => 'Conversation not found',
@@ -77,14 +79,14 @@ class OpenRouterChatController extends Controller
         $model = OpenRouterService::resolveChatModel($request->input('model'));
         $conversationId = $request->input('conversation_id');
 
-        if ($conversationId && !$this->conversationBelongsToUser((int) $conversationId, (int) $user->id)) {
+        if ($conversationId && ! $this->conversationBelongsToUser((int) $conversationId, (int) $user->id)) {
             return response(json_encode([
                 'success' => false,
                 'error' => 'Conversation not found',
             ], JSON_UNESCAPED_UNICODE), 404, ['Content-Type' => 'application/json']);
         }
 
-        $response = new Response();
+        $response = new Response;
         $response->header('Content-Type', 'text/event-stream');
         $response->header('Cache-Control', 'no-cache');
         $response->header('Connection', 'keep-alive');
@@ -92,16 +94,16 @@ class OpenRouterChatController extends Controller
         $stream = $this->openRouterService->streamMessage($messages, $model, $conversationId);
 
         foreach ($stream as $chunk) {
-            if (isset($chunk['success']) && !$chunk['success']) {
-                $response->setContent("data: " . json_encode([
+            if (isset($chunk['success']) && ! $chunk['success']) {
+                $response->setContent('data: '.json_encode([
                     'success' => false,
                     'error' => $chunk['error'] ?? 'Unknown error occurred',
                     'done' => true,
-                ]) . "\n\n");
+                ])."\n\n");
                 break;
             }
 
-            $response->setContent("data: " . json_encode($chunk) . "\n\n");
+            $response->setContent('data: '.json_encode($chunk)."\n\n");
             $response->send();
         }
 
@@ -149,7 +151,7 @@ class OpenRouterChatController extends Controller
         $model = OpenRouterService::resolveChatModel($request->input('model'));
 
         $messages = [
-            ['role' => 'user', 'content' => $message]
+            ['role' => 'user', 'content' => $message],
         ];
 
         $result = $this->openRouterService->sendMessage($messages, $model);
@@ -220,12 +222,12 @@ class OpenRouterChatController extends Controller
         $model = OpenRouterService::resolveChatModel($request->input('model'));
 
         // Find or create AI model
-        $aiModel = \App\Models\AiModel::findOrCreateByName($model, [
+        $aiModel = AiModel::findOrCreateByName($model, [
             'display_name' => $this->getDisplayNameForModel($model),
             'provider' => $this->getProviderForModel($model),
         ]);
 
-        $conversation = \App\Models\ChatConversation::create([
+        $conversation = ChatConversation::create([
             'user_id' => $user->id,
             'ai_model_id' => $aiModel->id,
             'title' => $title,
@@ -251,12 +253,12 @@ class OpenRouterChatController extends Controller
     public function deleteConversation(Request $request, int $conversationId): JsonResponse
     {
         $user = $request->user();
-        
-        $conversation = \App\Models\ChatConversation::where('user_id', $user->id)
+
+        $conversation = ChatConversation::where('user_id', $user->id)
             ->where('id', $conversationId)
             ->first();
 
-        if (!$conversation) {
+        if (! $conversation) {
             return response()->json([
                 'success' => false,
                 'error' => 'Conversation not found',
@@ -294,13 +296,25 @@ class OpenRouterChatController extends Controller
     {
         $lower = strtolower($model);
 
-        if (str_contains($lower, 'meta-llama') || str_contains($lower, 'llama')) return 'meta';
-        if (str_contains($lower, 'deepseek')) return 'deepseek';
-        if (str_contains($lower, 'liquid') || str_contains($lower, 'lfm')) return 'liquid';
-        if (str_contains($lower, 'nvidia')) return 'nvidia';
-        if (str_contains($lower, 'qwen')) return 'qwen';
-        if (str_contains($lower, 'claude')) return 'anthropic';
-        
+        if (str_contains($lower, 'meta-llama') || str_contains($lower, 'llama')) {
+            return 'meta';
+        }
+        if (str_contains($lower, 'deepseek')) {
+            return 'deepseek';
+        }
+        if (str_contains($lower, 'liquid') || str_contains($lower, 'lfm')) {
+            return 'liquid';
+        }
+        if (str_contains($lower, 'nvidia')) {
+            return 'nvidia';
+        }
+        if (str_contains($lower, 'qwen')) {
+            return 'qwen';
+        }
+        if (str_contains($lower, 'claude')) {
+            return 'anthropic';
+        }
+
         return 'openrouter';
     }
 

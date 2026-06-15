@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('appointments', function (Blueprint $table) {
-            if (!Schema::hasColumn('appointments', 'reminder_sent')) {
+            if (! Schema::hasColumn('appointments', 'reminder_sent')) {
                 $table->boolean('reminder_sent')->default(false)->after('status');
             }
         });

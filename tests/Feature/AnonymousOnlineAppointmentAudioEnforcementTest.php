@@ -6,13 +6,14 @@ use App\Models\Appointment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class AnonymousOnlineAppointmentAudioEnforcementTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function student_cannot_request_video_call_type_for_anonymous_online_booking(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-anon-audio@test.com', 'Counselor Anon Audio');
@@ -30,7 +31,7 @@ class AnonymousOnlineAppointmentAudioEnforcementTest extends TestCase
             ->assertJsonValidationErrors(['call_type']);
     }
 
-    /** @test */
+    #[Test]
     public function appointment_model_coerces_call_type_to_audio_for_anonymous_non_physical_rows(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-model-anon@test.com', 'Counselor Model');
@@ -51,7 +52,7 @@ class AnonymousOnlineAppointmentAudioEnforcementTest extends TestCase
         $this->assertSame('audio', $appointment->fresh()->call_type);
     }
 
-    /** @test */
+    #[Test]
     public function appointment_model_does_not_coerce_audio_for_anonymous_physical_bookings(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-phys-anon@test.com', 'Counselor Phys');

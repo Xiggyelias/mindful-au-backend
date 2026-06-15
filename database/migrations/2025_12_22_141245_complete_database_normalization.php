@@ -12,27 +12,27 @@ return new class extends Migration
     public function up(): void
     {
         // Normalize counseling_sessions table - check if columns exist before adding
-        if (!Schema::hasColumn('counseling_sessions', 'session_type_id')) {
+        if (! Schema::hasColumn('counseling_sessions', 'session_type_id')) {
             Schema::table('counseling_sessions', function (Blueprint $table) {
                 $table->foreignId('session_type_id')->nullable()->after('session_type')->constrained('session_types')->onDelete('cascade');
             });
         }
 
-        if (!Schema::hasColumn('counseling_sessions', 'session_status_id')) {
+        if (! Schema::hasColumn('counseling_sessions', 'session_status_id')) {
             Schema::table('counseling_sessions', function (Blueprint $table) {
                 $table->foreignId('session_status_id')->nullable()->after('status')->constrained('session_statuses')->onDelete('cascade');
             });
         }
 
         // Normalize user_roles table
-        if (!Schema::hasColumn('user_roles', 'role_id')) {
+        if (! Schema::hasColumn('user_roles', 'role_id')) {
             Schema::table('user_roles', function (Blueprint $table) {
                 $table->foreignId('role_id')->nullable()->after('role')->constrained('roles')->onDelete('cascade');
             });
         }
 
         // Normalize notifications table
-        if (!Schema::hasColumn('notifications', 'notification_type_id')) {
+        if (! Schema::hasColumn('notifications', 'notification_type_id')) {
             Schema::table('notifications', function (Blueprint $table) {
                 $table->foreignId('notification_type_id')->nullable()->after('id')->constrained('notification_types')->onDelete('cascade');
             });
@@ -78,9 +78,9 @@ return new class extends Migration
      */
     private function addIndexIfNotExists(string $table, $columns): void
     {
-        $indexName = is_array($columns) ? $table . '_' . implode('_', $columns) . '_index' : $table . '_' . $columns . '_index';
-        
-        if (!Schema::hasIndex($table, $indexName)) {
+        $indexName = is_array($columns) ? $table.'_'.implode('_', $columns).'_index' : $table.'_'.$columns.'_index';
+
+        if (! Schema::hasIndex($table, $indexName)) {
             Schema::table($table, function (Blueprint $table) use ($columns) {
                 $table->index($columns);
             });

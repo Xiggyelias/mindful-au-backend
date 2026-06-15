@@ -28,6 +28,7 @@ class TipOfDayService
 
         if ($existingDelivery instanceof TipDelivery && $existingDelivery->tip instanceof Tip) {
             $this->ensureNotification($existingDelivery, $user);
+
             return $this->buildPayload($existingDelivery->tip, $existingDelivery, $user);
         }
 
@@ -74,7 +75,7 @@ class TipOfDayService
 
         $pool = $personalizedTips->isNotEmpty() ? $personalizedTips->values() : $eligibleTips->values();
         $selectedTip = $this->rotateFromPool($user, $pool, $latestMood, $personalizedTips->isNotEmpty());
-        if (!$selectedTip instanceof Tip) {
+        if (! $selectedTip instanceof Tip) {
             return null;
         }
 
@@ -125,6 +126,7 @@ class TipOfDayService
             ->value('mood');
 
         $normalized = strtolower(trim((string) $latestMood));
+
         return $normalized !== '' ? $normalized : null;
     }
 
@@ -145,6 +147,7 @@ class TipOfDayService
         ])));
 
         $index = ($dayIndex + $seed) % $pool->count();
+
         return $pool->values()->get($index);
     }
 
@@ -182,14 +185,14 @@ class TipOfDayService
             ? $delivery->tip
             : $delivery->tip()->first();
 
-        if (!$tip instanceof Tip) {
+        if (! $tip instanceof Tip) {
             return;
         }
 
         $notification = Notification::query()->create([
             'user_id' => $user->id,
             'title' => 'Daily Wellness Tip',
-            'message' => trim($tip->title . '. ' . $tip->content),
+            'message' => trim($tip->title.'. '.$tip->content),
             'type' => 'info',
             'read' => false,
         ]);

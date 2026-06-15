@@ -11,7 +11,7 @@ final class PreCounsellingQuestionnaire
     {
         $path = database_path('data/pre_counselling_questionnaire.php');
 
-        if (!is_readable($path)) {
+        if (! is_readable($path)) {
             return ['meta' => [], 'questions' => []];
         }
 

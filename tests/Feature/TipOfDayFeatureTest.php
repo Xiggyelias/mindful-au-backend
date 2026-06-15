@@ -5,25 +5,24 @@ namespace Tests\Feature;
 use App\Models\StudentMoodLog;
 use App\Models\Tip;
 use App\Models\TipDelivery;
-use App\Models\TipFavorite;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class TipOfDayFeatureTest extends TestCase
 {
     use RefreshDatabase;
-    
+
     protected function setUp(): void
     {
         parent::setUp();
         Tip::query()->delete();
     }
 
-
-    /** @test */
+    #[Test]
     public function admin_can_create_update_and_delete_tips(): void
     {
         $admin = $this->createPortalUser('admin', 'tip-admin@test.com', 'Tip Admin');
@@ -67,7 +66,7 @@ class TipOfDayFeatureTest extends TestCase
         $this->assertDatabaseMissing('tips', ['id' => $tipId]);
     }
 
-    /** @test */
+    #[Test]
     public function student_receives_personalized_tip_when_matching_mood_tip_exists(): void
     {
         $student = $this->createPortalUser('student', 'tip-student@test.com', 'Tip Student');
@@ -119,7 +118,7 @@ class TipOfDayFeatureTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function tip_rotation_cycles_without_repeating_until_the_pool_is_exhausted(): void
     {
         $student = $this->createPortalUser('student', 'tip-rotation@test.com', 'Tip Rotation Student');
@@ -162,7 +161,7 @@ class TipOfDayFeatureTest extends TestCase
         $this->assertSame($tipIds[0], $tipIds[3]);
     }
 
-    /** @test */
+    #[Test]
     public function notifications_endpoint_primes_the_daily_wellness_tip_notification_once_per_day(): void
     {
         $student = $this->createPortalUser('student', 'tip-notify@test.com', 'Tip Notify Student');
@@ -199,7 +198,7 @@ class TipOfDayFeatureTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function user_can_save_and_remove_a_favorite_tip(): void
     {
         $student = $this->createPortalUser('student', 'tip-favorite@test.com', 'Tip Favorite Student');
@@ -235,7 +234,7 @@ class TipOfDayFeatureTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function admin_tip_validation_rejects_harmful_or_overlong_tip_content(): void
     {
         $admin = $this->createPortalUser('admin', 'tip-guard@test.com', 'Tip Guard Admin');

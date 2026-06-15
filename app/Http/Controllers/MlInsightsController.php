@@ -14,14 +14,13 @@ class MlInsightsController extends Controller
 {
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService
-    ) {
-    }
+    ) {}
 
     public function counselorMatches(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        if (!$user->hasRole('student') && !$user->hasRole('counselor') && !$user->hasRole('admin')) {
+        if (! $user->hasRole('student') && ! $user->hasRole('counselor') && ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -50,13 +49,13 @@ class MlInsightsController extends Controller
                 ->where('student_id', $studentId)
                 ->exists();
 
-            if (!$assignedBySession && !$assignedByAppointment) {
+            if (! $assignedBySession && ! $assignedByAppointment) {
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
         }
 
         $student = User::findOrFail($studentId);
-        if (!$student->hasRole('student')) {
+        if (! $student->hasRole('student')) {
             return response()->json(['message' => 'Target user is not a student'], 422);
         }
 
@@ -77,7 +76,7 @@ class MlInsightsController extends Controller
     public function health(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -98,7 +97,7 @@ class MlInsightsController extends Controller
         $providerNames = [];
         $latencies = [];
 
-        if (!empty($assistantMessageIds)) {
+        if (! empty($assistantMessageIds)) {
             $metadataRows = DB::table('message_metadata')
                 ->whereIn('message_id', $assistantMessageIds)
                 ->whereIn('key', ['provider_mode', 'provider_name', 'latency_ms'])
@@ -127,11 +126,11 @@ class MlInsightsController extends Controller
         $fallbackRate = $inferences > 0
             ? round(($fallbackCount / $inferences) * 100, 2)
             : 0.0;
-        $avgLatencyMs = !empty($latencies)
+        $avgLatencyMs = ! empty($latencies)
             ? round(array_sum($latencies) / count($latencies), 2)
             : 0.0;
         $p95LatencyMs = 0.0;
-        if (!empty($latencies)) {
+        if (! empty($latencies)) {
             sort($latencies);
             $index = (int) floor((count($latencies) - 1) * 0.95);
             $p95LatencyMs = (float) $latencies[$index];

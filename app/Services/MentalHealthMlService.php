@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AcademicRiskEvent;
 use App\Models\AiDiagnostic;
 use App\Models\Appointment;
 use App\Models\CounselingSession;
@@ -14,7 +15,9 @@ use Illuminate\Support\Facades\DB;
 class MentalHealthMlService
 {
     public const MODEL_VERSION = 'mindful-lightweight-ml-v1';
+
     private const DEFAULT_ADMIN_ML_STUDENT_LIMIT = 2000;
+
     private const MAX_TEXT_SIGNAL_ROWS = 20000;
 
     private const DISTRESS_TERMS = [
@@ -126,12 +129,12 @@ class MentalHealthMlService
             sprintf('Primary support focus: %s.', $insights['focus_area']),
         ];
 
-        if (!empty($topics)) {
-            $promptParts[] = 'Recent non-identifying themes: ' . implode(', ', $topics) . '.';
+        if (! empty($topics)) {
+            $promptParts[] = 'Recent non-identifying themes: '.implode(', ', $topics).'.';
         }
 
-        if (!empty($protectiveFactors)) {
-            $promptParts[] = 'Protective factors: ' . implode(', ', $protectiveFactors) . '.';
+        if (! empty($protectiveFactors)) {
+            $promptParts[] = 'Protective factors: '.implode(', ', $protectiveFactors).'.';
         }
 
         $promptParts[] = 'Use concise, low-bandwidth language and never mention hidden scores, model names, or private profile details.';
@@ -433,10 +436,10 @@ class MentalHealthMlService
             ->filter(fn (array $item) => (int) (($item['feature_snapshot']['ai_chat_messages_30d'] ?? 0)) > 0)
             ->count();
 
-        $anonymousAverage = !empty($anonymousScores) ? array_sum($anonymousScores) / count($anonymousScores) : 0.0;
-        $namedAverage = !empty($namedScores) ? array_sum($namedScores) / count($namedScores) : 0.0;
+        $anonymousAverage = ! empty($anonymousScores) ? array_sum($anonymousScores) / count($anonymousScores) : 0.0;
+        $namedAverage = ! empty($namedScores) ? array_sum($namedScores) / count($namedScores) : 0.0;
         $fairnessGap = round(abs($anonymousAverage - $namedAverage), 1);
-        $agreementRate = !empty($agreementPool)
+        $agreementRate = ! empty($agreementPool)
             ? round((array_sum($agreementPool) / count($agreementPool)) * 100, 1)
             : 0.0;
 
@@ -501,7 +504,7 @@ class MentalHealthMlService
     }
 
     /**
-     * @param array<int> $studentIds
+     * @param  array<int>  $studentIds
      * @return array<int, array<string, mixed>>
      */
     private function buildStudentFeatureSnapshots(array $studentIds): array
@@ -536,6 +539,7 @@ class MentalHealthMlService
             if ($snapshots[$studentId]['latest_diagnostic_score'] === null) {
                 $snapshots[$studentId]['latest_diagnostic_score'] = (int) $diagnostic->total_score;
                 $snapshots[$studentId]['latest_diagnostic_risk_level'] = (string) $diagnostic->risk_level;
+
                 continue;
             }
 
@@ -651,14 +655,14 @@ class MentalHealthMlService
             $distressWords = $this->getMatchedKeywords($normalized, self::DISTRESS_TERMS);
             $crisisWords = $this->getMatchedKeywords($normalized, self::CRISIS_TERMS);
 
-            if (!empty($distressWords)) {
+            if (! empty($distressWords)) {
                 $snapshots[$studentId]['distress_messages_30d']++;
                 $snapshots[$studentId]['distress_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['distress_words'],
                     $distressWords
                 ));
             }
-            if (!empty($crisisWords)) {
+            if (! empty($crisisWords)) {
                 $snapshots[$studentId]['crisis_messages_30d']++;
                 $snapshots[$studentId]['crisis_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['crisis_words'],
@@ -694,18 +698,18 @@ class MentalHealthMlService
             }
 
             $snapshots[$studentId]['session_messages_30d']++;
-            
+
             $distressWords = $this->getMatchedKeywords($normalized, self::DISTRESS_TERMS);
             $crisisWords = $this->getMatchedKeywords($normalized, self::CRISIS_TERMS);
 
-            if (!empty($distressWords)) {
+            if (! empty($distressWords)) {
                 $snapshots[$studentId]['distress_messages_30d']++;
                 $snapshots[$studentId]['distress_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['distress_words'],
                     $distressWords
                 ));
             }
-            if (!empty($crisisWords)) {
+            if (! empty($crisisWords)) {
                 $snapshots[$studentId]['crisis_messages_30d']++;
                 $snapshots[$studentId]['crisis_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['crisis_words'],
@@ -719,7 +723,7 @@ class MentalHealthMlService
             }
         }
 
-        $academicEvents = \App\Models\AcademicRiskEvent::query()
+        $academicEvents = AcademicRiskEvent::query()
             ->whereIn('linked_user_id', $studentIds)
             ->where('created_at', '>=', now()->subDays(90))
             ->get(['linked_user_id', 'risk_score', 'risk_type']);
@@ -744,7 +748,7 @@ class MentalHealthMlService
     }
 
     /**
-     * @param array<int> $counselorIds
+     * @param  array<int>  $counselorIds
      * @return array<int, array<string, int>>
      */
     private function buildCounselorRankingMetrics(array $counselorIds, int $studentId): array
@@ -768,7 +772,7 @@ class MentalHealthMlService
 
         foreach ($appointments as $appointment) {
             $counselorId = (int) $appointment->counselor_id;
-            if (!isset($metrics[$counselorId])) {
+            if (! isset($metrics[$counselorId])) {
                 continue;
             }
 
@@ -797,7 +801,7 @@ class MentalHealthMlService
         $sessionIds = [];
         foreach ($sessions as $session) {
             $counselorId = (int) $session->counselor_id;
-            if (!isset($metrics[$counselorId])) {
+            if (! isset($metrics[$counselorId])) {
                 continue;
             }
 
@@ -811,7 +815,7 @@ class MentalHealthMlService
             $sessionIds[] = (int) $session->id;
         }
 
-        if (!empty($sessionIds)) {
+        if (! empty($sessionIds)) {
             $highRiskSessionCounts = AiDiagnostic::query()
                 ->whereIn('session_id', $sessionIds)
                 ->whereIn('risk_level', ['high', 'critical'])
@@ -882,12 +886,12 @@ class MentalHealthMlService
         $diagnosticScore = is_numeric($snapshot['latest_diagnostic_score']) ? (int) $snapshot['latest_diagnostic_score'] : null;
         $aiScore = is_numeric($snapshot['latest_ai_score']) ? (int) $snapshot['latest_ai_score'] : null;
         $cancelRate = (float) ($snapshot['cancel_rate_60d'] ?? 0.0);
-        
+
         $msgCount = (int) ($snapshot['ai_chat_messages_30d'] ?? 0) + (int) ($snapshot['session_messages_30d'] ?? 0);
-        $distressRatio = $msgCount > 0 
+        $distressRatio = $msgCount > 0
             ? ((int) ($snapshot['distress_messages_30d'] ?? 0)) / $msgCount
             : 0.0;
-            
+
         $weightedSum = 0.0;
         $weightTotal = 0.0;
 
@@ -1110,18 +1114,30 @@ class MentalHealthMlService
     private function estimateConfidence(array $snapshot): int
     {
         $signals = 0;
-        if ($snapshot['latest_diagnostic_score'] !== null) $signals++;
-        if ($snapshot['latest_ai_score'] !== null) $signals++;
-        if ((int) ($snapshot['appointments_60d'] ?? 0) > 0) $signals++;
-        if ((int) ($snapshot['sessions_60d'] ?? 0) > 0) $signals++;
-        if ((int) ($snapshot['ai_chat_messages_30d'] ?? 0) > 0) $signals++;
-        if ((int) ($snapshot['mood_logs_14d'] ?? 0) > 0) $signals++;
+        if ($snapshot['latest_diagnostic_score'] !== null) {
+            $signals++;
+        }
+        if ($snapshot['latest_ai_score'] !== null) {
+            $signals++;
+        }
+        if ((int) ($snapshot['appointments_60d'] ?? 0) > 0) {
+            $signals++;
+        }
+        if ((int) ($snapshot['sessions_60d'] ?? 0) > 0) {
+            $signals++;
+        }
+        if ((int) ($snapshot['ai_chat_messages_30d'] ?? 0) > 0) {
+            $signals++;
+        }
+        if ((int) ($snapshot['mood_logs_14d'] ?? 0) > 0) {
+            $signals++;
+        }
 
         return $this->clampInt(35 + ($signals * 10), 35, 95);
     }
 
     /**
-     * @param Collection<int, array<string, mixed>> $insights
+     * @param  Collection<int, array<string, mixed>>  $insights
      * @return array<int, string>
      */
     private function buildAdminPriorityActions(Collection $insights): array
@@ -1160,8 +1176,7 @@ class MentalHealthMlService
     }
 
     /**
-     * @param array<int, array<string, mixed>> $messages
-     * @param int|null $studentId
+     * @param  array<int, array<string, mixed>>  $messages
      * @return array<string, int|float|string|null>
      */
     private function extractConversationFeatures(array $messages, ?int $studentId = null): array
@@ -1177,7 +1192,7 @@ class MentalHealthMlService
 
         foreach ($messages as $message) {
             $isStudent = false;
-            
+
             if (isset($message['sender_id']) && $studentId !== null) {
                 $isStudent = (int) $message['sender_id'] === $studentId;
             } elseif (isset($message['sender'])) {
@@ -1190,7 +1205,7 @@ class MentalHealthMlService
                 $isStudent = true;
             }
 
-            if (!$isStudent) {
+            if (! $isStudent) {
                 continue;
             }
 
@@ -1200,7 +1215,7 @@ class MentalHealthMlService
             }
 
             $studentMessageCount++;
-            
+
             $distressWords = $this->getMatchedKeywords($normalized, self::DISTRESS_TERMS);
             $distressHits += count($distressWords);
             $matchedDistress = array_unique(array_merge($matchedDistress, $distressWords));
@@ -1268,7 +1283,7 @@ class MentalHealthMlService
             $analysis['depression_level'] ?? null,
         ], fn ($value) => is_numeric($value));
 
-        $levelAverage = !empty($levels)
+        $levelAverage = ! empty($levels)
             ? (float) (array_sum(array_map('floatval', $levels)) / count($levels))
             : null;
 
@@ -1341,7 +1356,7 @@ class MentalHealthMlService
     /**
      * Counts distinct keyword/phrase matches in a normalized string.
      *
-     * @param array<int, string> $terms
+     * @param  array<int, string>  $terms
      */
     private function countKeywordHits(string $text, array $terms): int
     {
@@ -1361,7 +1376,7 @@ class MentalHealthMlService
             // match inside 'unstressed', and 'stress' does NOT match inside
             // 'distress'.  The anchors check for a non-alphanumeric character
             // (or start/end of string) immediately before and after the term.
-            $pattern = '/(?<![a-z0-9])' . preg_quote($needle, '/') . '(?![a-z0-9])/u';
+            $pattern = '/(?<![a-z0-9])'.preg_quote($needle, '/').'(?![a-z0-9])/u';
             if (preg_match($pattern, $text) === 1) {
                 $matches[] = $term;
             }
@@ -1372,7 +1387,7 @@ class MentalHealthMlService
 
     private function cleanText(mixed $value): string
     {
-        if (!is_string($value)) {
+        if (! is_string($value)) {
             return '';
         }
 
@@ -1422,6 +1437,7 @@ class MentalHealthMlService
     private function adminMlStudentLimit(): int
     {
         $limit = (int) config('services.ai.admin_ml_student_limit', self::DEFAULT_ADMIN_ML_STUDENT_LIMIT);
+
         return max(100, min(10000, $limit));
     }
 }

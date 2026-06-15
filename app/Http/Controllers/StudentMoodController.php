@@ -14,7 +14,7 @@ class StudentMoodController extends Controller
     public function today(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('student')) {
+        if (! $user->hasRole('student')) {
             return response()->json(['message' => 'Only students can view mood check-ins'], 403);
         }
 
@@ -33,7 +33,7 @@ class StudentMoodController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('student')) {
+        if (! $user->hasRole('student')) {
             return response()->json(['message' => 'Only students can create mood check-ins'], 403);
         }
 
@@ -68,4 +68,3 @@ class StudentMoodController extends Controller
         ], 201);
     }
 }
-

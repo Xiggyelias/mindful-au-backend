@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Message;
-use App\Models\CounselingSession;
 use App\Models\AiDiagnostic;
+use App\Models\CounselingSession;
+use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\ChatMessageData;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -35,11 +35,11 @@ class VoiceNotesController extends Controller
         $session = CounselingSession::findOrFail($sessionId);
         $user = $request->user();
 
-        if (!$this->viewerCanAccessVoiceThread($user, $session)) {
+        if (! $this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (!$user->hasRole('admin') && in_array((string) $session->status, ['completed', 'cancelled'], true)) {
+        if (! $user->hasRole('admin') && in_array((string) $session->status, ['completed', 'cancelled'], true)) {
             return response()->json([
                 'message' => 'This session is closed and cannot receive new voice notes.',
             ], 422);
@@ -76,12 +76,12 @@ class VoiceNotesController extends Controller
         $file = $request->file('audio');
         $path = $file->storeAs(
             'voice-notes',
-            Str::uuid()->toString() . '.' . $file->guessExtension(),
+            Str::uuid()->toString().'.'.$file->guessExtension(),
             'local'
         );
         // Store the private path prefixed with a sentinel so the stream() method
         // can distinguish it from legacy public-disk paths (which start with /storage/).
-        $url = 'private://' . $path;
+        $url = 'private://'.$path;
 
         $message = Message::create([
             'session_id' => $sessionId,
@@ -106,13 +106,13 @@ class VoiceNotesController extends Controller
         $user = $request->user();
 
         $session = $message->session;
-        if (!$this->viewerCanAccessVoiceThread($user, $session)) {
+        if (! $this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
         $message->loadMissing('chatFile');
 
-        if ($message->message_type !== 'voice' || (!$message->file_url && !$message->chatFile)) {
+        if ($message->message_type !== 'voice' || (! $message->file_url && ! $message->chatFile)) {
             return response()->json(['message' => 'Not a voice note'], 400);
         }
 
@@ -134,12 +134,13 @@ class VoiceNotesController extends Controller
         // Legacy records stored the public storage URL (/storage/voice-notes/…).
         if (str_starts_with($fileUrl, 'private://')) {
             $path = Str::after($fileUrl, 'private://');
-            if (str_contains($path, '..') || !str_starts_with($path, 'voice-notes/')) {
+            if (str_contains($path, '..') || ! str_starts_with($path, 'voice-notes/')) {
                 return response()->json(['message' => 'Invalid voice note path'], 400);
             }
-            if (!Storage::disk('local')->exists($path)) {
+            if (! Storage::disk('local')->exists($path)) {
                 return response()->json(['message' => 'File not found'], 404);
             }
+
             // For private files, return a stream URL (requires auth); never expose a direct URL.
             return response()->json([
                 'stream_url' => url("/api/messages/{$messageId}/voice-note/stream"),
@@ -149,7 +150,7 @@ class VoiceNotesController extends Controller
 
         // Legacy path: file was stored on the public disk.
         $urlPath = parse_url($fileUrl, PHP_URL_PATH);
-        if (!is_string($urlPath) || !str_starts_with($urlPath, '/storage/voice-notes/')) {
+        if (! is_string($urlPath) || ! str_starts_with($urlPath, '/storage/voice-notes/')) {
             return response()->json(['message' => 'Invalid voice note path'], 400);
         }
 
@@ -158,7 +159,7 @@ class VoiceNotesController extends Controller
             return response()->json(['message' => 'Invalid voice note path'], 400);
         }
 
-        if (!Storage::disk('public')->exists($path)) {
+        if (! Storage::disk('public')->exists($path)) {
             return response()->json(['message' => 'File not found'], 404);
         }
 
@@ -166,7 +167,7 @@ class VoiceNotesController extends Controller
         return response()->json([
             'stream_url' => url("/api/messages/{$messageId}/voice-note/stream"),
             // Kept for backwards compatibility with older client builds.
-            'download_url' => asset('storage/' . $path),
+            'download_url' => asset('storage/'.$path),
             'message' => $message,
         ]);
     }
@@ -182,13 +183,13 @@ class VoiceNotesController extends Controller
         $user = $request->user();
 
         $session = $message->session;
-        if (!$this->viewerCanAccessVoiceThread($user, $session)) {
+        if (! $this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
         $message->loadMissing('chatFile');
 
-        if ($message->message_type !== 'voice' || (!$message->file_url && !$message->chatFile)) {
+        if ($message->message_type !== 'voice' || (! $message->file_url && ! $message->chatFile)) {
             return response()->json(['message' => 'Not a voice note'], 400);
         }
 
@@ -206,13 +207,13 @@ class VoiceNotesController extends Controller
 
             if (str_starts_with($fileUrl, 'private://')) {
                 $path = Str::after($fileUrl, 'private://');
-                if (str_contains($path, '..') || !str_starts_with($path, 'voice-notes/')) {
+                if (str_contains($path, '..') || ! str_starts_with($path, 'voice-notes/')) {
                     return response()->json(['message' => 'Invalid voice note path'], 400);
                 }
                 $disk = Storage::disk('local');
             } else {
                 $urlPath = parse_url($fileUrl, PHP_URL_PATH);
-                if (!is_string($urlPath) || !str_starts_with($urlPath, '/storage/voice-notes/')) {
+                if (! is_string($urlPath) || ! str_starts_with($urlPath, '/storage/voice-notes/')) {
                     return response()->json(['message' => 'Invalid voice note path'], 400);
                 }
                 $path = ltrim(Str::after($urlPath, '/storage/'), '/');
@@ -223,12 +224,12 @@ class VoiceNotesController extends Controller
             }
         }
 
-        if (!$disk->exists($path)) {
+        if (! $disk->exists($path)) {
             return response()->json(['message' => 'File not found'], 404);
         }
 
         $mimeType = $mimeType ?: ($disk->mimeType($path) ?: 'audio/webm');
-        $size     = $disk->size($path);
+        $size = $disk->size($path);
 
         return response()->stream(function () use ($disk, $path) {
             $stream = $disk->readStream($path);
@@ -237,12 +238,12 @@ class VoiceNotesController extends Controller
                 fclose($stream);
             }
         }, 200, [
-            'Content-Type'        => $mimeType,
-            'Content-Length'      => $size,
+            'Content-Type' => $mimeType,
+            'Content-Length' => $size,
             'Content-Disposition' => 'inline',
-            'Cache-Control'       => 'private, no-cache, no-store, must-revalidate',
+            'Cache-Control' => 'private, no-cache, no-store, must-revalidate',
             'X-Content-Type-Options' => 'nosniff',
-            'Accept-Ranges'       => 'none',
+            'Accept-Ranges' => 'none',
         ]);
     }
 
@@ -250,6 +251,7 @@ class VoiceNotesController extends Controller
     {
         if ((int) $session->student_id === $senderId) {
             $peerCounselorId = $this->activeCasePeerCounselorId($session);
+
             return $peerCounselorId > 0
                 ? $peerCounselorId
                 : ($session->counselor_id ? (int) $session->counselor_id : null);
@@ -344,11 +346,3 @@ class VoiceNotesController extends Controller
             ->value('peer_counselor_id') ?? 0);
     }
 }
-
-
-
-
-
-
-
-

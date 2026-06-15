@@ -12,18 +12,10 @@ class StudentMiddleware
     {
         $user = $request->user();
 
-        if (!$user || (!$user->hasRole('student') && !$user->hasRole('admin'))) {
+        if (! $user || (! $user->hasRole('student') && ! $user->hasRole('admin'))) {
             return response()->json(['message' => 'Student access required'], 403);
         }
 
         return $next($request);
     }
 }
-
-
-
-
-
-
-
-

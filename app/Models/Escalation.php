@@ -38,4 +38,3 @@ class Escalation extends Model
         return $this->belongsTo(User::class, 'escalated_to');
     }
 }
-

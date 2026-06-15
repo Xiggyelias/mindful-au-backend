@@ -4,9 +4,7 @@ namespace App\Events;
 
 use App\Models\Message;
 use App\Support\ChatMessageData;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -26,7 +24,7 @@ class MessageSent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('session.' . $this->message->session_id),
+            new PrivateChannel('session.'.$this->message->session_id),
         ];
     }
 
@@ -40,11 +38,3 @@ class MessageSent implements ShouldBroadcast
         return ChatMessageData::make($this->message, true);
     }
 }
-
-
-
-
-
-
-
-

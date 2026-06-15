@@ -21,6 +21,7 @@ class TrustProxies extends Middleware
         $configured = trim((string) env('TRUSTED_PROXIES', ''));
         if ($configured === '*') {
             $this->proxies = '*';
+
             return;
         }
 
@@ -29,14 +30,6 @@ class TrustProxies extends Middleware
             explode(',', $configured)
         ), static fn (string $proxy): bool => $proxy !== ''));
 
-        $this->proxies = !empty($proxies) ? $proxies : null;
+        $this->proxies = ! empty($proxies) ? $proxies : null;
     }
 }
-
-
-
-
-
-
-
-

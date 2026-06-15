@@ -17,7 +17,7 @@ class BaselineMigrationsCommand extends Command
 
     public function handle(): int
     {
-        if (!Schema::hasTable('migrations')) {
+        if (! Schema::hasTable('migrations')) {
             $this->warn('migrations table not found. Installing it first.');
             $this->call('migrate:install');
         }
@@ -29,6 +29,7 @@ class BaselineMigrationsCommand extends Command
 
         if ($migrationFiles->isEmpty()) {
             $this->info('No migration files found.');
+
             return self::SUCCESS;
         }
 
@@ -42,6 +43,7 @@ class BaselineMigrationsCommand extends Command
 
         if ($missing->isEmpty()) {
             $this->info('Migration table is already aligned. Nothing to baseline.');
+
             return self::SUCCESS;
         }
 
@@ -58,6 +60,7 @@ class BaselineMigrationsCommand extends Command
                 $this->line(" - {$migration}");
             }
             $this->info('Dry run complete. No records were inserted.');
+
             return self::SUCCESS;
         }
 

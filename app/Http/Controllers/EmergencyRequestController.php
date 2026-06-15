@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Events\NotificationCreated;
+use App\Models\CounselingSession;
+use App\Models\CounselorSchedule;
+use App\Models\CounselorSlot;
 use App\Models\EmergencyRequest;
 use App\Models\Notification;
 use App\Models\User;
@@ -11,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class EmergencyRequestController extends Controller
@@ -23,14 +27,14 @@ class EmergencyRequestController extends Controller
     {
         $user = $request->user();
         $query = EmergencyRequest::query()
-            ->with(['student.profile', 'counselor.profile', 'assignee.profile', 'resolver.profile', 'slot'])
+            ->with($this->emergencyRequestRelations())
             ->orderByRaw("CASE status WHEN 'queued' THEN 0 WHEN 'assigned' THEN 1 WHEN 'resolved' THEN 2 ELSE 3 END")
             ->orderBy('priority')
             ->orderByDesc('requested_at');
 
         if ($user->hasRole('student')) {
             $query->where('student_id', $user->id);
-        } elseif (!$user->hasRole('admin') && !$user->hasRole('counselor')) {
+        } elseif (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -39,7 +43,7 @@ class EmergencyRequestController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (!$request->user()->hasRole('student')) {
+        if (! $request->user()->hasRole('student')) {
             return response()->json(['message' => 'Only students can create emergency requests'], 403);
         }
 
@@ -50,8 +54,8 @@ class EmergencyRequestController extends Controller
             'location' => 'nullable|string|max:500',
         ]);
 
-        $requestedAt = !empty($validated['requested_at']) ? Carbon::parse($validated['requested_at']) : now();
-        $counselorId = !empty($validated['counselor_id']) ? (int) $validated['counselor_id'] : null;
+        $requestedAt = ! empty($validated['requested_at']) ? Carbon::parse($validated['requested_at']) : now();
+        $counselorId = ! empty($validated['counselor_id']) ? (int) $validated['counselor_id'] : null;
         $isAfterHours = $counselorId
             ? $this->slotService->isOutsideNormalBookingWindow($counselorId, $requestedAt)
             : $this->isDefaultAfterHours($requestedAt);
@@ -79,7 +83,7 @@ class EmergencyRequestController extends Controller
     public function update(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('admin') && !$user->hasRole('counselor')) {
+        if (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -90,10 +94,16 @@ class EmergencyRequestController extends Controller
         ]);
 
         $oldStatus = $emergencyRequest->status;
+        $hasResolvedBy = $this->hasEmergencyRequestColumn('resolved_by');
+        $hasResolvedAt = $this->hasEmergencyRequestColumn('resolved_at');
 
         if (($validated['status'] ?? null) === 'resolved' && $emergencyRequest->status !== 'resolved') {
-            $validated['resolved_by'] = $user->id;
-            $validated['resolved_at'] = now();
+            if ($hasResolvedBy) {
+                $validated['resolved_by'] = $user->id;
+            }
+            if ($hasResolvedAt) {
+                $validated['resolved_at'] = now();
+            }
         }
 
         if (($validated['status'] ?? null) === 'assigned' && empty($validated['assigned_to'])) {
@@ -102,8 +112,11 @@ class EmergencyRequestController extends Controller
 
         $slot = null;
         $slotStart = null;
+        $canPreparePrioritySlot = $this->hasEmergencyRequestColumn('counselor_slot_id')
+            && Schema::hasTable('counselor_slots');
         $shouldPreparePrioritySlot =
             ($validated['status'] ?? null) === 'assigned'
+            && $canPreparePrioritySlot
             && ($oldStatus !== 'assigned' || empty($emergencyRequest->counselor_slot_id));
 
         if ($shouldPreparePrioritySlot) {
@@ -118,7 +131,7 @@ class EmergencyRequestController extends Controller
             $slotStart->second(0);
 
             $dayOfWeek = (int) $slotStart->isoWeekday();
-            $schedule = \App\Models\CounselorSchedule::query()
+            $schedule = CounselorSchedule::query()
                 ->where('counselor_id', $counselorId)
                 ->where('day_of_week', $dayOfWeek)
                 ->first();
@@ -132,7 +145,7 @@ class EmergencyRequestController extends Controller
             $endTime = null;
             for ($attempt = 0; $attempt < 6; $attempt++) {
                 $endTime = $slotStart->copy()->addMinutes($duration);
-                $existingSlot = \App\Models\CounselorSlot::query()
+                $existingSlot = CounselorSlot::query()
                     ->where('counselor_id', $counselorId)
                     ->where('start_time', $slotStart->toDateTimeString())
                     ->where('end_time', $endTime->toDateTimeString())
@@ -144,10 +157,11 @@ class EmergencyRequestController extends Controller
                         break;
                     }
                     $slotStart->addMinutes($duration);
+
                     continue;
                 }
 
-                $slot = \App\Models\CounselorSlot::query()->create([
+                $slot = CounselorSlot::query()->create([
                     'counselor_id' => $counselorId,
                     'counselor_schedule_id' => null,
                     'slot_date' => $slotStart->toDateString(),
@@ -159,7 +173,7 @@ class EmergencyRequestController extends Controller
                 break;
             }
 
-            if (!$slot || !$endTime) {
+            if (! $slot || ! $endTime) {
                 return response()->json(['message' => 'No emergency slot is currently available for this counselor.'], 422);
             }
             $validated['counselor_slot_id'] = $slot->id;
@@ -170,7 +184,7 @@ class EmergencyRequestController extends Controller
         if ($shouldPreparePrioritySlot && $slot && $slotStart) {
             $counselorId = (int) ($validated['assigned_to'] ?? $emergencyRequest->assigned_to);
             $studentId = $emergencyRequest->student_id;
-            $session = \App\Models\CounselingSession::query()
+            $session = CounselingSession::query()
                 ->where('student_id', $studentId)
                 ->where('counselor_id', $counselorId)
                 ->where('session_type', 'chat')
@@ -178,8 +192,8 @@ class EmergencyRequestController extends Controller
                 ->latest('id')
                 ->first();
 
-            if (!$session) {
-                $session = \App\Models\CounselingSession::query()->create([
+            if (! $session) {
+                $session = CounselingSession::query()->create([
                     'student_id' => $studentId,
                     'counselor_id' => $counselorId,
                     'session_type' => 'chat',
@@ -194,7 +208,7 @@ class EmergencyRequestController extends Controller
             $formattedTime = $slotStart->format('M j, Y g:i A');
 
             try {
-                $notification = \App\Models\Notification::query()->create([
+                $notification = Notification::query()->create([
                     'user_id' => $studentId,
                     'title' => 'Emergency Request Accepted',
                     'message' => "Counselor accepted your emergency request. Please book your slot at {$formattedTime}.",
@@ -205,13 +219,35 @@ class EmergencyRequestController extends Controller
                     ],
                     'type' => 'info',
                 ]);
-                event(new \App\Events\NotificationCreated($notification));
+                event(new NotificationCreated($notification));
             } catch (\Throwable $_) {
                 // no-op
             }
         }
 
-        return response()->json($emergencyRequest->refresh()->load(['student.profile', 'counselor.profile', 'assignee.profile', 'resolver.profile', 'slot']));
+        return response()->json($emergencyRequest->refresh()->load($this->emergencyRequestRelations()));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function emergencyRequestRelations(): array
+    {
+        $relations = ['student.profile', 'counselor.profile', 'assignee.profile', 'resolver.profile'];
+        if ($this->hasEmergencyRequestColumn('counselor_slot_id') && Schema::hasTable('counselor_slots')) {
+            $relations[] = 'slot';
+        }
+
+        return $relations;
+    }
+
+    private function hasEmergencyRequestColumn(string $column): bool
+    {
+        if (! Schema::hasTable('emergency_requests')) {
+            return false;
+        }
+
+        return in_array($column, Schema::getColumnListing('emergency_requests'), true);
     }
 
     private function notifyEmergencyQueue(EmergencyRequest $emergencyRequest): int
@@ -228,7 +264,7 @@ class EmergencyRequestController extends Controller
             'Emergency support request from %s at %s. %s',
             $studentName,
             $emergencyRequest->requested_at?->format('M j, Y g:i A') ?? 'now',
-            $emergencyRequest->reason ? 'Reason: ' . Str::limit($emergencyRequest->reason, 180) : 'Please review the priority dashboard.'
+            $emergencyRequest->reason ? 'Reason: '.Str::limit($emergencyRequest->reason, 180) : 'Please review the priority dashboard.'
         );
 
         $recipientQuery = User::query()
@@ -282,6 +318,7 @@ class EmergencyRequestController extends Controller
         }
 
         $minutes = ((int) $date->format('H') * 60) + (int) $date->format('i');
+
         return $minutes < (8 * 60) || $minutes >= ((16 * 60) + 30);
     }
 }

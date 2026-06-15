@@ -8,17 +8,19 @@ use App\Models\Referral;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class SecurityHardeningTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function role_escalation_and_idor_attempts_are_blocked(): void
     {
         $admin = $this->createPortalUser('admin', 'admin-sec@test.com', 'Admin Sec');
@@ -47,7 +49,7 @@ class SecurityHardeningTest extends TestCase
             ->assertStatus(200);
     }
 
-    /** @test */
+    #[Test]
     public function anonymous_identity_is_masked_from_counselor_until_reveal(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-anon@test.com', 'Counselor Anon');
@@ -80,7 +82,7 @@ class SecurityHardeningTest extends TestCase
         $this->assertSame($student->id, (int) ($row['chat_peer_student_id'] ?? 0));
     }
 
-    /** @test */
+    #[Test]
     public function student_can_update_chat_anonymity_without_changing_profile_default(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-chat-anon-toggle@test.com', 'Counselor Chat Anon');
@@ -119,7 +121,7 @@ class SecurityHardeningTest extends TestCase
         $this->assertFalse((bool) ($student->profile?->anonymous_mode));
     }
 
-    /** @test */
+    #[Test]
     public function counselor_sees_historical_anonymous_messages_masked_after_session_named(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-hist-a@test.com', 'Counselor Hist A');
@@ -158,7 +160,7 @@ class SecurityHardeningTest extends TestCase
         $this->assertSame(0, (int) ($first['sender_id'] ?? -1));
     }
 
-    /** @test */
+    #[Test]
     public function counselor_sees_historical_named_messages_unmasked_after_session_anonymous(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-hist-b@test.com', 'Counselor Hist B');
@@ -196,7 +198,7 @@ class SecurityHardeningTest extends TestCase
         $this->assertSame((int) $student->id, (int) ($first['sender_id'] ?? 0));
     }
 
-    /** @test */
+    #[Test]
     public function student_profile_anonymous_default_change_does_not_sync_open_chat_sessions(): void
     {
         $c1 = $this->createPortalUser('counselor', 'counselor-dup1@test.com', 'C1');
@@ -248,7 +250,7 @@ class SecurityHardeningTest extends TestCase
         $this->assertNull($s2->anonymous_id);
     }
 
-    /** @test */
+    #[Test]
     public function counselor_student_roster_does_not_mask_profile_anonymous_mode(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-roster-anon@test.com', 'Counselor Roster');
@@ -266,7 +268,7 @@ class SecurityHardeningTest extends TestCase
         $this->assertSame('student-roster-anon@test.com', $row['email'] ?? null);
     }
 
-    /** @test */
+    #[Test]
     public function counselor_cannot_patch_chat_anonymity(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-no-anon-patch@test.com', 'Counselor No Anon Patch');
@@ -285,7 +287,7 @@ class SecurityHardeningTest extends TestCase
         ])->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function student_cannot_patch_chat_anonymity_for_closed_session(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-closed-anon@test.com', 'Counselor Closed Anon');
@@ -305,7 +307,7 @@ class SecurityHardeningTest extends TestCase
         ])->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function voice_note_upload_rejects_invalid_file_types(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-voice@test.com', 'Counselor Voice');
@@ -328,7 +330,7 @@ class SecurityHardeningTest extends TestCase
             ->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function token_rotation_prevents_session_fixation_after_relogin(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -365,7 +367,7 @@ class SecurityHardeningTest extends TestCase
             ->assertStatus(200);
     }
 
-    /** @test */
+    #[Test]
     public function session_notes_are_encrypted_at_rest_and_decrypted_on_read(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -405,7 +407,7 @@ class SecurityHardeningTest extends TestCase
             ->assertJsonPath('notes', $noteText);
     }
 
-    /** @test */
+    #[Test]
     public function corrupted_encrypted_notes_are_not_exposed(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-corrupt-note@test.com', 'Counselor Corrupt');
@@ -431,7 +433,7 @@ class SecurityHardeningTest extends TestCase
             ->assertJsonPath('notes', null);
     }
 
-    /** @test */
+    #[Test]
     public function admin_can_request_counselor_scope_for_multi_role_account(): void
     {
         $adminCounselor = $this->createPortalUser('admin', 'admin-counselor-scope@test.com', 'Admin Counselor');
@@ -471,7 +473,7 @@ class SecurityHardeningTest extends TestCase
         $this->assertGreaterThan(1, count($unscoped->json('data')));
     }
 
-    /** @test */
+    #[Test]
     public function api_unhandled_exceptions_are_sanitized_even_with_debug_enabled(): void
     {
         $previousDebug = (bool) config('app.debug');
@@ -498,15 +500,15 @@ class SecurityHardeningTest extends TestCase
             if ($previousExpose === false) {
                 putenv('API_EXPOSE_ERROR_DETAILS');
             } else {
-                putenv('API_EXPOSE_ERROR_DETAILS=' . $previousExpose);
+                putenv('API_EXPOSE_ERROR_DETAILS='.$previousExpose);
             }
         }
     }
 
-    /** @test */
+    #[Test]
     public function api_validation_responses_preserve_error_payload_structure(): void
     {
-        Route::middleware('api')->post('/api/test/security/validation-error', function (\Illuminate\Http\Request $request) {
+        Route::middleware('api')->post('/api/test/security/validation-error', function (Request $request) {
             $request->validate([
                 'email' => 'required|email',
             ]);
@@ -525,7 +527,7 @@ class SecurityHardeningTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function production_environment_never_exposes_api_error_details_even_if_toggles_are_enabled(): void
     {
         $previousEnv = (string) config('app.env');
@@ -553,12 +555,12 @@ class SecurityHardeningTest extends TestCase
             if ($previousExpose === false) {
                 putenv('API_EXPOSE_ERROR_DETAILS');
             } else {
-                putenv('API_EXPOSE_ERROR_DETAILS=' . $previousExpose);
+                putenv('API_EXPOSE_ERROR_DETAILS='.$previousExpose);
             }
         }
     }
 
-    /** @test */
+    #[Test]
     public function api_responses_set_no_store_cache_headers_to_reduce_data_leakage(): void
     {
         $response = $this->getJson('/api/health');

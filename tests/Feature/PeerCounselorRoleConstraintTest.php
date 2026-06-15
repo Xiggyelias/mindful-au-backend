@@ -8,13 +8,14 @@ use App\Models\UserRole;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class PeerCounselorRoleConstraintTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function sqlite_user_roles_accept_peer_counselor(): void
     {
         $this->assertSame('sqlite', DB::getDriverName());
@@ -28,13 +29,13 @@ class PeerCounselorRoleConstraintTest extends TestCase
                 'approved' => true,
             ]);
         } catch (QueryException $exception) {
-            $this->fail('peer_counselor should be allowed in user_roles: ' . $exception->getMessage());
+            $this->fail('peer_counselor should be allowed in user_roles: '.$exception->getMessage());
         }
 
         $this->assertTrue($user->fresh()->hasRole('peer_counselor'));
     }
 
-    /** @test */
+    #[Test]
     public function sqlite_institution_accounts_accept_peer_counselor(): void
     {
         $this->assertSame('sqlite', DB::getDriverName());
@@ -49,7 +50,7 @@ class PeerCounselorRoleConstraintTest extends TestCase
                 'id_number' => 'PEER001',
             ]);
         } catch (QueryException $exception) {
-            $this->fail('peer_counselor should be allowed in institution_accounts: ' . $exception->getMessage());
+            $this->fail('peer_counselor should be allowed in institution_accounts: '.$exception->getMessage());
         }
 
         $this->assertSame('peer_counselor', $account->role);

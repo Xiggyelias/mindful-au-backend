@@ -2,18 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NotificationCreated;
 use App\Models\Notification;
 use App\Models\User;
 use App\Services\TipOfDayService;
 use App\Support\PaginationPayload;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
-    public function __construct(private readonly TipOfDayService $tipOfDayService)
-    {
-    }
+    public function __construct(private readonly TipOfDayService $tipOfDayService) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -62,6 +61,7 @@ class NotificationController extends Controller
                 ['unread_only']
             );
             $payload['unread_count'] = $unreadCount;
+
             return response()->json($payload);
         }
 
@@ -81,7 +81,7 @@ class NotificationController extends Controller
             ->notifications()
             ->findOrFail($id);
 
-        if (!$notification->read) {
+        if (! $notification->read) {
             $notification->update(['read' => true]);
         }
 
@@ -99,7 +99,7 @@ class NotificationController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -114,7 +114,7 @@ class NotificationController extends Controller
         $notification = Notification::create($validated);
 
         // Broadcast notification event
-        event(new \App\Events\NotificationCreated($notification));
+        event(new NotificationCreated($notification));
 
         return response()->json($notification, 201);
     }

@@ -7,6 +7,7 @@ use App\Models\Message;
 use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class MessageDeletionTest extends TestCase
@@ -14,9 +15,13 @@ class MessageDeletionTest extends TestCase
     use RefreshDatabase;
 
     private User $student;
+
     private User $counselor;
+
     private User $peerCounselor;
+
     private User $outsider;
+
     private CounselingSession $session;
 
     protected function setUp(): void
@@ -43,7 +48,7 @@ class MessageDeletionTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function sender_can_delete_own_message(): void
     {
         $message = $this->createMessage($this->student->id, $this->counselor->id);
@@ -68,7 +73,7 @@ class MessageDeletionTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function counselor_cannot_delete_student_message_for_everyone(): void
     {
         $message = $this->createMessage($this->student->id, $this->counselor->id);
@@ -89,7 +94,7 @@ class MessageDeletionTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function assigned_peer_counselor_cannot_delete_student_message_for_everyone(): void
     {
         $this->session->update([
@@ -114,7 +119,7 @@ class MessageDeletionTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function sender_cannot_delete_for_everyone_after_time_limit_expires(): void
     {
         $message = $this->createMessage($this->student->id, $this->counselor->id);
@@ -139,7 +144,7 @@ class MessageDeletionTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function student_cannot_delete_counselor_message(): void
     {
         $message = $this->createMessage($this->counselor->id, $this->student->id);
@@ -157,7 +162,7 @@ class MessageDeletionTest extends TestCase
         $this->assertDatabaseHas('messages', ['id' => $message->id]);
     }
 
-    /** @test */
+    #[Test]
     public function non_participant_cannot_delete_message(): void
     {
         $message = $this->createMessage($this->student->id, $this->counselor->id);
@@ -170,7 +175,7 @@ class MessageDeletionTest extends TestCase
         $this->assertDatabaseHas('messages', ['id' => $message->id]);
     }
 
-    /** @test */
+    #[Test]
     public function message_must_belong_to_the_selected_session(): void
     {
         $this->session->update(['status' => 'completed']);
@@ -197,7 +202,7 @@ class MessageDeletionTest extends TestCase
         $this->assertDatabaseHas('messages', ['id' => $message->id]);
     }
 
-    /** @test */
+    #[Test]
     public function deleting_for_everyone_removes_related_notifications(): void
     {
         $message = $this->createMessage($this->student->id, $this->counselor->id);

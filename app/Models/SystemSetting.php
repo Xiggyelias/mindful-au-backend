@@ -47,6 +47,7 @@ class SystemSetting extends Model
         }
 
         $decoded = json_decode($value, true);
+
         return json_last_error() === JSON_ERROR_NONE ? $decoded : $value;
     }
 }

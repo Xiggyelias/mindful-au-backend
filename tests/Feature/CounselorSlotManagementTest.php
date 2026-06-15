@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\CounselorSlot;
 use App\Models\CounselorSchedule;
+use App\Models\CounselorSlot;
 use App\Models\EmergencyRequest;
 use App\Models\Notification;
 use App\Models\User;
@@ -220,7 +220,6 @@ class CounselorSlotManagementTest extends TestCase
         ]);
         $responseGenerate->assertStatus(201);
     }
-
 
     private function createUserWithRole(string $role): User
     {

@@ -12,7 +12,7 @@ class RoleMiddleware
     {
         $user = $request->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
@@ -25,11 +25,3 @@ class RoleMiddleware
         return $next($request);
     }
 }
-
-
-
-
-
-
-
-

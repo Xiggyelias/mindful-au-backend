@@ -13,7 +13,7 @@ $allowedOrigins = array_values(
 );
 
 // Local DX: accept localhost and 127.0.0.1 variants when either is configured.
-if (!in_array('*', $allowedOrigins, true)) {
+if (! in_array('*', $allowedOrigins, true)) {
     $expandedOrigins = [];
 
     foreach ($allowedOrigins as $origin) {
@@ -24,14 +24,14 @@ if (!in_array('*', $allowedOrigins, true)) {
         $host = $parts['host'] ?? null;
         $port = $parts['port'] ?? null;
 
-        if (!$scheme || !$host) {
+        if (! $scheme || ! $host) {
             continue;
         }
 
         if ($host === 'localhost') {
-            $expandedOrigins[] = sprintf('%s://127.0.0.1%s', $scheme, $port ? ':' . $port : '');
+            $expandedOrigins[] = sprintf('%s://127.0.0.1%s', $scheme, $port ? ':'.$port : '');
         } elseif ($host === '127.0.0.1') {
-            $expandedOrigins[] = sprintf('%s://localhost%s', $scheme, $port ? ':' . $port : '');
+            $expandedOrigins[] = sprintf('%s://localhost%s', $scheme, $port ? ':'.$port : '');
         }
     }
 
@@ -49,11 +49,3 @@ return [
     // Token-based auth does not require browser credential cookies.
     'supports_credentials' => filter_var(env('CORS_SUPPORTS_CREDENTIALS', false), FILTER_VALIDATE_BOOL),
 ];
-
-
-
-
-
-
-
-

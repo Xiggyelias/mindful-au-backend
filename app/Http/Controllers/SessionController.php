@@ -2,27 +2,33 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AiDiagnostic;
+use App\Events\NotificationCreated;
+use App\Jobs\ProcessAIDiagnostic;
 use App\Models\ActivityLog;
+use App\Models\AiDiagnostic;
 use App\Models\CounselingSession;
 use App\Models\Escalation;
+use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PanicLog;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\SystemSettings;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\RelationshipNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Str;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SessionController extends Controller
 {
     private const ANONYMOUS_SESSION_TTL_HOURS = 24;
+
     /**
      * Cached risk lookups for the current request to avoid N+1 diagnostics queries.
      *
@@ -43,16 +49,16 @@ class SessionController extends Controller
         $user = $request->user();
         $lightweight = $request->boolean('lightweight');
         $isAdmin = $user->hasRole('admin');
-        $isCounselor = !$isAdmin && $user->hasRole('counselor');
-        $isPeerCounselor = !$isAdmin && !$isCounselor && $user->hasRole('peer_counselor');
-        $isStudent = !$isAdmin && !$isCounselor && !$isPeerCounselor && $user->hasRole('student');
+        $isCounselor = ! $isAdmin && $user->hasRole('counselor');
+        $isPeerCounselor = ! $isAdmin && ! $isCounselor && $user->hasRole('peer_counselor');
+        $isStudent = ! $isAdmin && ! $isCounselor && ! $isPeerCounselor && $user->hasRole('student');
         $scopeRole = $isAdmin
             ? 'admin'
             : ($isCounselor
                 ? 'counselor'
                 : ($isPeerCounselor ? 'peer_counselor' : 'student'));
 
-        if (!$isAdmin && !$isCounselor && !$isPeerCounselor && !$isStudent) {
+        if (! $isAdmin && ! $isCounselor && ! $isPeerCounselor && ! $isStudent) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -67,7 +73,7 @@ class SessionController extends Controller
         ]);
 
         $requestedRole = $validated['as_role'] ?? null;
-        if ($requestedRole !== null && !$user->hasRole($requestedRole)) {
+        if ($requestedRole !== null && ! $user->hasRole($requestedRole)) {
             return response()->json(['message' => 'Unauthorized for requested role scope'], 403);
         }
 
@@ -131,11 +137,11 @@ class SessionController extends Controller
             $query->where('student_id', $user->id);
         }
 
-        if (!empty($validated['session_type'])) {
+        if (! empty($validated['session_type'])) {
             $query->where('session_type', $validated['session_type']);
         }
 
-        if (!empty($validated['status'])) {
+        if (! empty($validated['status'])) {
             $query->where('status', $validated['status']);
         }
 
@@ -145,7 +151,7 @@ class SessionController extends Controller
 
         $query->orderByDesc('updated_at')->orderByDesc('id');
 
-        $limit = !empty($validated['limit']) ? (int) $validated['limit'] : ($lightweight ? 200 : 150);
+        $limit = ! empty($validated['limit']) ? (int) $validated['limit'] : ($lightweight ? 200 : 150);
         $limit = max(1, min(500, $limit));
         $usePagination = array_key_exists('page', $validated) || array_key_exists('per_page', $validated);
         $page = max(1, (int) ($validated['page'] ?? 1));
@@ -174,7 +180,7 @@ class SessionController extends Controller
             $cacheFingerprint = is_string($encodedParams)
                 ? $encodedParams
                 : serialize($canonicalCacheParams);
-            $lightweightCacheKey = 'sessions:index:lw:v2:' . hash_hmac(
+            $lightweightCacheKey = 'sessions:index:lw:v2:'.hash_hmac(
                 'sha256',
                 $cacheFingerprint,
                 (string) config('app.key', 'aucms-cache-key')
@@ -223,7 +229,7 @@ class SessionController extends Controller
                 $responseBody = $sessions->values()->all();
             }
 
-            if ($usePagination && isset($responseBody['data']) && $responseBody['data'] instanceof \Illuminate\Support\Collection) {
+            if ($usePagination && isset($responseBody['data']) && $responseBody['data'] instanceof Collection) {
                 $responseBody['data'] = $responseBody['data']->values()->all();
             }
 
@@ -242,6 +248,7 @@ class SessionController extends Controller
         if ($usePagination) {
             $totalRows = max(0, (int) ($paginator?->total() ?? 0));
             $totalPages = max(1, (int) ($paginator?->lastPage() ?? 1));
+
             return response()->json([
                 'data' => $sessions,
                 'meta' => [
@@ -280,11 +287,11 @@ class SessionController extends Controller
         $isStudent = $user->hasRole('student');
         $requestedRole = $validated['as_role'] ?? null;
 
-        if (!$isAdmin && !$isCounselor && !$isPeerCounselor && !$isStudent) {
+        if (! $isAdmin && ! $isCounselor && ! $isPeerCounselor && ! $isStudent) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if ($requestedRole !== null && !$user->hasRole($requestedRole)) {
+        if ($requestedRole !== null && ! $user->hasRole($requestedRole)) {
             return response()->json(['message' => 'Unauthorized for requested role scope'], 403);
         }
 
@@ -395,7 +402,7 @@ class SessionController extends Controller
             ->orderByDesc('s.updated_at')
             ->orderByDesc('s.id');
 
-        if (!$usePagination) {
+        if (! $usePagination) {
             $orderedQuery->limit($limit);
         }
 
@@ -421,10 +428,10 @@ class SessionController extends Controller
             $isAnonymousForViewer = $isAnonymous;
             $dbAnonymousId = trim((string) ($row->anonymous_id ?? ''));
 
-            $identityVisible = !$isAnonymousForViewer
+            $identityVisible = ! $isAnonymousForViewer
                 || (int) $row->student_id === $viewerId
                 || (
-                    !empty($row->identity_revealed_at)
+                    ! empty($row->identity_revealed_at)
                     && (
                         $viewerIsAdmin
                         || (int) $row->counselor_id === $viewerId
@@ -439,7 +446,7 @@ class SessionController extends Controller
                     : (
                         trim((string) ($row->student_email ?? '')) !== ''
                         ? Str::before((string) $row->student_email, '@')
-                        : 'Student #' . (int) $row->student_id
+                        : 'Student #'.(int) $row->student_id
                     )
                 )
                 : 'Anonymous User';
@@ -449,7 +456,7 @@ class SessionController extends Controller
                 : null;
 
             $studentLastSeenAt = null;
-            if (!empty($row->student_last_seen_at)) {
+            if (! empty($row->student_last_seen_at)) {
                 try {
                     $studentLastSeenAt = Carbon::parse((string) $row->student_last_seen_at);
                 } catch (\Throwable) {
@@ -594,7 +601,7 @@ class SessionController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (!$request->user()->hasRole('student')) {
+        if (! $request->user()->hasRole('student')) {
             return response()->json(['message' => 'Only students can create sessions'], 403);
         }
 
@@ -607,7 +614,7 @@ class SessionController extends Controller
             'force_new' => 'sometimes|boolean',
         ]);
 
-        if (!$this->isApprovedCounselor((int) $validated['counselor_id'])) {
+        if (! $this->isApprovedCounselor((int) $validated['counselor_id'])) {
             return response()->json(['message' => 'Selected counselor is not available'], 422);
         }
 
@@ -638,6 +645,7 @@ class SessionController extends Controller
 
             $existing->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
             $this->appendRiskSignals($existing, $request->user(), $request);
+
             return response()->json($existing);
         }
 
@@ -707,17 +715,17 @@ class SessionController extends Controller
         $isAdmin = $user->hasRole('admin');
         $isCounselor = $user->hasRole('counselor');
 
-        if (!$isCounselor && !$isAdmin) {
+        if (! $isCounselor && ! $isAdmin) {
             return response()->json(['message' => 'Only counselors or administrators can create student sessions'], 403);
         }
 
         $validated = $request->validate([
             'student_id' => 'required|exists:users,id',
             'session_type' => 'required|in:chat,video,voice',
-            'counselor_id' => ($isAdmin ? 'required' : 'sometimes') . '|integer|exists:users,id',
+            'counselor_id' => ($isAdmin ? 'required' : 'sometimes').'|integer|exists:users,id',
         ]);
 
-        if (!$this->isApprovedStudent((int) $validated['student_id'])) {
+        if (! $this->isApprovedStudent((int) $validated['student_id'])) {
             return response()->json(['message' => 'Selected student is not available'], 422);
         }
 
@@ -725,11 +733,11 @@ class SessionController extends Controller
             ? (int) $validated['counselor_id']
             : (int) $user->id;
 
-        if (!$isAdmin && array_key_exists('counselor_id', $validated) && (int) $validated['counselor_id'] !== (int) $user->id) {
+        if (! $isAdmin && array_key_exists('counselor_id', $validated) && (int) $validated['counselor_id'] !== (int) $user->id) {
             return response()->json(['message' => 'Only administrators can create sessions for another counselor'], 403);
         }
 
-        if (!$this->isApprovedCounselor($counselorId)) {
+        if (! $this->isApprovedCounselor($counselorId)) {
             return response()->json(['message' => 'Selected counselor is not available'], 422);
         }
 
@@ -748,6 +756,7 @@ class SessionController extends Controller
         if ($existing) {
             $existing->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
             $this->appendRiskSignals($existing, $user, $request);
+
             return response()->json($existing);
         }
 
@@ -789,7 +798,7 @@ class SessionController extends Controller
                 ])
                 ->findOrFail($id);
 
-            if (!$this->canViewSession($request->user(), $session)) {
+            if (! $this->canViewSession($request->user(), $session)) {
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
 
@@ -804,15 +813,15 @@ class SessionController extends Controller
             // chat_peer_student_id mirrors the chatList projection so the E2E hook can
             // resolve the real student DB id even when student_id is masked (anonymous mode).
             return response()->json([
-                'id'                    => (int) $session->id,
-                'student_id'            => $visibleStudentId,
-                'chat_peer_student_id'  => $treatAsAnonymous && (int) $session->student_id > 0 ? (int) $session->student_id : null,
-                'counselor_id'          => $session->counselor_id ? (int) $session->counselor_id : null,
-                'peer_counselor_id'     => $session->peer_counselor_id ? (int) $session->peer_counselor_id : null,
-                'assigned_role'         => $session->assigned_role,
-                'is_anonymous'          => $treatAsAnonymous,
+                'id' => (int) $session->id,
+                'student_id' => $visibleStudentId,
+                'chat_peer_student_id' => $treatAsAnonymous && (int) $session->student_id > 0 ? (int) $session->student_id : null,
+                'counselor_id' => $session->counselor_id ? (int) $session->counselor_id : null,
+                'peer_counselor_id' => $session->peer_counselor_id ? (int) $session->peer_counselor_id : null,
+                'assigned_role' => $session->assigned_role,
+                'is_anonymous' => $treatAsAnonymous,
                 'identity_visible_to_viewer' => $identityVisible,
-                'status'                => $session->status,
+                'status' => $session->status,
             ]);
         }
 
@@ -822,7 +831,7 @@ class SessionController extends Controller
             // Log but don't fail - session expiry is maintenance, not critical to retrieval
             \Log::warning('Failed to expire stale anonymous sessions', ['error' => $e->getMessage()]);
         }
-        
+
         try {
             $session = CounselingSession::with([
                 'student.profile',
@@ -831,20 +840,35 @@ class SessionController extends Controller
                 'assignedByUser.profile',
                 'identityRevealedByUser.profile',
             ])->findOrFail($id);
-        } catch (\Illuminate\Database\Eloquent\RelationshipNotFoundException $e) {
+        } catch (RelationshipNotFoundException $e) {
             // If a relationship fails to load (e.g., related user was deleted),
             // load the session without those relationships to provide graceful degradation
             $session = CounselingSession::findOrFail($id);
-            
+
             // Try loading relationships individually, skipping any that fail
-            try { $session->load('student.profile'); } catch (\Exception $ex) {}
-            try { $session->load('counselor.profile'); } catch (\Exception $ex) {}
-            try { $session->load('peerCounselor.profile'); } catch (\Exception $ex) {}
-            try { $session->load('assignedByUser.profile'); } catch (\Exception $ex) {}
-            try { $session->load('identityRevealedByUser.profile'); } catch (\Exception $ex) {}
+            try {
+                $session->load('student.profile');
+            } catch (\Exception $ex) {
+            }
+            try {
+                $session->load('counselor.profile');
+            } catch (\Exception $ex) {
+            }
+            try {
+                $session->load('peerCounselor.profile');
+            } catch (\Exception $ex) {
+            }
+            try {
+                $session->load('assignedByUser.profile');
+            } catch (\Exception $ex) {
+            }
+            try {
+                $session->load('identityRevealedByUser.profile');
+            } catch (\Exception $ex) {
+            }
         }
 
-        if (!$this->canViewSession($request->user(), $session)) {
+        if (! $this->canViewSession($request->user(), $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -852,12 +876,12 @@ class SessionController extends Controller
             $this->appendRiskSignals($session, $request->user(), $request);
         } catch (\Exception $e) {
             // Log the error but continue - risk signals are nice-to-have but shouldn't block session loading
-            \Log::warning('Failed to append risk signals for session ' . $id, [
+            \Log::warning('Failed to append risk signals for session '.$id, [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
         }
-        
+
         return response()->json($session);
     }
 
@@ -866,7 +890,7 @@ class SessionController extends Controller
         $session = CounselingSession::findOrFail($id);
         $user = $request->user();
 
-        if (!$user->hasRole('admin') && (int) $session->counselor_id !== (int) $user->id) {
+        if (! $user->hasRole('admin') && (int) $session->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -877,13 +901,13 @@ class SessionController extends Controller
             'ai_summary' => 'sometimes|string|max:20000',
         ]);
 
-        if (!$user->hasRole('admin') && array_key_exists('counselor_id', $validated)) {
+        if (! $user->hasRole('admin') && array_key_exists('counselor_id', $validated)) {
             return response()->json(['message' => 'Only admins can reassign counselors'], 403);
         }
 
         if (
             array_key_exists('counselor_id', $validated)
-            && !$this->isApprovedCounselor((int) $validated['counselor_id'])
+            && ! $this->isApprovedCounselor((int) $validated['counselor_id'])
         ) {
             return response()->json(['message' => 'Selected counselor is not available'], 422);
         }
@@ -903,15 +927,15 @@ class SessionController extends Controller
 
         $session->update($validated);
 
-        if (($validated['status'] ?? null) === 'active' && !$session->started_at) {
+        if (($validated['status'] ?? null) === 'active' && ! $session->started_at) {
             $session->update(['started_at' => now()]);
         }
 
-        if (($validated['status'] ?? null) === 'completed' && !$session->ended_at) {
+        if (($validated['status'] ?? null) === 'completed' && ! $session->ended_at) {
             $session->update(['ended_at' => now()]);
 
             // Automatically trigger AI analysis when session is completed.
-            $messages = \App\Models\Message::where('session_id', $session->id)
+            $messages = Message::where('session_id', $session->id)
                 ->orderBy('created_at')
                 ->get()
                 ->map(function ($msg) use ($session) {
@@ -922,8 +946,8 @@ class SessionController extends Controller
                 })
                 ->toArray();
 
-            if (!empty($messages) && SystemSettings::getBool('ai_auto_analysis', true)) {
-                \App\Jobs\ProcessAIDiagnostic::dispatch($session, $messages);
+            if (! empty($messages) && SystemSettings::getBool('ai_auto_analysis', true)) {
+                ProcessAIDiagnostic::dispatch($session, $messages);
             }
         }
 
@@ -948,7 +972,7 @@ class SessionController extends Controller
             || ($user->hasRole('counselor') && (int) $session->counselor_id === (int) $user->id)
             || ($user->hasRole('student') && (int) $session->student_id === (int) $user->id);
 
-        if (!$canDelete) {
+        if (! $canDelete) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -969,7 +993,7 @@ class SessionController extends Controller
             ->findOrFail($id);
 
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
@@ -979,12 +1003,12 @@ class SessionController extends Controller
         $isPeer = (int) $session->peer_counselor_id === (int) $user->id && $session->assigned_role === 'peer_counselor';
         $isAdmin = $user->hasRole('admin');
 
-        if (!$isStudent && !$isCounselor && !$isPeer && !$isAdmin) {
+        if (! $isStudent && ! $isCounselor && ! $isPeer && ! $isAdmin) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
         // Only allow touching active sessions (don't resurrect completed/cancelled)
-        if (!in_array($session->status, ['pending', 'active'], true)) {
+        if (! in_array($session->status, ['pending', 'active'], true)) {
             return response()->json([
                 'message' => 'Cannot touch inactive session',
                 'status' => $session->status,
@@ -1030,7 +1054,7 @@ class SessionController extends Controller
         ])->findOrFail($id);
         $user = $request->user();
 
-        if (!$this->canManageSessionNotes($user, $session)) {
+        if (! $this->canManageSessionNotes($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -1070,7 +1094,7 @@ class SessionController extends Controller
         ])->findOrFail($id);
         $user = $request->user();
 
-        if (!$this->canManageSessionNotes($user, $session)) {
+        if (! $this->canManageSessionNotes($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -1094,14 +1118,14 @@ class SessionController extends Controller
     {
         $user = $request->user();
         $isAdmin = $user->hasRole('admin');
-        if (!$user->hasRole('counselor') && !$isAdmin) {
+        if (! $user->hasRole('counselor') && ! $isAdmin) {
             return response()->json(['message' => 'Only counselors or administrators can assign peer counselors'], 403);
         }
 
         $session = CounselingSession::with(['student.profile', 'counselor.profile', 'peerCounselor.profile'])
             ->findOrFail($id);
 
-        if (!$isAdmin && (int) $session->counselor_id !== (int) $user->id) {
+        if (! $isAdmin && (int) $session->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'You can only assign your own student cases'], 403);
         }
 
@@ -1130,7 +1154,7 @@ class SessionController extends Controller
             return response()->json(['message' => 'A supervising counselor is required before assigning peer support'], 422);
         }
 
-        if (!$this->isApprovedPeerCounselor($peerCounselorId)) {
+        if (! $this->isApprovedPeerCounselor($peerCounselorId)) {
             return response()->json(['message' => 'Selected peer counselor is not available'], 422);
         }
         $peerCounselor = User::query()->with('profile')->find($peerCounselorId);
@@ -1161,7 +1185,7 @@ class SessionController extends Controller
                     ->latest('id')
                     ->first();
 
-            if (!$targetSession) {
+            if (! $targetSession) {
                 $targetSession = CounselingSession::query()->create([
                     'student_id' => $session->student_id,
                     'counselor_id' => $session->counselor_id,
@@ -1304,14 +1328,14 @@ class SessionController extends Controller
     {
         $user = $request->user();
         $isAdmin = $user->hasRole('admin');
-        if (!$user->hasRole('counselor') && !$isAdmin) {
+        if (! $user->hasRole('counselor') && ! $isAdmin) {
             return response()->json(['message' => 'Only counselors or administrators can remove peer assignments'], 403);
         }
 
         $session = CounselingSession::with(['student.profile', 'counselor.profile', 'peerCounselor.profile'])
             ->findOrFail($id);
 
-        if (!$isAdmin && (int) $session->counselor_id !== (int) $user->id) {
+        if (! $isAdmin && (int) $session->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'You can only manage your own student cases'], 403);
         }
 
@@ -1325,7 +1349,7 @@ class SessionController extends Controller
             && $peerCounselorId > 0
             && ! in_array((string) $targetSession->status, ['completed', 'cancelled'], true);
 
-        if (!$isPeerAssigned) {
+        if (! $isPeerAssigned) {
             $targetSession = CounselingSession::with(['student.profile', 'counselor.profile', 'peerCounselor.profile'])
                 ->where('student_id', $session->student_id)
                 ->where('counselor_id', $session->counselor_id)
@@ -1340,7 +1364,7 @@ class SessionController extends Controller
             $isPeerAssigned = $targetSession !== null && $peerCounselorId > 0;
         }
 
-        if (!$isPeerAssigned || !$targetSession) {
+        if (! $isPeerAssigned || ! $targetSession) {
             return response()->json(['message' => 'This case is not currently assigned to a peer counselor'], 422);
         }
 
@@ -1411,7 +1435,7 @@ class SessionController extends Controller
     public function escalateToCounselor(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('peer_counselor')) {
+        if (! $user->hasRole('peer_counselor')) {
             return response()->json(['message' => 'Only peer counselors can escalate assigned cases'], 403);
         }
 
@@ -1420,7 +1444,7 @@ class SessionController extends Controller
 
         $isAssignedPeer = (int) $session->peer_counselor_id === (int) $user->id
             && $session->assigned_role === 'peer_counselor';
-        if (!$isAssignedPeer) {
+        if (! $isAssignedPeer) {
             return response()->json(['message' => 'You can only escalate cases currently assigned to you'], 403);
         }
 
@@ -1501,7 +1525,7 @@ class SessionController extends Controller
     public function flagUrgentConcern(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('peer_counselor')) {
+        if (! $user->hasRole('peer_counselor')) {
             return response()->json(['message' => 'Only peer counselors can flag urgent concerns'], 403);
         }
 
@@ -1510,7 +1534,7 @@ class SessionController extends Controller
 
         $isAssignedPeer = (int) $session->peer_counselor_id === (int) $user->id
             && $session->assigned_role === 'peer_counselor';
-        if (!$isAssignedPeer) {
+        if (! $isAssignedPeer) {
             return response()->json(['message' => 'You can only flag urgent concerns on your assigned cases'], 403);
         }
 
@@ -1601,7 +1625,7 @@ class SessionController extends Controller
             'identityRevealedByUser.profile',
         ])->findOrFail($id);
 
-        if (!$this->canViewSession($user, $session)) {
+        if (! $this->canViewSession($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -1648,7 +1672,7 @@ class SessionController extends Controller
             ],
         ]);
 
-        if ($session->is_anonymous && !$session->identity_revealed_at && $session->counselor_id) {
+        if ($session->is_anonymous && ! $session->identity_revealed_at && $session->counselor_id) {
             $counselor = User::query()->find($session->counselor_id);
             $this->revealAnonymousIdentity(
                 $request,
@@ -1704,7 +1728,7 @@ class SessionController extends Controller
                     ]);
 
                     try {
-                        event(new \App\Events\NotificationCreated($notification));
+                        event(new NotificationCreated($notification));
                     } catch (\Throwable $broadcastException) {
                         Log::warning(
                             'Session panic notification broadcast failed',
@@ -1754,17 +1778,17 @@ class SessionController extends Controller
         ])->findOrFail($id);
         $user = $request->user();
 
-        if (!$this->canViewSession($user, $session)) {
+        if (! $this->canViewSession($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (!$session->is_anonymous) {
+        if (! $session->is_anonymous) {
             return response()->json(['message' => 'Identity reveal is only available for anonymous sessions.'], 422);
         }
 
         if (
-            !$user->hasRole('admin')
-            && !($user->hasRole('counselor') && (int) $session->counselor_id === (int) $user->id)
+            ! $user->hasRole('admin')
+            && ! ($user->hasRole('counselor') && (int) $session->counselor_id === (int) $user->id)
         ) {
             return response()->json(['message' => 'Only authorized counselors or admins can reveal identity.'], 403);
         }
@@ -1869,7 +1893,7 @@ class SessionController extends Controller
                 $session->setAttribute('chat_peer_student_id', (int) $session->student_id);
             }
             $this->applyAnonymousProjection($session, $viewer, $identityVisible);
-            if ($treatAsAnonymous && !$identityVisible) {
+            if ($treatAsAnonymous && ! $identityVisible) {
                 $session->setAttribute('anonymous_id', null);
             }
             $this->redactConfidentialNotesForViewer($session, $viewer);
@@ -1894,7 +1918,7 @@ class SessionController extends Controller
                 $session->setAttribute('chat_peer_student_id', (int) $session->student_id);
             }
             $this->applyAnonymousProjection($session, $viewer, $identityVisible);
-            if ($treatAsAnonymous && !$identityVisible) {
+            if ($treatAsAnonymous && ! $identityVisible) {
                 $session->setAttribute('anonymous_id', null);
             }
             $this->redactConfidentialNotesForViewer($session, $viewer);
@@ -1905,7 +1929,7 @@ class SessionController extends Controller
 
     private function redactConfidentialNotesForViewer(CounselingSession $session, User $viewer): void
     {
-        if (!$viewer->hasRole('admin')) {
+        if (! $viewer->hasRole('admin')) {
             return;
         }
 
@@ -1944,6 +1968,7 @@ class SessionController extends Controller
         if (! $peer) {
             $session->setAttribute('case_peer_counselor_id', null);
             $session->setAttribute('case_peer_counselor', null);
+
             return;
         }
 
@@ -1966,15 +1991,15 @@ class SessionController extends Controller
         Request $request,
         ?string $riskLevel
     ): void {
-        if (!$session->is_anonymous || $session->identity_revealed_at) {
+        if (! $session->is_anonymous || $session->identity_revealed_at) {
             return;
         }
 
-        if (!$viewer->hasRole('counselor') || (int) $session->counselor_id !== (int) $viewer->id) {
+        if (! $viewer->hasRole('counselor') || (int) $session->counselor_id !== (int) $viewer->id) {
             return;
         }
 
-        if (!in_array((string) $riskLevel, ['high', 'critical'], true)) {
+        if (! in_array((string) $riskLevel, ['high', 'critical'], true)) {
             return;
         }
 
@@ -1994,12 +2019,12 @@ class SessionController extends Controller
         string $reason,
         ?string $riskLevel = null
     ): void {
-        if (!$session->is_anonymous || $session->identity_revealed_at) {
+        if (! $session->is_anonymous || $session->identity_revealed_at) {
             return;
         }
 
         $revealedBy = $revealedToUser?->id ?? $session->counselor_id;
-        if (!$revealedBy) {
+        if (! $revealedBy) {
             return;
         }
 
@@ -2032,7 +2057,7 @@ class SessionController extends Controller
     {
         $treatAsAnonymous = (bool) $session->is_anonymous;
 
-        if (!$treatAsAnonymous) {
+        if (! $treatAsAnonymous) {
             return true;
         }
 
@@ -2062,7 +2087,7 @@ class SessionController extends Controller
     ): void {
         $treatAsAnonymous = (bool) $session->is_anonymous;
 
-        if (!$treatAsAnonymous) {
+        if (! $treatAsAnonymous) {
             return;
         }
 
@@ -2092,7 +2117,7 @@ class SessionController extends Controller
 
     private function resolveAnonymousDisplayId(CounselingSession $session): string
     {
-        if (!$session->is_anonymous) {
+        if (! $session->is_anonymous) {
             return '';
         }
 
@@ -2127,6 +2152,7 @@ class SessionController extends Controller
         if ($sessionDiagnostic) {
             $normalized = strtolower((string) $sessionDiagnostic);
             $this->sessionRiskLevelCache[$sessionId] = $normalized;
+
             return $normalized;
         }
 
@@ -2139,18 +2165,20 @@ class SessionController extends Controller
         if ($studentDiagnostic) {
             $normalized = strtolower((string) $studentDiagnostic);
             $this->studentRiskLevelCache[$studentId] = $normalized;
+
             return $normalized;
         }
 
         $this->sessionRiskLevelCache[$sessionId] = null;
         $this->studentRiskLevelCache[$studentId] = null;
+
         return null;
     }
 
     /**
      * Prime latest session and student risk levels in two batched queries.
      *
-     * @param iterable<CounselingSession> $sessions
+     * @param  iterable<CounselingSession>  $sessions
      */
     private function primeRiskLevelCache(iterable $sessions): void
     {
@@ -2270,6 +2298,7 @@ class SessionController extends Controller
             if ($session->anonymous_id === null || trim((string) $session->anonymous_id) === '') {
                 $session->anonymous_id = $this->generateAnonymousId();
             }
+
             return;
         }
 
@@ -2290,16 +2319,16 @@ class SessionController extends Controller
             } elseif ($student?->email) {
                 $label = (string) $student->email;
             } else {
-                $label = 'Student #' . (int) $session->student_id;
+                $label = 'Student #'.(int) $session->student_id;
             }
-            $bits = ['user ID ' . (int) $session->student_id];
+            $bits = ['user ID '.(int) $session->student_id];
             if ($student?->email) {
                 $bits[] = (string) $student->email;
             }
             if ($idNumber !== '') {
-                $bits[] = 'Institution ID ' . $idNumber;
+                $bits[] = 'Institution ID '.$idNumber;
             }
-            $label .= ' (' . implode(' · ', $bits) . ')';
+            $label .= ' ('.implode(' · ', $bits).')';
         }
 
         if ($reason !== '') {
@@ -2410,7 +2439,7 @@ class SessionController extends Controller
         return $filters;
     }
 
-    private function deduplicateChatListSessions(\Illuminate\Support\Collection $sessions): \Illuminate\Support\Collection
+    private function deduplicateChatListSessions(Collection $sessions): Collection
     {
         $deduped = [];
 
@@ -2462,7 +2491,8 @@ class SessionController extends Controller
         }
 
         $encoded = json_encode($session, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        return 'session:' . (string) ($session['id'] ?? md5(is_string($encoded) ? $encoded : serialize($session)));
+
+        return 'session:'.(string) ($session['id'] ?? md5(is_string($encoded) ? $encoded : serialize($session)));
     }
 
     private function chatListSessionIsNewer(array $candidate, array $current): bool
@@ -2485,12 +2515,13 @@ class SessionController extends Controller
         }
 
         $timestamp = strtotime($raw);
+
         return $timestamp === false ? 0 : $timestamp;
     }
 
     private function normalizeCachePayload(mixed $value): mixed
     {
-        if (!is_array($value)) {
+        if (! is_array($value)) {
             return $value;
         }
 

@@ -6,13 +6,14 @@ use App\Models\PersonalAccessToken;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class MultiDeviceSessionTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function user_can_stay_signed_in_on_multiple_devices_and_log_out_other_sessions(): void
     {
         $user = $this->createPortalUser('counselor', 'multi-device@test.com', 'Multi Device Counselor');
@@ -54,7 +55,7 @@ class MultiDeviceSessionTest extends TestCase
         $this->tokenRequest('GET', '/api/me', $tokenB, $deviceB)->assertStatus(401);
     }
 
-    /** @test */
+    #[Test]
     public function refresh_rotates_only_the_current_device_session(): void
     {
         $user = $this->createPortalUser('counselor', 'refresh-device@test.com', 'Refresh Device Counselor');
@@ -84,15 +85,15 @@ class MultiDeviceSessionTest extends TestCase
         $this->tokenRequest('GET', '/api/me', $tokenB, $deviceB)->assertStatus(200);
     }
 
-    /** @test */
+    #[Test]
     public function mobile_login_tolerates_long_device_metadata_headers(): void
     {
         $user = $this->createPortalUser('counselor', 'mobile-login@test.com', 'Mobile Login Counselor');
 
         $deviceId = str_repeat('mobile-device-', 20);
-        $deviceName = 'Mobile Safari ' . str_repeat('iPhone ', 40);
+        $deviceName = 'Mobile Safari '.str_repeat('iPhone ', 40);
         $userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
-            . str_repeat('MobileSafari/very-long-agent ', 100);
+            .str_repeat('MobileSafari/very-long-agent ', 100);
 
         $response = $this->withHeaders([
             'X-Device-ID' => $deviceId,

@@ -10,13 +10,14 @@ use App\Support\SystemSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class PanicLogController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = PanicLog::with(['student.profile', 'student.roles', 'resolver']);
+        $query = PanicLog::with($this->panicLogRelations());
 
         if ($user->hasRole('student')) {
             $query->where('student_id', $user->id);
@@ -37,7 +38,7 @@ class PanicLogController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (!$request->user()->hasRole('student')) {
+        if (! $request->user()->hasRole('student')) {
             return response()->json(['message' => 'Only students can create panic logs'], 403);
         }
 
@@ -51,14 +52,14 @@ class PanicLogController extends Controller
         // they aren't silently dropped (PanicLog has no dedicated columns for
         // these yet). If/when columns are added, callers can use them directly.
         $locationParts = [];
-        if (!empty($validated['location'])) {
+        if (! empty($validated['location'])) {
             $locationParts[] = $validated['location'];
         }
-        if (!empty($validated['session_id'])) {
-            $locationParts[] = 'session:' . $validated['session_id'];
+        if (! empty($validated['session_id'])) {
+            $locationParts[] = 'session:'.$validated['session_id'];
         }
-        if (!empty($validated['notes'])) {
-            $locationParts[] = 'notes: ' . $validated['notes'];
+        if (! empty($validated['notes'])) {
+            $locationParts[] = 'notes: '.$validated['notes'];
         }
         $combinedLocation = $locationParts !== [] ? implode(' | ', $locationParts) : null;
 
@@ -78,16 +79,16 @@ class PanicLogController extends Controller
             if ($studentName === '') {
                 $studentName = $student->email
                     ? (string) $student->email
-                    : ('Student #' . $student->id);
+                    : ('Student #'.$student->id);
             }
 
             $idNumber = trim((string) ($student->profile?->id_number ?? ''));
-            $detailParts = ['User ID ' . (int) $student->id];
+            $detailParts = ['User ID '.(int) $student->id];
             if ($student->email) {
                 $detailParts[] = (string) $student->email;
             }
             if ($idNumber !== '') {
-                $detailParts[] = 'Institution ID ' . $idNumber;
+                $detailParts[] = 'Institution ID '.$idNumber;
             }
             $studentDetailLine = implode(' · ', $detailParts);
 
@@ -98,7 +99,7 @@ class PanicLogController extends Controller
                     $coord = preg_replace('/\s*,\s*/', ', ', trim($coordMatch[0] ?? ''));
                     if ($coord !== '') {
                         $locationDisplay .= ' (https://www.google.com/maps/search/?api=1&query='
-                            . urlencode($coord) . ')';
+                            .urlencode($coord).')';
                     }
                 }
             }
@@ -197,7 +198,7 @@ class PanicLogController extends Controller
         $panicLog = PanicLog::findOrFail($id);
         $user = $request->user();
 
-        if (!$user->hasRole('admin') && !$user->hasRole('counselor')) {
+        if (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -205,24 +206,42 @@ class PanicLogController extends Controller
             'resolved' => 'sometimes|boolean',
         ]);
 
-        if (isset($validated['resolved']) && $validated['resolved'] && !$panicLog->resolved) {
-            $panicLog->update([
-                'resolved' => true,
-                'resolved_by' => $user->id,
-                'resolved_at' => now(),
-            ]);
+        if (isset($validated['resolved']) && $validated['resolved'] && ! $panicLog->resolved) {
+            $updates = ['resolved' => true];
+            if ($this->hasPanicLogColumn('resolved_by')) {
+                $updates['resolved_by'] = $user->id;
+            }
+            if ($this->hasPanicLogColumn('resolved_at')) {
+                $updates['resolved_at'] = now();
+            }
+
+            $panicLog->update($updates);
         } else {
             $panicLog->update($validated);
         }
 
-        return response()->json($panicLog->load(['student', 'resolver']));
+        return response()->json($panicLog->load($this->panicLogRelations()));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function panicLogRelations(): array
+    {
+        $relations = ['student.profile', 'student.roles'];
+        if ($this->hasPanicLogColumn('resolved_by')) {
+            $relations[] = 'resolver';
+        }
+
+        return $relations;
+    }
+
+    private function hasPanicLogColumn(string $column): bool
+    {
+        if (! Schema::hasTable('panic_logs')) {
+            return false;
+        }
+
+        return in_array($column, Schema::getColumnListing('panic_logs'), true);
     }
 }
-
-
-
-
-
-
-
-

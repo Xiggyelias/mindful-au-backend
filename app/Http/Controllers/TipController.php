@@ -12,9 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 class TipController extends Controller
 {
-    public function __construct(private readonly TipOfDayService $tipOfDayService)
-    {
-    }
+    public function __construct(private readonly TipOfDayService $tipOfDayService) {}
 
     public function today(Request $request): JsonResponse
     {
@@ -24,7 +22,7 @@ class TipController extends Controller
     public function wellnessTip(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return response()->json(['message' => 'Authentication required.'], 401);
         }
 
@@ -36,7 +34,7 @@ class TipController extends Controller
     public function favorite(Request $request, Tip $tip): JsonResponse
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return response()->json(['message' => 'Authentication required.'], 401);
         }
 
@@ -54,7 +52,7 @@ class TipController extends Controller
     public function unfavorite(Request $request, Tip $tip): JsonResponse
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return response()->json(['message' => 'Authentication required.'], 401);
         }
 
@@ -72,7 +70,7 @@ class TipController extends Controller
     public function favorites(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return response()->json(['message' => 'Authentication required.'], 401);
         }
 

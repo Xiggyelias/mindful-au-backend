@@ -12,18 +12,10 @@ class CounselorMiddleware
     {
         $user = $request->user();
 
-        if (!$user || (!$user->hasRole('counselor') && !$user->hasRole('admin'))) {
+        if (! $user || (! $user->hasRole('counselor') && ! $user->hasRole('admin'))) {
             return response()->json(['message' => 'Counselor access required'], 403);
         }
 
         return $next($request);
     }
 }
-
-
-
-
-
-
-
-

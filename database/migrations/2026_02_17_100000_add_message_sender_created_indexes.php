@@ -29,7 +29,7 @@ return new class extends Migration
     {
         try {
             DB::statement("CREATE INDEX {$indexName} ON {$table} {$columnsSql}");
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Ignore if already exists or unsupported by current database driver.
         }
     }
@@ -38,7 +38,7 @@ return new class extends Migration
     {
         try {
             DB::statement("DROP INDEX {$indexName} ON {$table}");
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Ignore if the index is missing or this DDL variant is unsupported.
         }
     }

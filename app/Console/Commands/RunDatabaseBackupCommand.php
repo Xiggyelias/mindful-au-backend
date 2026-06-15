@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Schema;
 class RunDatabaseBackupCommand extends Command
 {
     protected $signature = 'system:backup {--notify : Notify admins when backup completes}';
+
     protected $description = 'Create a JSON backup snapshot of core tables';
 
     public function handle(): int
@@ -52,7 +53,7 @@ class RunDatabaseBackupCommand extends Command
             ];
 
             foreach ($tables as $table) {
-                if (!Schema::hasTable($table)) {
+                if (! Schema::hasTable($table)) {
                     continue;
                 }
 
@@ -72,13 +73,13 @@ class RunDatabaseBackupCommand extends Command
             }
 
             $jsonPayload = json_encode($snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-            if (!is_string($jsonPayload)) {
+            if (! is_string($jsonPayload)) {
                 throw new \RuntimeException('Failed to encode backup payload.');
             }
 
             $fileSuffix = $isEncrypted ? '.json.enc' : '.json';
-            $relativePath = 'backups/system-backup-' . now()->format('Ymd-His') . $fileSuffix;
-            $absolutePath = storage_path('app/' . $relativePath);
+            $relativePath = 'backups/system-backup-'.now()->format('Ymd-His').$fileSuffix;
+            $absolutePath = storage_path('app/'.$relativePath);
             File::ensureDirectoryExists(dirname($absolutePath));
 
             $payloadToWrite = $isEncrypted ? Crypt::encryptString($jsonPayload) : $jsonPayload;
@@ -106,6 +107,7 @@ class RunDatabaseBackupCommand extends Command
             }
 
             $this->info("Backup written to storage/app/{$relativePath}");
+
             return self::SUCCESS;
         } catch (\Throwable $e) {
             $run->update([
@@ -115,7 +117,8 @@ class RunDatabaseBackupCommand extends Command
                 'finished_at' => now(),
             ]);
 
-            $this->error('Backup failed: ' . $e->getMessage());
+            $this->error('Backup failed: '.$e->getMessage());
+
             return self::FAILURE;
         }
     }
@@ -180,7 +183,7 @@ class RunDatabaseBackupCommand extends Command
             ->get(['id', 'file_path']);
 
         foreach ($staleRuns as $run) {
-            $path = storage_path('app/' . ltrim((string) $run->file_path, '/'));
+            $path = storage_path('app/'.ltrim((string) $run->file_path, '/'));
             try {
                 if (File::exists($path)) {
                     File::delete($path);

@@ -6,13 +6,14 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class MlHealthEndpointTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function admin_can_view_ml_health_snapshot(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -49,7 +50,7 @@ class MlHealthEndpointTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function non_admin_cannot_view_ml_health_snapshot(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -86,4 +87,3 @@ class MlHealthEndpointTest extends TestCase
         return $user;
     }
 }
-

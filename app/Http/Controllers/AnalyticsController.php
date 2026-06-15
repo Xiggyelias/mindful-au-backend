@@ -2,31 +2,30 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AiDiagnostic;
+use App\Models\Appointment;
+use App\Models\CounselingSession;
+use App\Models\Message;
+use App\Models\PanicLog;
 use App\Models\User;
 use App\Models\UserRole;
-use App\Models\CounselingSession;
-use App\Models\Appointment;
-use App\Models\Message;
-use App\Models\AiDiagnostic;
-use App\Models\PanicLog;
 use App\Services\MentalHealthMlService;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class AnalyticsController extends Controller
 {
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService
-    ) {
-    }
+    ) {}
 
     public function dashboard(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -52,7 +51,7 @@ class AnalyticsController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -77,8 +76,8 @@ class AnalyticsController extends Controller
     {
         return [
             'total_users' => User::count(),
-            'total_students' => User::whereHas('roles', fn($q) => $q->where('role', 'student'))->count(),
-            'total_counselors' => User::whereHas('roles', fn($q) => $q->where('role', 'counselor'))->count(),
+            'total_students' => User::whereHas('roles', fn ($q) => $q->where('role', 'student'))->count(),
+            'total_counselors' => User::whereHas('roles', fn ($q) => $q->where('role', 'counselor'))->count(),
             'total_sessions' => CounselingSession::count(),
             'active_sessions' => CounselingSession::where('status', 'active')->count(),
             'total_appointments' => Appointment::count(),
@@ -281,9 +280,10 @@ class AnalyticsController extends Controller
             $durations = $sessionsWithTiming
                 ->get(['started_at', 'ended_at'])
                 ->map(function ($session) {
-                    if (!$session->started_at || !$session->ended_at) {
+                    if (! $session->started_at || ! $session->ended_at) {
                         return null;
                     }
+
                     return max(0, $session->started_at->diffInMinutes($session->ended_at, false));
                 })
                 ->filter(fn ($minutes) => is_int($minutes));
@@ -346,7 +346,7 @@ class AnalyticsController extends Controller
             ->distinct('student_id')
             ->count('student_id');
         $totalStudents = (int) User::query()
-            ->whereHas('roles', fn($q) => $q->where('role', 'student')->where('approved', true))
+            ->whereHas('roles', fn ($q) => $q->where('role', 'student')->where('approved', true))
             ->count();
 
         $riskDistribution = AiDiagnostic::select('risk_level', DB::raw('count(*) as count'))
@@ -381,7 +381,7 @@ class AnalyticsController extends Controller
                 ->latest()
                 ->limit(10)
                 ->get()
-                ->map(fn($s) => [
+                ->map(fn ($s) => [
                     'id' => $s->id,
                     'student' => $s->student?->profile?->full_name ?? 'Anonymous',
                     'counselor' => $s->counselor?->profile?->full_name ?? 'Unassigned',
@@ -392,7 +392,7 @@ class AnalyticsController extends Controller
                 ->latest()
                 ->limit(10)
                 ->get()
-                ->map(fn($m) => [
+                ->map(fn ($m) => [
                     'id' => $m->id,
                     'sender' => $m->sender?->profile?->full_name ?? 'Unknown',
                     'session_id' => $m->session_id,
@@ -414,7 +414,7 @@ class AnalyticsController extends Controller
 
     private function getCounselorPerformance(): array
     {
-        $counselors = User::whereHas('roles', fn($q) => $q->where('role', 'counselor'))
+        $counselors = User::whereHas('roles', fn ($q) => $q->where('role', 'counselor'))
             ->with('profile')
             ->withCount(['counselorSessions', 'appointmentsAsCounselor'])
             ->get();
@@ -427,7 +427,7 @@ class AnalyticsController extends Controller
             ->pluck('completed_count', 'counselor_id');
 
         return $counselors
-            ->map(fn($counselor) => [
+            ->map(fn ($counselor) => [
                 'id' => $counselor->id,
                 'name' => $counselor->profile?->full_name ?? 'Unknown',
                 'total_sessions' => $counselor->counselor_sessions_count,

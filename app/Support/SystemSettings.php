@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Cache;
 class SystemSettings
 {
     private const CACHE_KEY = 'system_settings.all';
+
     private const CACHE_TTL_SECONDS = 300;
 
     /**
@@ -95,6 +96,7 @@ class SystemSettings
     public static function getString(string $key, string $default = ''): string
     {
         $value = self::get($key, $default);
+
         return is_string($value) ? $value : (string) $value;
     }
 
@@ -103,7 +105,7 @@ class SystemSettings
         $allowed = array_flip(self::keys());
 
         foreach ($settings as $key => $value) {
-            if (!isset($allowed[$key])) {
+            if (! isset($allowed[$key])) {
                 continue;
             }
 
@@ -130,7 +132,7 @@ class SystemSettings
 
         $normalized = [];
         foreach ($stored as $key => $value) {
-            if (!isset($allowed[$key])) {
+            if (! isset($allowed[$key])) {
                 continue;
             }
 

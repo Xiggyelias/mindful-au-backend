@@ -5,22 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\CounselorWellnessLog;
 use App\Models\User;
 use App\Services\CounselorLiveHealthCheckService;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class CounselorWellnessController extends Controller
 {
     private const CHECK_IN_VERSION = 'v1';
 
-    public function __construct(private CounselorLiveHealthCheckService $liveHealthCheck)
-    {
-    }
+    public function __construct(private CounselorLiveHealthCheckService $liveHealthCheck) {}
 
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        if (!$user->hasRole('counselor') && !$user->hasRole('admin')) {
+        if (! $user->hasRole('counselor') && ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -39,7 +37,7 @@ class CounselorWellnessController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('counselor') && !$user->hasRole('admin')) {
+        if (! $user->hasRole('counselor') && ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -65,7 +63,7 @@ class CounselorWellnessController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('counselor')) {
+        if (! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Only counselors can create wellness logs'], 403);
         }
 
@@ -93,7 +91,7 @@ class CounselorWellnessController extends Controller
         $hasCheckIn = array_key_exists('check_in', $validated);
         $hasNotes = array_key_exists('notes', $validated) && trim((string) $validated['notes']) !== '';
 
-        if (!$hasManualScore && !$hasCheckIn && !$hasNotes) {
+        if (! $hasManualScore && ! $hasCheckIn && ! $hasNotes) {
             return response()->json([
                 'message' => 'Provide either check-in answers, score values, or notes.',
             ], 422);
@@ -135,7 +133,7 @@ class CounselorWellnessController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('counselor') && !$user->hasRole('admin')) {
+        if (! $user->hasRole('counselor') && ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -147,7 +145,7 @@ class CounselorWellnessController extends Controller
         $summary = $this->liveHealthCheck->buildLiveSummary($counselor);
         $scores = $summary['scores'];
 
-        if (!($summary['has_live_activity'] ?? false)) {
+        if (! ($summary['has_live_activity'] ?? false)) {
             return response()->json([
                 'persisted' => false,
                 'message' => $summary['source'] === 'self-check-in-only'
@@ -244,11 +242,3 @@ class CounselorWellnessController extends Controller
         return implode(' ', $tips);
     }
 }
-
-
-
-
-
-
-
-

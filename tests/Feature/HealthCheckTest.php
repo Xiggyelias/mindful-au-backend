@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class HealthCheckTest extends TestCase
@@ -19,7 +20,7 @@ class HealthCheckTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function health_endpoint_returns_ok(): void
     {
         $response = $this->getJson('/api/health');
@@ -36,7 +37,7 @@ class HealthCheckTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function ready_endpoint_checks_database_and_cache(): void
     {
         $response = $this->getJson('/api/ready');
@@ -53,7 +54,7 @@ class HealthCheckTest extends TestCase
             ->assertJsonPath('details.ai.external_provider_configured', false);
     }
 
-    /** @test */
+    #[Test]
     public function web_health_alias_returns_readiness_payload(): void
     {
         $response = $this->getJson('/health');
@@ -69,7 +70,7 @@ class HealthCheckTest extends TestCase
             ->assertJsonPath('details.ai.mode', 'local_fallback');
     }
 
-    /** @test */
+    #[Test]
     public function ready_endpoint_reports_external_ai_when_a_provider_is_configured(): void
     {
         config([

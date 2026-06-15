@@ -8,13 +8,14 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class SystemExecutionFlowTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function core_role_based_workflows_execute_successfully(): void
     {
         SystemSetting::query()->updateOrCreate(

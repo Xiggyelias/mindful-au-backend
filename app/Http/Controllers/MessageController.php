@@ -2,16 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\MessageSent;
 use App\Models\AiDiagnostic;
-use App\Models\Message;
 use App\Models\CounselingSession;
+use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
-use App\Support\ChatMessageData;
+use App\Services\MentalHealthMlService;
 use App\Services\WebPushService;
-use Illuminate\Http\Request;
+use App\Support\ChatMessageData;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
@@ -20,14 +22,17 @@ use Illuminate\Support\Str;
 class MessageController extends Controller
 {
     private const DELETE_TOMBSTONE = 'This message was deleted.';
+
     private const TYPING_STATE_TTL_SECONDS = 5;
+
     private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
+
     private const ANONYMOUS_SESSION_TTL_HOURS = 24;
 
     protected $mlService;
 
     public function __construct(
-        \App\Services\MentalHealthMlService $mlService,
+        MentalHealthMlService $mlService,
         protected WebPushService $webPush,
     ) {
         $this->mlService = $mlService;
@@ -87,16 +92,16 @@ class MessageController extends Controller
 
     public function index(Request $request, string $sessionId): JsonResponse
     {
-                $session = CounselingSession::query()->select(['id',
-                'student_id',
-                'counselor_id',
-                'peer_counselor_id',
-                'assigned_role',
-                'status',
-                'is_anonymous',
-                'identity_revealed_at',
-                'updated_at',
-            ])
+        $session = CounselingSession::query()->select(['id',
+            'student_id',
+            'counselor_id',
+            'peer_counselor_id',
+            'assigned_role',
+            'status',
+            'is_anonymous',
+            'identity_revealed_at',
+            'updated_at',
+        ])
             ->findOrFail($sessionId);
         $user = $request->user();
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
@@ -188,14 +193,13 @@ class MessageController extends Controller
         $viewerId = (int) $user->id;
         $unseenMessageIds = $messages
             ->filter(
-                static fn (Message $message) =>
-                    (int) $message->recipient_id === $viewerId && $message->seen_at === null
+                static fn (Message $message) => (int) $message->recipient_id === $viewerId && $message->seen_at === null
             )
             ->pluck('id')
             ->map(static fn ($id) => (int) $id)
             ->all();
 
-        if (!empty($unseenMessageIds)) {
+        if (! empty($unseenMessageIds)) {
             $seenAt = now();
             Message::query()
                 ->whereIn('id', $unseenMessageIds)
@@ -470,13 +474,13 @@ class MessageController extends Controller
         }
 
         if (
-            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
+            ! $this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         $this->touchPresenceIfStale($user);
 
-        if (!$user->hasRole('admin') && in_array($session->status, ['completed', 'cancelled'], true)) {
+        if (! $user->hasRole('admin') && in_array($session->status, ['completed', 'cancelled'], true)) {
             return response()->json([
                 'message' => 'This session is closed and cannot receive new messages.',
             ], 422);
@@ -493,7 +497,7 @@ class MessageController extends Controller
         $content = (string) $validated['content'];
         $isPeerDelegatedCase = $session->assigned_role === 'peer_counselor' && $session->peer_counselor_id;
 
-        /* 
+        /*
         if ($isPeerDelegatedCase && !$user->hasRole('admin') && $messageType !== 'text') {
             return response()->json([
                 'message' => 'Peer delegated cases support text chat only.',
@@ -536,16 +540,16 @@ class MessageController extends Controller
             'content' => $content,
             'message_type' => $messageType,
             'file_url' => $validated['file_url'] ?? null,
-            'has_file' => !empty($validated['file_url']),
+            'has_file' => ! empty($validated['file_url']),
             'is_encrypted' => $isEncrypted,
             'sent_as_anonymous' => (bool) $session->is_anonymous,
             'seen_at' => null,
         ]);
 
         // ML Crisis Detection
-        if ((int) $session->student_id === (int) $user->id && $messageType === 'text' && !$isEncrypted) {
+        if ((int) $session->student_id === (int) $user->id && $messageType === 'text' && ! $isEncrypted) {
             $crisisWords = $this->mlService->detectCrisisInText($content);
-            if (!empty($crisisWords)) {
+            if (! empty($crisisWords)) {
                 try {
                     $this->triggerCrisisAlert($session, $user, $crisisWords);
                 } catch (\Throwable $_) {
@@ -561,7 +565,7 @@ class MessageController extends Controller
         if ($legacyBroadcastEnabled) {
             try {
                 // Optional legacy server-side broadcast. Client-driven realtime sync remains primary.
-                event(new \App\Events\MessageSent($message));
+                event(new MessageSent($message));
             } catch (\Throwable $_) {
                 // no-op
             }
@@ -643,7 +647,7 @@ class MessageController extends Controller
         }
 
         if (
-            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
+            ! $this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -653,7 +657,7 @@ class MessageController extends Controller
             ->where('session_id', $sessionId)
             ->find($messageId);
 
-        if (!$message) {
+        if (! $message) {
             return response()->json(['message' => 'Message not found'], 404);
         }
 
@@ -683,7 +687,7 @@ class MessageController extends Controller
         );
         if ($legacyBroadcastEnabled) {
             try {
-                event(new \App\Events\MessageSent($message));
+                event(new MessageSent($message));
             } catch (\Throwable $_) {
                 // no-op
             }
@@ -709,7 +713,7 @@ class MessageController extends Controller
         }
 
         if (
-            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
+            ! $this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -717,8 +721,8 @@ class MessageController extends Controller
 
         $typingParticipantIds = $this->resolveActiveThreadParticipantIds($session);
         if (
-            !$user->hasRole('admin')
-            && !in_array((int) $user->id, $typingParticipantIds, true)
+            ! $user->hasRole('admin')
+            && ! in_array((int) $user->id, $typingParticipantIds, true)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -765,7 +769,7 @@ class MessageController extends Controller
         }
 
         if (
-            !$this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
+            ! $this->viewerCanAccessMessagingThread($user, $session, $isAssignedPeerCounselor)
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -914,12 +918,12 @@ class MessageController extends Controller
         }
 
         $trimmed = trim($content);
-        if ($trimmed === '' || !str_starts_with($trimmed, '{')) {
+        if ($trimmed === '' || ! str_starts_with($trimmed, '{')) {
             return false;
         }
 
         $decoded = json_decode($trimmed, true);
-        if (!is_array($decoded)) {
+        if (! is_array($decoded)) {
             return false;
         }
 
@@ -1062,7 +1066,7 @@ class MessageController extends Controller
         }
 
         $recipient = User::with('roles')->find($recipientId);
-        if (!$recipient) {
+        if (! $recipient) {
             return true;
         }
 
@@ -1086,7 +1090,7 @@ class MessageController extends Controller
 
     private function isAnonymousSessionExpired(CounselingSession $session): bool
     {
-        if (!$session->is_anonymous) {
+        if (! $session->is_anonymous) {
             return false;
         }
 
@@ -1266,7 +1270,7 @@ class MessageController extends Controller
 
         if (str_starts_with($fileUrl, 'private://')) {
             $path = Str::after($fileUrl, 'private://');
-            if ($path !== '' && !str_contains($path, '..') && str_starts_with($path, 'voice-notes/')) {
+            if ($path !== '' && ! str_contains($path, '..') && str_starts_with($path, 'voice-notes/')) {
                 Storage::disk('local')->delete($path);
             }
 
@@ -1274,7 +1278,7 @@ class MessageController extends Controller
         }
 
         $urlPath = parse_url($fileUrl, PHP_URL_PATH);
-        if (!is_string($urlPath) || !str_starts_with($urlPath, '/storage/')) {
+        if (! is_string($urlPath) || ! str_starts_with($urlPath, '/storage/')) {
             return;
         }
 
@@ -1332,6 +1336,7 @@ class MessageController extends Controller
             ->get(['id', 'meta'])
             ->filter(function (Notification $notification) use ($messageId): bool {
                 $meta = is_array($notification->meta) ? $notification->meta : [];
+
                 return (int) ($meta['chat_message_id'] ?? $meta['message_id'] ?? 0) === $messageId;
             })
             ->each(static fn (Notification $notification): ?bool => $notification->delete());
@@ -1344,10 +1349,10 @@ class MessageController extends Controller
         $anonymousLabel = $this->resolveAnonymousLabel($session);
         $counselorId = $session->counselor_id;
         $peerCounselorId = $session->peer_counselor_id;
-        $adminIds = User::whereHas('roles', function($q) {
+        $adminIds = User::whereHas('roles', function ($q) {
             $q->where('role', 'admin')->where('approved', true);
         })->pluck('id')->all();
-        
+
         $recipients = array_unique(array_filter(array_merge(
             $counselorId ? [$counselorId] : [],
             $peerCounselorId ? [$peerCounselorId] : [],
@@ -1355,9 +1360,9 @@ class MessageController extends Controller
         )));
 
         foreach ($recipients as $recipientId) {
-            $isCounselorOrPeer = (int)$recipientId === (int)$session->counselor_id 
-                || (int)$recipientId === (int)$session->peer_counselor_id;
-            $viewerName = $isCounselorOrPeer && !$session->is_anonymous ? $studentName : $anonymousLabel;
+            $isCounselorOrPeer = (int) $recipientId === (int) $session->counselor_id
+                || (int) $recipientId === (int) $session->peer_counselor_id;
+            $viewerName = $isCounselorOrPeer && ! $session->is_anonymous ? $studentName : $anonymousLabel;
 
             Notification::create([
                 'user_id' => $recipientId,
@@ -1391,5 +1396,4 @@ class MessageController extends Controller
             );
         }
     }
-
 }

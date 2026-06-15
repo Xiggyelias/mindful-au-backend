@@ -42,7 +42,7 @@ return new class extends Migration
         });
 
         Schema::table('appointments', function (Blueprint $table) {
-            if (!Schema::hasColumn('appointments', 'counselor_slot_id')) {
+            if (! Schema::hasColumn('appointments', 'counselor_slot_id')) {
                 $table->foreignId('counselor_slot_id')
                     ->nullable()
                     ->after('counselor_id')

@@ -5,13 +5,14 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class SafeEmailValidationTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function login_rejects_crlf_email_input_without_server_error(): void
     {
         $this->createPortalUser('counselor', 'safe-login@test.com', 'Safe Login');
@@ -26,7 +27,7 @@ class SafeEmailValidationTest extends TestCase
             ->assertJsonValidationErrors(['email']);
     }
 
-    /** @test */
+    #[Test]
     public function registration_rejects_crlf_email_input(): void
     {
         $response = $this->postJson('/api/register', [
@@ -42,7 +43,7 @@ class SafeEmailValidationTest extends TestCase
             ->assertJsonValidationErrors(['email']);
     }
 
-    /** @test */
+    #[Test]
     public function admin_managed_email_fields_reject_crlf_input(): void
     {
         $admin = $this->createPortalUser('admin', 'admin-safe-email@test.com', 'Admin Safe Email');

@@ -8,4 +8,3 @@ class HandleCors extends Middleware
 {
     //
 }
-

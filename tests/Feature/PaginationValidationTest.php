@@ -13,13 +13,14 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class PaginationValidationTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function paginated_endpoints_return_consistent_metadata_and_filters(): void
     {
         SystemSetting::query()->updateOrCreate(

@@ -14,11 +14,17 @@ use Laravel\Sanctum\NewAccessToken;
 class TokenSessionService
 {
     private const DEVICE_ID_HEADER = 'X-Device-ID';
+
     private const DEVICE_NAME_HEADER = 'X-Device-Name';
+
     private const MIN_ACTIVITY_WRITE_GAP_SECONDS = 30;
+
     private const MAX_DEVICE_ID_LENGTH = 191;
+
     private const MAX_DEVICE_NAME_LENGTH = 120;
+
     private const MAX_IP_ADDRESS_LENGTH = 45;
+
     private const MAX_USER_AGENT_LENGTH = 2000;
 
     public function issueToken(Request $request, User $user, string $tokenName = 'auth_token'): NewAccessToken
@@ -35,7 +41,7 @@ class TokenSessionService
     public function rotateCurrentToken(Request $request, User $user, string $tokenName = 'auth_token'): ?NewAccessToken
     {
         $currentToken = $user->currentAccessToken();
-        if (!$currentToken instanceof PersonalAccessToken) {
+        if (! $currentToken instanceof PersonalAccessToken) {
             return null;
         }
 
@@ -59,20 +65,20 @@ class TokenSessionService
     public function touchCurrentToken(Request $request, User $user, bool $force = false): void
     {
         $token = $user->currentAccessToken();
-        if (!$token instanceof PersonalAccessToken) {
+        if (! $token instanceof PersonalAccessToken) {
             return;
         }
 
         $requestDeviceId = $this->resolveDeviceId($request);
         $tokenDeviceId = trim((string) ($token->device_id ?? ''));
-        if ($tokenDeviceId !== '' && !hash_equals($tokenDeviceId, $requestDeviceId)) {
+        if ($tokenDeviceId !== '' && ! hash_equals($tokenDeviceId, $requestDeviceId)) {
             return;
         }
 
         $now = now();
         $lastActivityAt = $token->last_activity_at ?? $token->last_used_at ?? $token->created_at;
         if (
-            !$force
+            ! $force
             && $lastActivityAt instanceof \DateTimeInterface
             && $lastActivityAt->getTimestamp() >= $now->copy()->subSeconds(self::MIN_ACTIVITY_WRITE_GAP_SECONDS)->getTimestamp()
         ) {
@@ -93,7 +99,7 @@ class TokenSessionService
     public function isRequestBoundToToken(Request $request, User $user): bool
     {
         $token = $user->currentAccessToken();
-        if (!$token instanceof PersonalAccessToken) {
+        if (! $token instanceof PersonalAccessToken) {
             return true;
         }
 
@@ -103,6 +109,7 @@ class TokenSessionService
         }
 
         $requestDeviceId = $this->resolveDeviceId($request);
+
         return hash_equals($tokenDeviceId, $requestDeviceId);
     }
 
@@ -241,7 +248,7 @@ class TokenSessionService
      */
     private function applyMetadata(?PersonalAccessToken $token, array $context): void
     {
-        if (!$token) {
+        if (! $token) {
             return;
         }
 
@@ -280,7 +287,7 @@ class TokenSessionService
         }
 
         $columns = [];
-        if (!Schema::hasTable('personal_access_tokens')) {
+        if (! Schema::hasTable('personal_access_tokens')) {
             return $columns;
         }
 
@@ -304,7 +311,7 @@ class TokenSessionService
         }
 
         $createdAt = $token->created_at;
-        if (!$createdAt instanceof \DateTimeInterface) {
+        if (! $createdAt instanceof \DateTimeInterface) {
             return false;
         }
 
@@ -312,7 +319,6 @@ class TokenSessionService
     }
 
     /**
-     * @param  int|string|null  $currentTokenId
      * @return array<string, mixed>
      */
     private function formatSession(PersonalAccessToken $token, int|string|null $currentTokenId): array
@@ -336,7 +342,7 @@ class TokenSessionService
             'last_used_at' => optional($token->last_used_at)->toIso8601String(),
             'expires_at' => $expiresAt,
             'is_current' => $currentTokenId !== null && (int) $currentTokenId === (int) $token->getKey(),
-            'two_factor_verified' => !empty($token->two_factor_passed_at),
+            'two_factor_verified' => ! empty($token->two_factor_passed_at),
         ];
     }
 }

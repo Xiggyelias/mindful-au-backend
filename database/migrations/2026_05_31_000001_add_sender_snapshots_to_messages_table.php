@@ -10,22 +10,22 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasTable('messages')) {
+        if (! Schema::hasTable('messages')) {
             return;
         }
 
         Schema::table('messages', function (Blueprint $table): void {
-            if (!Schema::hasColumn('messages', 'case_id')) {
+            if (! Schema::hasColumn('messages', 'case_id')) {
                 $table->unsignedBigInteger('case_id')->nullable()->index('messages_case_id_index');
             }
 
-            if (!Schema::hasColumn('messages', 'sender_role')) {
+            if (! Schema::hasColumn('messages', 'sender_role')) {
                 $table->enum('sender_role', ['student', 'peer_counselor', 'counselor', 'admin'])
                     ->nullable()
                     ->index('messages_sender_role_index');
             }
 
-            if (!Schema::hasColumn('messages', 'sender_name_snapshot')) {
+            if (! Schema::hasColumn('messages', 'sender_name_snapshot')) {
                 $table->string('sender_name_snapshot')->nullable();
             }
         });
@@ -35,7 +35,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (!Schema::hasTable('messages')) {
+        if (! Schema::hasTable('messages')) {
             return;
         }
 
@@ -137,10 +137,10 @@ return new class extends Migration
         }
 
         return match ($senderRole) {
-            'admin' => 'Admin #' . $senderId,
-            'counselor' => 'Counselor #' . $senderId,
-            'peer_counselor' => 'Peer Counselor #' . $senderId,
-            default => 'Student #' . $senderId,
+            'admin' => 'Admin #'.$senderId,
+            'counselor' => 'Counselor #'.$senderId,
+            'peer_counselor' => 'Peer Counselor #'.$senderId,
+            default => 'Student #'.$senderId,
         };
     }
 };

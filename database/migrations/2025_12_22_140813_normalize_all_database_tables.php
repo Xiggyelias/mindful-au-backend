@@ -16,7 +16,7 @@ return new class extends Migration
             // Add foreign keys to normalized tables
             $table->foreignId('session_type_id')->nullable()->after('session_type')->constrained('session_types')->onDelete('cascade');
             $table->foreignId('session_status_id')->nullable()->after('status')->constrained('session_statuses')->onDelete('cascade');
-            
+
             // Add indexes for better performance
             $table->index(['student_id', 'session_status_id']);
             $table->index(['counselor_id', 'session_status_id']);
@@ -28,7 +28,7 @@ return new class extends Migration
         Schema::table('user_roles', function (Blueprint $table) {
             // Add foreign key to roles table
             $table->foreignId('role_id')->nullable()->after('role')->constrained('roles')->onDelete('cascade');
-            
+
             // Add index for better performance
             $table->index(['user_id', 'role_id']);
         });
@@ -37,7 +37,7 @@ return new class extends Migration
         Schema::table('notifications', function (Blueprint $table) {
             // Add foreign key to notification_types table
             $table->foreignId('notification_type_id')->nullable()->after('id')->constrained('notification_types')->onDelete('cascade');
-            
+
             // Add indexes for better performance
             $table->index(['user_id', 'notification_type_id']);
             $table->index(['read', 'created_at']);
@@ -46,7 +46,7 @@ return new class extends Migration
         // Normalize profiles table - remove redundant email
         Schema::table('profiles', function (Blueprint $table) {
             $table->dropColumn('email');
-            
+
             // Add indexes
             $table->index('user_id');
         });

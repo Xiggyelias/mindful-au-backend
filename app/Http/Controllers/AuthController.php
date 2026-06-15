@@ -2,19 +2,19 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\PersonalAccessToken;
-use App\Models\User;
-use App\Models\Profile;
-use App\Models\UserRole;
 use App\Models\InstitutionAccount;
 use App\Models\LoginLog;
 use App\Models\Notification;
+use App\Models\PersonalAccessToken;
+use App\Models\Profile;
+use App\Models\User;
+use App\Models\UserRole;
 use App\Models\UserTwoFactorMethod;
 use App\Services\TokenSessionService;
 use App\Support\SafeEmail;
 use App\Support\SystemSettings;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -25,9 +25,7 @@ class AuthController extends Controller
 {
     private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
 
-    public function __construct(private readonly TokenSessionService $tokenSessionService)
-    {
-    }
+    public function __construct(private readonly TokenSessionService $tokenSessionService) {}
 
     public function register(Request $request): JsonResponse
     {
@@ -45,7 +43,7 @@ class AuthController extends Controller
             ->where('email', $normalizedEmail)
             ->exists();
 
-        if (!$emailTaken) {
+        if (! $emailTaken) {
             // Fallback for legacy rows with mixed-case emails.
             $emailTaken = User::query()
                 ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
@@ -71,7 +69,7 @@ class AuthController extends Controller
         }
 
         if (
-            !SystemSettings::getBool('new_registrations', true)
+            ! SystemSettings::getBool('new_registrations', true)
             && in_array($validated['role'], ['counselor', 'peer_counselor'], true)
         ) {
             return response()->json([
@@ -179,7 +177,7 @@ class AuthController extends Controller
         $normalizedEmail = $this->normalizeEmail($validated['email']);
         $user = $this->findUserForLogin($normalizedEmail);
 
-        if (!$user || !$this->verifyPassword($user, $validated['password'])) {
+        if (! $user || ! $this->verifyPassword($user, $validated['password'])) {
             $this->recordLoginLog(
                 request: $request,
                 user: $user,
@@ -197,7 +195,7 @@ class AuthController extends Controller
         $this->ensureUserAccessRecords($user);
 
         $hasApprovedPortalRole = $this->hasAnyApprovedPortalRole($user);
-        if (!$hasApprovedPortalRole && $this->hasPendingManualApproval($user)) {
+        if (! $hasApprovedPortalRole && $this->hasPendingManualApproval($user)) {
             $this->recordLoginLog(
                 request: $request,
                 user: $user,
@@ -212,7 +210,7 @@ class AuthController extends Controller
             ], 403);
         }
 
-        if (!$hasApprovedPortalRole) {
+        if (! $hasApprovedPortalRole) {
             $this->recordLoginLog(
                 request: $request,
                 user: $user,
@@ -246,8 +244,8 @@ class AuthController extends Controller
 
         $issuedToken = $this->tokenSessionService->issueToken($request, $user, 'auth_token');
         $twoFactorState = $this->resolveTwoFactorState($user, false);
-        $this->setTokenTwoFactorPassed($issuedToken, !$twoFactorState['required']);
-        if (!$twoFactorState['required']) {
+        $this->setTokenTwoFactorPassed($issuedToken, ! $twoFactorState['required']);
+        if (! $twoFactorState['required']) {
             $twoFactorState['token_verified'] = true;
         }
 
@@ -289,14 +287,14 @@ class AuthController extends Controller
     public function refresh(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return response()->json([
                 'message' => 'Authentication required.',
             ], 401);
         }
 
         $issuedToken = $this->tokenSessionService->rotateCurrentToken($request, $user, 'auth_token');
-        if (!$issuedToken) {
+        if (! $issuedToken) {
             return response()->json([
                 'message' => 'Current session could not be refreshed.',
             ], 422);
@@ -314,7 +312,7 @@ class AuthController extends Controller
     {
         $user = $request->user();
         $this->ensureUserAccessRecords($user);
-        if (!$this->hasAnyApprovedPortalRole($user)) {
+        if (! $this->hasAnyApprovedPortalRole($user)) {
             return response()->json([
                 'message' => 'Your account does not have an approved portal role.',
             ], 403);
@@ -338,7 +336,7 @@ class AuthController extends Controller
     {
         $user = $request->user();
         $this->ensureUserAccessRecords($user);
-        if (!$this->hasAnyApprovedPortalRole($user)) {
+        if (! $this->hasAnyApprovedPortalRole($user)) {
             return response()->json([
                 'message' => 'Your account does not have an approved portal role.',
             ], 403);
@@ -356,7 +354,7 @@ class AuthController extends Controller
     {
         $user->loadMissing(['profile', 'roles']);
 
-        if (!$user->profile) {
+        if (! $user->profile) {
             $fallbackName = Str::of(Str::before($user->email, '@'))
                 ->replace(['.', '_', '-'], ' ')
                 ->title()
@@ -382,7 +380,7 @@ class AuthController extends Controller
 
     private function provisionRoleFromInstitutionAccount(User $user): void
     {
-        if (!Schema::hasTable('institution_accounts')) {
+        if (! Schema::hasTable('institution_accounts')) {
             return;
         }
 
@@ -394,7 +392,7 @@ class AuthController extends Controller
             ->where('approved', true)
             ->first();
 
-        if (!$account) {
+        if (! $account) {
             // Fallback for legacy rows with mixed-case emails.
             $account = InstitutionAccount::query()
                 ->whereRaw('LOWER(email) = ?', [$email])
@@ -403,7 +401,7 @@ class AuthController extends Controller
                 ->first();
         }
 
-        if (!$account) {
+        if (! $account) {
             return;
         }
 
@@ -419,10 +417,10 @@ class AuthController extends Controller
 
         if ($user->profile) {
             $profileUpdates = [];
-            if (!$user->profile->full_name && !empty($account->full_name)) {
+            if (! $user->profile->full_name && ! empty($account->full_name)) {
                 $profileUpdates['full_name'] = (string) $account->full_name;
             }
-            if (!$user->profile->id_number && !empty($account->id_number)) {
+            if (! $user->profile->id_number && ! empty($account->id_number)) {
                 $profileUpdates['id_number'] = (string) $account->id_number;
             }
             if ($profileUpdates !== []) {
@@ -438,6 +436,7 @@ class AuthController extends Controller
     private function isGoogleRequiredForStudents(): bool
     {
         $value = env('AUTH_REQUIRE_GOOGLE_FOR_STUDENTS', env('AUTH_REQUIRE_GOOGLE_FOR_STUDENT_STAFF', true));
+
         return filter_var($value, FILTER_VALIDATE_BOOL);
     }
 
@@ -450,7 +449,7 @@ class AuthController extends Controller
         ?string $failureReason
     ): void {
         try {
-            if (!Schema::hasTable('login_logs')) {
+            if (! Schema::hasTable('login_logs')) {
                 return;
             }
 
@@ -471,7 +470,7 @@ class AuthController extends Controller
 
     private function resolvePrimaryRole(User $user): ?string
     {
-        if (!$user->relationLoaded('roles')) {
+        if (! $user->relationLoaded('roles')) {
             $user->load('roles');
         }
 
@@ -545,10 +544,11 @@ class AuthController extends Controller
         }
 
         // Legacy compatibility: if a plaintext password was stored, accept once and repair.
-        if (!str_starts_with($storedPassword, '$') && hash_equals($storedPassword, $password)) {
+        if (! str_starts_with($storedPassword, '$') && hash_equals($storedPassword, $password)) {
             $user->forceFill([
                 'password' => Hash::make($password),
             ])->saveQuietly();
+
             return true;
         }
 
@@ -560,7 +560,7 @@ class AuthController extends Controller
         if ($user->relationLoaded('roles')) {
             return $user->roles
                 ->whereIn('role', ['student', 'counselor', 'peer_counselor'])
-                ->contains(fn ($role) => !(bool) ($role->approved ?? false));
+                ->contains(fn ($role) => ! (bool) ($role->approved ?? false));
         }
 
         return $user->roles()
@@ -623,7 +623,7 @@ class AuthController extends Controller
         $enabled = SystemSettings::getBool('two_factor_auth', false);
         $isCounselingRole = $this->isCounselingRole($user);
 
-        if (!$enabled || !$isCounselingRole) {
+        if (! $enabled || ! $isCounselingRole) {
             return [
                 'enabled' => $enabled,
                 'required' => false,
@@ -638,9 +638,9 @@ class AuthController extends Controller
             ->where('method', 'totp')
             ->first();
 
-        $setupRequired = !$method;
+        $setupRequired = ! $method;
         $verified = (bool) $method?->verified_at;
-        $required = $setupRequired || !$verified || !$tokenVerified;
+        $required = $setupRequired || ! $verified || ! $tokenVerified;
 
         return [
             'enabled' => true,
@@ -662,12 +662,12 @@ class AuthController extends Controller
 
     private function isTokenTwoFactorVerified(User $user): bool
     {
-        if (!Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
+        if (! Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
             return false;
         }
 
         $token = $user->currentAccessToken();
-        if (!$token instanceof PersonalAccessToken) {
+        if (! $token instanceof PersonalAccessToken) {
             return false;
         }
 
@@ -676,7 +676,7 @@ class AuthController extends Controller
             ->where('tokenable_id', $user->id)
             ->where('tokenable_type', $user->getMorphClass())
             ->first();
-        if (!$freshToken) {
+        if (! $freshToken) {
             return false;
         }
 
@@ -686,21 +686,21 @@ class AuthController extends Controller
             hash('sha256', $freshTokenValue),
             hash('sha256', $currentTokenValue)
         );
-        if (!$hashesMatch || $freshTokenValue === '' || $currentTokenValue === '') {
+        if (! $hashesMatch || $freshTokenValue === '' || $currentTokenValue === '') {
             return false;
         }
 
-        return !empty($freshToken->two_factor_passed_at);
+        return ! empty($freshToken->two_factor_passed_at);
     }
 
     private function setTokenTwoFactorPassed(NewAccessToken $issuedToken, bool $passed): void
     {
-        if (!Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
+        if (! Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
             return;
         }
 
         $tokenModel = $issuedToken->accessToken ?? null;
-        if (!$tokenModel instanceof PersonalAccessToken) {
+        if (! $tokenModel instanceof PersonalAccessToken) {
             return;
         }
 

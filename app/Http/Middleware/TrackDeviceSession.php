@@ -10,14 +10,12 @@ use Symfony\Component\HttpFoundation\Response;
 
 class TrackDeviceSession
 {
-    public function __construct(private readonly TokenSessionService $tokenSessionService)
-    {
-    }
+    public function __construct(private readonly TokenSessionService $tokenSessionService) {}
 
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if ($user instanceof User && !$this->tokenSessionService->isRequestBoundToToken($request, $user)) {
+        if ($user instanceof User && ! $this->tokenSessionService->isRequestBoundToToken($request, $user)) {
             return response()->json([
                 'message' => 'This session is not valid for the current device. Please sign in again.',
             ], 401);

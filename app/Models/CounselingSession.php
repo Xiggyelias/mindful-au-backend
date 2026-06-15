@@ -42,7 +42,7 @@ class CounselingSession extends Model
     public static function generateUniqueAnonymousId(): string
     {
         do {
-            $candidate = 'User_' . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+            $candidate = 'User_'.str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         } while (static::query()->where('anonymous_id', $candidate)->exists());
 
         return $candidate;
@@ -118,7 +118,7 @@ class CounselingSession extends Model
             return $stringValue;
         }
 
-        return 'enc::' . Crypt::encryptString($stringValue);
+        return 'enc::'.Crypt::encryptString($stringValue);
     }
 
     private function decryptSensitiveValue($value): ?string
@@ -128,7 +128,7 @@ class CounselingSession extends Model
         }
 
         $stringValue = (string) $value;
-        if ($stringValue === '' || !str_starts_with($stringValue, 'enc::')) {
+        if ($stringValue === '' || ! str_starts_with($stringValue, 'enc::')) {
             return $stringValue;
         }
 

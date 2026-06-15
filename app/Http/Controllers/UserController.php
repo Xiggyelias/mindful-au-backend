@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Support\PaginationPayload;
 use App\Models\User;
 use App\Models\UserRole;
-use Illuminate\Http\Request;
+use App\Support\PaginationPayload;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
@@ -14,7 +15,7 @@ class UserController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        if (!$request->user()->hasRole('admin')) {
+        if (! $request->user()->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -61,7 +62,7 @@ class UserController extends Controller
             || $user->hasRole('counselor')
             || $user->hasRole('student');
 
-        if (!$hasPortalRole) {
+        if (! $hasPortalRole) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -75,7 +76,7 @@ class UserController extends Controller
         $onlineThreshold = now()->subMinutes((int) env('COUNSELOR_ONLINE_WINDOW_MINUTES', 10));
 
         if ($lightweight) {
-            $buildLightweightQuery = function () use ($isAdmin): \Illuminate\Database\Eloquent\Builder {
+            $buildLightweightQuery = function () use ($isAdmin): Builder {
                 $query = User::query()
                     ->with(['profile:id,user_id,full_name'])
                     ->select(['id', 'email', 'last_seen_at'])
@@ -104,12 +105,13 @@ class UserController extends Controller
                 $cacheSeconds = max(5, (int) env('COUNSELORS_LIGHTWEIGHT_CACHE_SECONDS', 15));
                 $cacheKey = sprintf('users:counselors:lightweight:%s:%d', $isAdmin ? 'admin' : 'portal', $limit);
 
-                $lightweightCounselors = (!$isAdmin)
+                $lightweightCounselors = (! $isAdmin)
                     ? Cache::remember($cacheKey, now()->addSeconds($cacheSeconds), function () use ($buildLightweightQuery, $limit) {
                         $query = $buildLightweightQuery();
                         if ($limit > 0) {
                             $query->limit($limit);
                         }
+
                         return $query->get();
                     })
                     : (function () use ($buildLightweightQuery, $limit) {
@@ -117,6 +119,7 @@ class UserController extends Controller
                         if ($limit > 0) {
                             $query->limit($limit);
                         }
+
                         return $query->get();
                     })();
             }
@@ -148,6 +151,7 @@ class UserController extends Controller
                     ['lightweight']
                 );
                 $payload['data'] = $response->all();
+
                 return response()->json($payload);
             }
 
@@ -156,14 +160,15 @@ class UserController extends Controller
 
         // Admins can see all staff counseling roles (counselor + peer counselor).
         // Students and counselors only see approved counselors.
-        $query = User::query()->whereHas('roles', function($query) use ($isAdmin) {
-                if ($isAdmin) {
-                    $query->whereIn('role', ['counselor', 'peer_counselor']);
-                    return;
-                }
+        $query = User::query()->whereHas('roles', function ($query) use ($isAdmin) {
+            if ($isAdmin) {
+                $query->whereIn('role', ['counselor', 'peer_counselor']);
 
-                $query->where('role', 'counselor')->where('approved', true);
-            })
+                return;
+            }
+
+            $query->where('role', 'counselor')->where('approved', true);
+        })
             ->with(['profile', 'roles'])
             ->orderByDesc('last_seen_at');
 
@@ -196,6 +201,7 @@ class UserController extends Controller
         if ($usePagination) {
             $payload = PaginationPayload::fromPaginator($paginator, $request, []);
             $payload['data'] = $counselors->all();
+
             return response()->json($payload);
         }
 
@@ -211,20 +217,20 @@ class UserController extends Controller
             'per_page' => 'nullable|integer|min:1|max:200',
         ]);
 
-        if (!$user->hasRole('admin') && !$user->hasRole('counselor')) {
+        if (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
         $studentsQuery = User::query()
-            ->whereHas('roles', function($query) {
+            ->whereHas('roles', function ($query) {
                 $query->where('role', 'student');
             })
             ->with(['profile', 'roles']);
 
         // Admins can manage both pending and approved students.
         // Counselors should only see approved students they can serve.
-        if (!$user->hasRole('admin')) {
-            $studentsQuery->whereHas('roles', function($query) {
+        if (! $user->hasRole('admin')) {
+            $studentsQuery->whereHas('roles', function ($query) {
                 $query->where('role', 'student')->where('approved', true);
             });
         }
@@ -250,6 +256,7 @@ class UserController extends Controller
         if ($usePagination) {
             $payload = PaginationPayload::fromPaginator($paginator, $request, []);
             $payload['data'] = $students->values()->all();
+
             return response()->json($payload);
         }
 
@@ -265,7 +272,7 @@ class UserController extends Controller
             'per_page' => 'nullable|integer|min:1|max:200',
         ]);
 
-        if (!$user->hasRole('admin') && !$user->hasRole('counselor')) {
+        if (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -304,12 +311,14 @@ class UserController extends Controller
 
             $peer->setAttribute('is_online', $isOnline);
             $peer->setAttribute('is_available', (bool) ($peer->profile?->peer_available ?? true));
+
             return $peer;
         })->values();
 
         if ($usePagination) {
             $payload = PaginationPayload::fromPaginator($paginator, $request, []);
             $payload['data'] = $peerCounselors->all();
+
             return response()->json($payload);
         }
 
@@ -319,7 +328,7 @@ class UserController extends Controller
     public function approveCounselor(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -328,7 +337,7 @@ class UserController extends Controller
             ->whereIn('role', ['counselor', 'peer_counselor'])
             ->first();
 
-        if (!$counselorRole) {
+        if (! $counselorRole) {
             return response()->json(['message' => 'User is not a staff counselor'], 400);
         }
 
@@ -347,7 +356,7 @@ class UserController extends Controller
     public function approveCounselorsBulk(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -371,7 +380,7 @@ class UserController extends Controller
     public function rejectCounselor(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -380,7 +389,7 @@ class UserController extends Controller
             ->whereIn('role', ['counselor', 'peer_counselor'])
             ->first();
 
-        if (!$counselorRole) {
+        if (! $counselorRole) {
             return response()->json(['message' => 'User is not a staff counselor'], 400);
         }
 
@@ -396,7 +405,7 @@ class UserController extends Controller
     public function destroyCounselor(Request $request, $id): JsonResponse
     {
         $admin = $request->user();
-        if (!$admin->hasRole('admin')) {
+        if (! $admin->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -409,7 +418,7 @@ class UserController extends Controller
         $hasCounselorRole = $counselor->roles->contains(
             fn ($role) => in_array($role->role, ['counselor', 'peer_counselor'], true)
         );
-        if (!$hasCounselorRole) {
+        if (! $hasCounselorRole) {
             return response()->json(['message' => 'User is not a staff counselor'], 400);
         }
 

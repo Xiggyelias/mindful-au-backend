@@ -13,11 +13,3 @@ class Authenticate extends Middleware
         return null;
     }
 }
-
-
-
-
-
-
-
-

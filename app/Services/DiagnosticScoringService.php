@@ -5,20 +5,20 @@ namespace App\Services;
 class DiagnosticScoringService
 {
     private const QUESTION_WEIGHTS = [
-        'anxiety'    => 1.2,
+        'anxiety' => 1.2,
         'depression' => 1.3,
-        'stress'     => 1.1,
-        'academic'   => 1.0,
-        'social'     => 0.9,
-        'sleep'      => 1.15,
-        'substance'  => 1.5,
+        'stress' => 1.1,
+        'academic' => 1.0,
+        'social' => 0.9,
+        'sleep' => 1.15,
+        'substance' => 1.5,
         // University categories (used by legacy fallback path)
-        'mood'        => 1.3,
-        'school'      => 1.0,
+        'mood' => 1.3,
+        'school' => 1.0,
         'campus_life' => 0.9,
-        'identity'    => 0.85,
-        'coping'      => 1.1,
-        'physical'    => 0.8,
+        'identity' => 0.85,
+        'coping' => 1.1,
+        'physical' => 0.8,
     ];
 
     /**
@@ -28,44 +28,44 @@ class DiagnosticScoringService
      */
     private const UNIVERSITY_QUESTION_META = [
         // ── school ────────────────────────────────────────────────────────────
-        'univ_school_engagement'     => ['category' => 'school',      'polarity' => 'positive'],
-        'univ_school_concentration'  => ['category' => 'school',      'polarity' => 'negative'],
-        'univ_school_lecturers'      => ['category' => 'school',      'polarity' => 'positive'],
+        'univ_school_engagement' => ['category' => 'school',      'polarity' => 'positive'],
+        'univ_school_concentration' => ['category' => 'school',      'polarity' => 'negative'],
+        'univ_school_lecturers' => ['category' => 'school',      'polarity' => 'positive'],
         // ── academic ──────────────────────────────────────────────────────────
-        'univ_acad_overload'         => ['category' => 'academic',    'polarity' => 'negative'],
-        'univ_acad_exam_anxiety'     => ['category' => 'academic',    'polarity' => 'negative'],
-        'univ_acad_procrastination'  => ['category' => 'academic',    'polarity' => 'negative'],
+        'univ_acad_overload' => ['category' => 'academic',    'polarity' => 'negative'],
+        'univ_acad_exam_anxiety' => ['category' => 'academic',    'polarity' => 'negative'],
+        'univ_acad_procrastination' => ['category' => 'academic',    'polarity' => 'negative'],
         // ── mood ──────────────────────────────────────────────────────────────
-        'univ_mood_lowness'          => ['category' => 'mood',        'polarity' => 'negative'],
-        'univ_mood_motivation'       => ['category' => 'mood',        'polarity' => 'negative'],
-        'univ_mood_enjoyment'        => ['category' => 'mood',        'polarity' => 'negative'],
+        'univ_mood_lowness' => ['category' => 'mood',        'polarity' => 'negative'],
+        'univ_mood_motivation' => ['category' => 'mood',        'polarity' => 'negative'],
+        'univ_mood_enjoyment' => ['category' => 'mood',        'polarity' => 'negative'],
         // ── anxiety ───────────────────────────────────────────────────────────
-        'univ_anxiety_tension'       => ['category' => 'anxiety',     'polarity' => 'negative'],
-        'univ_anxiety_overwhelm'     => ['category' => 'anxiety',     'polarity' => 'negative'],
-        'univ_anxiety_worry'         => ['category' => 'anxiety',     'polarity' => 'negative'],
+        'univ_anxiety_tension' => ['category' => 'anxiety',     'polarity' => 'negative'],
+        'univ_anxiety_overwhelm' => ['category' => 'anxiety',     'polarity' => 'negative'],
+        'univ_anxiety_worry' => ['category' => 'anxiety',     'polarity' => 'negative'],
         // ── sleep ─────────────────────────────────────────────────────────────
-        'univ_sleep_quality'         => ['category' => 'sleep',       'polarity' => 'positive'],
-        'univ_sleep_fatigue'         => ['category' => 'sleep',       'polarity' => 'negative'],
-        'univ_sleep_disruption'      => ['category' => 'sleep',       'polarity' => 'negative'],
+        'univ_sleep_quality' => ['category' => 'sleep',       'polarity' => 'positive'],
+        'univ_sleep_fatigue' => ['category' => 'sleep',       'polarity' => 'negative'],
+        'univ_sleep_disruption' => ['category' => 'sleep',       'polarity' => 'negative'],
         // ── social ────────────────────────────────────────────────────────────
-        'univ_social_belonging'      => ['category' => 'social',      'polarity' => 'positive'],
-        'univ_social_loneliness'     => ['category' => 'social',      'polarity' => 'negative'],
-        'univ_social_relationships'  => ['category' => 'social',      'polarity' => 'positive'],
+        'univ_social_belonging' => ['category' => 'social',      'polarity' => 'positive'],
+        'univ_social_loneliness' => ['category' => 'social',      'polarity' => 'negative'],
+        'univ_social_relationships' => ['category' => 'social',      'polarity' => 'positive'],
         // ── campus_life ───────────────────────────────────────────────────────
-        'univ_campus_finances'       => ['category' => 'campus_life', 'polarity' => 'negative'],
-        'univ_campus_adjustment'     => ['category' => 'campus_life', 'polarity' => 'positive'],
-        'univ_campus_homesick'       => ['category' => 'campus_life', 'polarity' => 'negative'],
+        'univ_campus_finances' => ['category' => 'campus_life', 'polarity' => 'negative'],
+        'univ_campus_adjustment' => ['category' => 'campus_life', 'polarity' => 'positive'],
+        'univ_campus_homesick' => ['category' => 'campus_life', 'polarity' => 'negative'],
         // ── identity ──────────────────────────────────────────────────────────
-        'univ_identity_confidence'   => ['category' => 'identity',    'polarity' => 'positive'],
-        'univ_identity_pressure'     => ['category' => 'identity',    'polarity' => 'negative'],
-        'univ_identity_direction'    => ['category' => 'identity',    'polarity' => 'positive'],
+        'univ_identity_confidence' => ['category' => 'identity',    'polarity' => 'positive'],
+        'univ_identity_pressure' => ['category' => 'identity',    'polarity' => 'negative'],
+        'univ_identity_direction' => ['category' => 'identity',    'polarity' => 'positive'],
         // ── coping ────────────────────────────────────────────────────────────
-        'univ_coping_manage'         => ['category' => 'coping',      'polarity' => 'positive'],
-        'univ_support_network'       => ['category' => 'coping',      'polarity' => 'positive'],
-        'univ_support_stigma'        => ['category' => 'coping',      'polarity' => 'negative'],
+        'univ_coping_manage' => ['category' => 'coping',      'polarity' => 'positive'],
+        'univ_support_network' => ['category' => 'coping',      'polarity' => 'positive'],
+        'univ_support_stigma' => ['category' => 'coping',      'polarity' => 'negative'],
         // ── physical ──────────────────────────────────────────────────────────
-        'univ_physical_selfcare'     => ['category' => 'physical',    'polarity' => 'positive'],
-        'univ_physical_symptoms'     => ['category' => 'physical',    'polarity' => 'negative'],
+        'univ_physical_selfcare' => ['category' => 'physical',    'polarity' => 'positive'],
+        'univ_physical_symptoms' => ['category' => 'physical',    'polarity' => 'negative'],
         'univ_physical_restlessness' => ['category' => 'physical',    'polarity' => 'negative'],
     ];
 
@@ -74,16 +74,16 @@ class DiagnosticScoringService
      * Higher weights = that domain has more clinical pull on the overall score.
      */
     private const UNIVERSITY_CATEGORY_WEIGHTS = [
-        'mood'        => 1.35,  // Depression/mood — highest clinical weight
-        'anxiety'     => 1.30,  // Anxiety and panic
-        'academic'    => 1.20,  // Primary stressor source for students
-        'sleep'       => 1.15,  // Functional impact on everything
-        'coping'      => 1.10,  // Protective/risk factor capacity
-        'social'      => 1.05,  // Belonging and connection
-        'school'      => 1.00,  // Engagement and concentration
+        'mood' => 1.35,  // Depression/mood — highest clinical weight
+        'anxiety' => 1.30,  // Anxiety and panic
+        'academic' => 1.20,  // Primary stressor source for students
+        'sleep' => 1.15,  // Functional impact on everything
+        'coping' => 1.10,  // Protective/risk factor capacity
+        'social' => 1.05,  // Belonging and connection
+        'school' => 1.00,  // Engagement and concentration
         'campus_life' => 0.90,  // Contextual pressures
-        'identity'    => 0.85,  // Self-view and purpose
-        'physical'    => 0.80,  // Physical wellbeing
+        'identity' => 0.85,  // Self-view and purpose
+        'physical' => 0.80,  // Physical wellbeing
     ];
 
     private const RISK_THRESHOLDS = [
@@ -138,7 +138,7 @@ class DiagnosticScoringService
             $category = $question['category'] ?? 'general';
             $weight = self::QUESTION_WEIGHTS[$category] ?? 1.0;
 
-            if (!isset($responses[$questionId])) {
+            if (! isset($responses[$questionId])) {
                 continue;
             }
 
@@ -146,7 +146,7 @@ class DiagnosticScoringService
             $score = $this->scoreResponse($response, $question);
             $weightedScore = $score * $weight;
 
-            if (!isset($categoryScores[$category])) {
+            if (! isset($categoryScores[$category])) {
                 $categoryScores[$category] = ['total' => 0, 'count' => 0];
             }
 
@@ -214,7 +214,7 @@ class DiagnosticScoringService
         $byCategory = [];
 
         foreach (self::UNIVERSITY_QUESTION_META as $questionId => $meta) {
-            if (!array_key_exists($questionId, $responses)) {
+            if (! array_key_exists($questionId, $responses)) {
                 continue;
             }
 
@@ -236,14 +236,14 @@ class DiagnosticScoringService
         if ($byCategory === []) {
             // No recognised university responses could be scored.
             return [
-                'total_score'       => 0,
-                'category_scores'   => [],
-                'risk_level'        => 'low',
+                'total_score' => 0,
+                'category_scores' => [],
+                'risk_level' => 'low',
                 'notify_counselors' => false,
                 'counselor_summary' => null,
-                'focus_areas'       => null,
-                'risk_flags'        => [],
-                'scoring_model'     => 'university_v1',
+                'focus_areas' => null,
+                'risk_flags' => [],
+                'scoring_model' => 'university_v1',
             ];
         }
 
@@ -254,31 +254,31 @@ class DiagnosticScoringService
         }
 
         // Weighted composite index
-        $indexTotal  = 0.0;
+        $indexTotal = 0.0;
         $indexWeight = 0.0;
         foreach (self::UNIVERSITY_CATEGORY_WEIGHTS as $cat => $w) {
-            if (!isset($categoryScores[$cat])) {
+            if (! isset($categoryScores[$cat])) {
                 continue;
             }
-            $indexTotal  += $categoryScores[$cat] * $w;
+            $indexTotal += $categoryScores[$cat] * $w;
             $indexWeight += $w;
         }
 
         $composite = $indexWeight > 0 ? (int) round($indexTotal / $indexWeight) : 0;
-        $riskLevel  = $this->determineRiskLevel($composite);
+        $riskLevel = $this->determineRiskLevel($composite);
 
-        $focusAreas      = $this->deriveFocusAreas($categoryScores);
+        $focusAreas = $this->deriveFocusAreas($categoryScores);
         $counselorSummary = $this->buildCounselorSummary($categoryScores, [], $focusAreas, $riskLevel);
 
         return [
-            'total_score'       => $composite,
-            'category_scores'   => $categoryScores,
-            'risk_level'        => $riskLevel,
+            'total_score' => $composite,
+            'category_scores' => $categoryScores,
+            'risk_level' => $riskLevel,
             'notify_counselors' => in_array($riskLevel, ['high', 'critical'], true),
             'counselor_summary' => $counselorSummary,
-            'focus_areas'       => $focusAreas,
-            'risk_flags'        => [],
-            'scoring_model'     => 'university_v1',
+            'focus_areas' => $focusAreas,
+            'risk_flags' => [],
+            'scoring_model' => 'university_v1',
         ];
     }
 
@@ -297,7 +297,7 @@ class DiagnosticScoringService
             $category = (string) ($question['category'] ?? 'general');
             $required = ($question['required'] ?? true) === true;
 
-            if (!array_key_exists($id, $responses)) {
+            if (! array_key_exists($id, $responses)) {
                 if ($required) {
                     // Missing required answer — neutral penalty band so submission still validates elsewhere
                     $distress = 50;
@@ -312,7 +312,7 @@ class DiagnosticScoringService
                 continue;
             }
 
-            if (!isset($byCategory[$category])) {
+            if (! isset($byCategory[$category])) {
                 $byCategory[$category] = [];
             }
             $byCategory[$category][] = (float) $distress;
@@ -332,7 +332,7 @@ class DiagnosticScoringService
         $indexTotal = 0.0;
         $indexWeight = 0.0;
         foreach (self::PRE_INDEX_WEIGHTS as $cat => $w) {
-            if (!isset($categoryScores[$cat])) {
+            if (! isset($categoryScores[$cat])) {
                 continue;
             }
             $indexTotal += $categoryScores[$cat] * $w;
@@ -411,12 +411,12 @@ class DiagnosticScoringService
         }
 
         $base = match ($v) {
-            'never'     => 0.0,
-            'rarely'    => 25.0,
+            'never' => 0.0,
+            'rarely' => 25.0,
             'sometimes' => 50.0,
-            'often'     => 75.0,
-            'always'    => 100.0,
-            default     => 45.0,
+            'often' => 75.0,
+            'always' => 100.0,
+            default => 45.0,
         };
 
         return $polarity === 'positive' ? (100.0 - $base) : $base;
@@ -447,7 +447,7 @@ class DiagnosticScoringService
     /** @param  array<string, mixed>  $question */
     private function distressFromMultiSelect(mixed $response, array $question): float
     {
-        if (!is_array($response)) {
+        if (! is_array($response)) {
             return 20.0;
         }
         /** @var list<string> $selected */
@@ -465,7 +465,7 @@ class DiagnosticScoringService
         $weights = [];
         foreach ($options as $opt) {
             $val = (string) ($opt['value'] ?? '');
-            if (!in_array($val, $selected, true)) {
+            if (! in_array($val, $selected, true)) {
                 continue;
             }
             $weights[] = isset($opt['weight']) ? (float) $opt['weight'] : 30.0;
@@ -502,7 +502,7 @@ class DiagnosticScoringService
 
         if ($polarity === 'risk_screen') {
             if ($id === 'risk_feel_safe') {
-                if (!$yes) {
+                if (! $yes) {
                     $riskFlags[] = 'unsafe_environment';
 
                     return 100.0;
@@ -545,25 +545,25 @@ class DiagnosticScoringService
         $threshold = 52;
         $labels = [
             // Pre-counselling questionnaire categories
-            'emotional_distress'  => 'Emotional regulation & mood',
-            'cognitive_patterns'  => 'Worries, concentration, self-criticism',
+            'emotional_distress' => 'Emotional regulation & mood',
+            'cognitive_patterns' => 'Worries, concentration, self-criticism',
             'behavioural_patterns' => 'Avoidance & reactions',
-            'functional_impact'   => 'Sleep, energy, study & relationships',
-            'stress_load'         => 'Stress sources (academic, financial, relational)',
-            'social_support'      => 'Connection & support',
-            'self_resources'      => 'Self-compassion & sense of agency',
-            'coping'              => 'Coping strategies & support networks',
-            'context'             => 'Study load & life context',
+            'functional_impact' => 'Sleep, energy, study & relationships',
+            'stress_load' => 'Stress sources (academic, financial, relational)',
+            'social_support' => 'Connection & support',
+            'self_resources' => 'Self-compassion & sense of agency',
+            'coping' => 'Coping strategies & support networks',
+            'context' => 'Study load & life context',
             // University question bank categories
-            'mood'        => 'Low mood, motivation & emotional regulation',
-            'anxiety'     => 'Anxiety, worry & overwhelm management',
-            'academic'    => 'Academic pressure & study management',
-            'sleep'       => 'Sleep quality & energy recovery',
-            'social'      => 'Social connection & campus belonging',
-            'school'      => 'Study engagement & academic confidence',
+            'mood' => 'Low mood, motivation & emotional regulation',
+            'anxiety' => 'Anxiety, worry & overwhelm management',
+            'academic' => 'Academic pressure & study management',
+            'sleep' => 'Sleep quality & energy recovery',
+            'social' => 'Social connection & campus belonging',
+            'school' => 'Study engagement & academic confidence',
             'campus_life' => 'Student life pressures (financial, adjustment)',
-            'identity'    => 'Self-confidence, purpose & identity',
-            'physical'    => 'Physical health & self-care',
+            'identity' => 'Self-confidence, purpose & identity',
+            'physical' => 'Physical health & self-care',
         ];
 
         $areas = [];
@@ -667,12 +667,12 @@ class DiagnosticScoringService
         }
 
         return match ($v) {
-            'never'     => 1,
-            'rarely'    => 2,
+            'never' => 1,
+            'rarely' => 2,
             'sometimes' => 3,
-            'often'     => 4,
-            'always'    => 5,
-            default     => 3,
+            'often' => 4,
+            'always' => 5,
+            default => 3,
         };
     }
 
@@ -787,29 +787,29 @@ class DiagnosticScoringService
     {
         $alerts = [
             // Legacy questionnaire categories
-            'anxiety'             => 'High anxiety levels detected. Consider anxiety management techniques or speaking with a counselor.',
-            'depression'          => 'Signs of depression detected. Professional support is recommended.',
-            'stress'              => 'High stress levels detected. Implement stress reduction strategies.',
-            'academic'            => 'Academic pressure is elevated. Consider meeting your academic advisor or counselor to manage workload.',
-            'social'              => 'Social challenges detected. Connecting with peers, clubs or campus support can help.',
-            'sleep'               => 'Sleep disruption detected. Establish a consistent wind-down routine and limit screens before bed.',
-            'substance'           => 'Substance use concerns detected. Seek professional support.',
+            'anxiety' => 'High anxiety levels detected. Consider anxiety management techniques or speaking with a counselor.',
+            'depression' => 'Signs of depression detected. Professional support is recommended.',
+            'stress' => 'High stress levels detected. Implement stress reduction strategies.',
+            'academic' => 'Academic pressure is elevated. Consider meeting your academic advisor or counselor to manage workload.',
+            'social' => 'Social challenges detected. Connecting with peers, clubs or campus support can help.',
+            'sleep' => 'Sleep disruption detected. Establish a consistent wind-down routine and limit screens before bed.',
+            'substance' => 'Substance use concerns detected. Seek professional support.',
             // Pre-counselling questionnaire categories
-            'emotional_distress'  => 'Elevated emotional distress noted. Prioritise emotional safety and pacing in session.',
-            'cognitive_patterns'  => 'Persistent worry or concentration difficulty flagged. Consider CBT-informed strategies.',
+            'emotional_distress' => 'Elevated emotional distress noted. Prioritise emotional safety and pacing in session.',
+            'cognitive_patterns' => 'Persistent worry or concentration difficulty flagged. Consider CBT-informed strategies.',
             'behavioural_patterns' => 'Avoidance or withdrawal patterns noted. Gentle behavioural activation may help.',
-            'functional_impact'   => 'Day-to-day functioning appears affected (sleep, energy, relationships, or study).',
-            'stress_load'         => 'Multiple stress sources are intense. Discuss load management and boundaries.',
-            'social_support'      => 'Support or belonging may be strained. Explore connection resources on campus.',
-            'self_resources'      => 'Self-compassion or sense of agency may be low; validate strengths openly in session.',
-            'coping'              => 'Review coping strategies together; build on helpful ones and reduce avoidance.',
-            'context'             => 'Contextual load factors may need practical planning alongside emotional support.',
+            'functional_impact' => 'Day-to-day functioning appears affected (sleep, energy, relationships, or study).',
+            'stress_load' => 'Multiple stress sources are intense. Discuss load management and boundaries.',
+            'social_support' => 'Support or belonging may be strained. Explore connection resources on campus.',
+            'self_resources' => 'Self-compassion or sense of agency may be low; validate strengths openly in session.',
+            'coping' => 'Review coping strategies together; build on helpful ones and reduce avoidance.',
+            'context' => 'Contextual load factors may need practical planning alongside emotional support.',
             // University question bank categories
-            'mood'                => 'Low mood or loss of motivation detected. This may be depression-adjacent; prompt counselor follow-up.',
-            'campus_life'         => 'Student life pressures (finances, adjustment, homesickness) are impacting wellbeing.',
-            'identity'            => 'Low confidence or unclear sense of purpose noted. Explore identity and values in session.',
-            'physical'            => 'Physical health and self-care habits may be neglected. Encourage basic routine restoration.',
-            'school'              => 'Study engagement or concentration difficulties detected. Academic support may help.',
+            'mood' => 'Low mood or loss of motivation detected. This may be depression-adjacent; prompt counselor follow-up.',
+            'campus_life' => 'Student life pressures (finances, adjustment, homesickness) are impacting wellbeing.',
+            'identity' => 'Low confidence or unclear sense of purpose noted. Explore identity and values in session.',
+            'physical' => 'Physical health and self-care habits may be neglected. Encourage basic routine restoration.',
+            'school' => 'Study engagement or concentration difficulties detected. Academic support may help.',
         ];
 
         return $alerts[$category] ?? 'This area needs attention. Consider speaking with a counselor.';

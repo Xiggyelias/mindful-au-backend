@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\File;
 class VerifyDatabaseBackupCommand extends Command
 {
     protected $signature = 'system:backup:verify {--notify : Notify admins if verification fails}';
+
     protected $description = 'Verify integrity and readability of the latest backup snapshot';
 
     public function handle(): int
@@ -22,33 +23,35 @@ class VerifyDatabaseBackupCommand extends Command
             ->orderByDesc('created_at')
             ->first();
 
-        if (!$run) {
+        if (! $run) {
             $this->error('No backup runs found to verify.');
+
             return self::FAILURE;
         }
 
-        $absolutePath = storage_path('app/' . ltrim((string) $run->file_path, '/'));
-        if (!File::exists($absolutePath)) {
+        $absolutePath = storage_path('app/'.ltrim((string) $run->file_path, '/'));
+        if (! File::exists($absolutePath)) {
             $run->update([
                 'verification_status' => 'failed',
                 'error_message' => 'Backup file is missing.',
             ]);
             $this->maybeNotifyFailure("Backup verification failed. Missing file: {$run->file_path}");
             $this->error('Backup file missing.');
+
             return self::FAILURE;
         }
 
         try {
             $raw = File::get($absolutePath);
             $actualChecksum = hash('sha256', (string) $raw);
-            if (!empty($run->checksum_sha256) && !hash_equals((string) $run->checksum_sha256, (string) $actualChecksum)) {
+            if (! empty($run->checksum_sha256) && ! hash_equals((string) $run->checksum_sha256, (string) $actualChecksum)) {
                 throw new \RuntimeException('Backup checksum mismatch.');
             }
 
             $expectedFingerprint = data_get($run->metadata ?? [], 'backup_encryption.key_fingerprint');
             if ($run->is_encrypted && is_string($expectedFingerprint) && $expectedFingerprint !== '') {
                 $currentFingerprint = $this->currentAppKeyFingerprint();
-                if (!hash_equals($expectedFingerprint, $currentFingerprint)) {
+                if (! hash_equals($expectedFingerprint, $currentFingerprint)) {
                     throw new \RuntimeException(
                         'Backup key fingerprint mismatch. Backup was encrypted with a different APP_KEY.'
                     );
@@ -60,7 +63,7 @@ class VerifyDatabaseBackupCommand extends Command
                 : (string) $raw;
             $decoded = json_decode($jsonPayload, true, 512, JSON_THROW_ON_ERROR);
 
-            if (!is_array($decoded) || !array_key_exists('tables', $decoded)) {
+            if (! is_array($decoded) || ! array_key_exists('tables', $decoded)) {
                 throw new \RuntimeException('Backup structure is invalid.');
             }
 
@@ -78,6 +81,7 @@ class VerifyDatabaseBackupCommand extends Command
             ]);
 
             $this->info("Backup verification successful ({$tableCount} tables).");
+
             return self::SUCCESS;
         } catch (\Throwable $e) {
             $run->update([
@@ -88,15 +92,16 @@ class VerifyDatabaseBackupCommand extends Command
                     'verification_failed' => true,
                 ]),
             ]);
-            $this->maybeNotifyFailure('Backup verification failed: ' . $e->getMessage());
-            $this->error('Backup verification failed: ' . $e->getMessage());
+            $this->maybeNotifyFailure('Backup verification failed: '.$e->getMessage());
+            $this->error('Backup verification failed: '.$e->getMessage());
+
             return self::FAILURE;
         }
     }
 
     private function maybeNotifyFailure(string $message): void
     {
-        if (!$this->option('notify')) {
+        if (! $this->option('notify')) {
             return;
         }
 

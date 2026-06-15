@@ -17,8 +17,7 @@ class InAppNotificationMail extends Mailable
         public string $bodyText,
         public ?string $actionUrl = null,
         public string $actionText = 'Open Mindful AU',
-    ) {
-    }
+    ) {}
 
     public function envelope(): Envelope
     {

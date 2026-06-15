@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\DiagnosticQuestionnaire;
+use Database\Seeders\DiagnosticQuestionnaireSeeder;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\Artisan;
 
@@ -11,12 +13,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (\App\Models\DiagnosticQuestionnaire::query()->exists()) {
+        if (DiagnosticQuestionnaire::query()->exists()) {
             return;
         }
 
         Artisan::call('db:seed', [
-            '--class' => \Database\Seeders\DiagnosticQuestionnaireSeeder::class,
+            '--class' => DiagnosticQuestionnaireSeeder::class,
             '--force' => true,
         ]);
     }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AcademicRiskEvent;
 use App\Models\Appointment;
 use App\Models\Diagnostic;
 use App\Models\StudentMoodLog;
@@ -9,13 +10,14 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class MentalHealthMlIntegrationTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function student_wellness_summary_exposes_ml_insights(): void
     {
         $this->disableTwoFactor();
@@ -57,7 +59,7 @@ class MentalHealthMlIntegrationTest extends TestCase
         $this->assertNotEmpty($response->json('ml_insights.recommended_actions'));
     }
 
-    /** @test */
+    #[Test]
     public function counselor_matches_endpoint_returns_ranked_matches_for_student(): void
     {
         $this->disableTwoFactor();
@@ -86,7 +88,7 @@ class MentalHealthMlIntegrationTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function ai_chat_returns_ml_signals_and_stores_message_metadata(): void
     {
         $this->disableTwoFactor();
@@ -123,7 +125,7 @@ class MentalHealthMlIntegrationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function admin_dashboard_includes_ml_intelligence_payload(): void
     {
         $this->disableTwoFactor();
@@ -148,7 +150,7 @@ class MentalHealthMlIntegrationTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_factors_academic_risk_events_into_ml_insights(): void
     {
         $this->disableTwoFactor();
@@ -156,7 +158,7 @@ class MentalHealthMlIntegrationTest extends TestCase
         $student = $this->createPortalUser('student', 'academic-ml-student@test.com', 'Academic Student');
 
         // Create an AcademicRiskEvent for this student
-        \App\Models\AcademicRiskEvent::create([
+        AcademicRiskEvent::create([
             'student_identifier' => 'academic-ml-student@test.com',
             'linked_user_id' => $student->id,
             'risk_type' => 'failed_courses',

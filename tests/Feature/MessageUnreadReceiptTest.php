@@ -6,6 +6,7 @@ use App\Models\CounselingSession;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class MessageUnreadReceiptTest extends TestCase
@@ -36,7 +37,7 @@ class MessageUnreadReceiptTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function fetching_messages_marks_all_inbound_unread_for_viewer_not_only_the_current_page(): void
     {
         $recipientId = $this->counselor->id;
@@ -61,7 +62,7 @@ class MessageUnreadReceiptTest extends TestCase
             ->count());
 
         $this->actingAs($this->counselor)->getJson(
-            '/api/sessions/' . $this->session->id . '/messages?limit=10'
+            '/api/sessions/'.$this->session->id.'/messages?limit=10'
         )->assertStatus(200);
 
         $this->assertSame(0, Message::query()
@@ -71,7 +72,7 @@ class MessageUnreadReceiptTest extends TestCase
             ->count());
     }
 
-    /** @test */
+    #[Test]
     public function mark_read_endpoint_clears_unread_without_fetching_messages(): void
     {
         Message::create([
@@ -85,7 +86,7 @@ class MessageUnreadReceiptTest extends TestCase
         ]);
 
         $this->actingAs($this->counselor)
-            ->postJson('/api/sessions/' . $this->session->id . '/messages/read')
+            ->postJson('/api/sessions/'.$this->session->id.'/messages/read')
             ->assertStatus(204);
 
         $unread = Message::query()

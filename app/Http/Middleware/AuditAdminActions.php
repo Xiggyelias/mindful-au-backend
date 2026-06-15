@@ -12,7 +12,7 @@ class AuditAdminActions
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (!in_array($request->method(), ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+        if (! in_array($request->method(), ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
             return $next($request);
         }
 
@@ -21,18 +21,18 @@ class AuditAdminActions
             return $next($request);
         }
 
-        if (!$this->routeRequiresAdmin($request)) {
+        if (! $this->routeRequiresAdmin($request)) {
             return $next($request);
         }
 
         $response = $next($request);
 
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return $response;
         }
 
-        if (!SystemSettings::getBool('audit_logging', true)) {
+        if (! SystemSettings::getBool('audit_logging', true)) {
             return $response;
         }
 
@@ -58,7 +58,7 @@ class AuditAdminActions
     private function routeRequiresAdmin(Request $request): bool
     {
         $route = $request->route();
-        if (!$route) {
+        if (! $route) {
             return false;
         }
 
@@ -68,7 +68,7 @@ class AuditAdminActions
                 return true;
             }
 
-            if ($value === \App\Http\Middleware\AdminMiddleware::class) {
+            if ($value === AdminMiddleware::class) {
                 return true;
             }
         }

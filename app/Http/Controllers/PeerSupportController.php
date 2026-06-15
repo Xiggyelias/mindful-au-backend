@@ -13,7 +13,7 @@ class PeerSupportController extends Controller
     public function dashboard(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('peer_counselor')) {
+        if (! $user->hasRole('peer_counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -81,7 +81,7 @@ class PeerSupportController extends Controller
     public function escalations(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('peer_counselor')) {
+        if (! $user->hasRole('peer_counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -116,7 +116,7 @@ class PeerSupportController extends Controller
     public function setAvailability(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('peer_counselor')) {
+        if (! $user->hasRole('peer_counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

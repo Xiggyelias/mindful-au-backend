@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasColumn('users', 'last_seen_at')) {
+        if (! Schema::hasColumn('users', 'last_seen_at')) {
             Schema::table('users', function (Blueprint $table) {
                 $table->timestamp('last_seen_at')->nullable()->after('remember_token');
                 $table->index('last_seen_at');
@@ -26,4 +26,3 @@ return new class extends Migration
         }
     }
 };
-

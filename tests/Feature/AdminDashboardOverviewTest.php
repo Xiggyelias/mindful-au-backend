@@ -10,13 +10,14 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class AdminDashboardOverviewTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function admin_can_load_a_single_dashboard_snapshot(): void
     {
         $admin = $this->createPortalUser('admin', 'admin-overview@test.com', 'Admin Overview');

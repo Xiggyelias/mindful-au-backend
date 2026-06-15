@@ -3,19 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
-use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Validation\ValidationException;
 use App\Support\SafeEmail;
 use App\Support\SystemSettings;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Validation\ValidationException;
 
 class SystemSettingController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -27,7 +27,7 @@ class SystemSettingController extends Controller
     public function update(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -54,9 +54,9 @@ class SystemSettingController extends Controller
         // Reject unknown keys explicitly to keep settings consistent and predictable.
         $allowedKeys = array_flip(SystemSettings::keys());
         $unknownKeys = array_values(array_diff(array_keys($incoming), array_keys($allowedKeys)));
-        if (!empty($unknownKeys)) {
+        if (! empty($unknownKeys)) {
             throw ValidationException::withMessages([
-                'settings' => ['Unknown setting keys: ' . implode(', ', $unknownKeys)],
+                'settings' => ['Unknown setting keys: '.implode(', ', $unknownKeys)],
             ]);
         }
 
@@ -71,7 +71,7 @@ class SystemSettingController extends Controller
     public function clearCache(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -93,7 +93,7 @@ class SystemSettingController extends Controller
         $auditEnabled = SystemSettings::getBool('audit_logging', true);
         $isEnablingAudit = in_array('audit_logging', $metadata['updated_keys'] ?? [], true);
 
-        if (!$auditEnabled && !$isEnablingAudit) {
+        if (! $auditEnabled && ! $isEnablingAudit) {
             return;
         }
 

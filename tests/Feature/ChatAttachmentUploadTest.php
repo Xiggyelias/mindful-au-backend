@@ -2,14 +2,15 @@
 
 namespace Tests\Feature;
 
-use App\Models\CounselingSession;
 use App\Models\AiDiagnostic;
+use App\Models\CounselingSession;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class ChatAttachmentUploadTest extends TestCase
@@ -17,8 +18,11 @@ class ChatAttachmentUploadTest extends TestCase
     use RefreshDatabase;
 
     private User $student;
+
     private User $counselor;
+
     private User $peerCounselor;
+
     private CounselingSession $session;
 
     protected function setUp(): void
@@ -43,7 +47,7 @@ class ChatAttachmentUploadTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function participant_can_upload_attachment_and_message_history_includes_metadata(): void
     {
         $file = UploadedFile::fake()->create('support-note.png', 512, 'image/png');
@@ -82,7 +86,7 @@ class ChatAttachmentUploadTest extends TestCase
         ]);
 
         $messagesResponse = $this->actingAs($this->counselor)->getJson(
-            '/api/chat/messages?session_id=' . $this->session->id
+            '/api/chat/messages?session_id='.$this->session->id
         );
 
         $messagesResponse
@@ -94,11 +98,11 @@ class ChatAttachmentUploadTest extends TestCase
         $attachmentUrl = (string) $messagesResponse->json('0.attachment.url');
         $downloadUrl = (string) $messagesResponse->json('0.attachment.download_url');
 
-        $this->assertStringContainsString('/api/chat/files/' . $attachmentId . '/content', $attachmentUrl);
-        $this->assertStringContainsString('/api/chat/files/' . $attachmentId . '/content', $downloadUrl);
+        $this->assertStringContainsString('/api/chat/files/'.$attachmentId.'/content', $attachmentUrl);
+        $this->assertStringContainsString('/api/chat/files/'.$attachmentId.'/content', $downloadUrl);
     }
 
-    /** @test */
+    #[Test]
     public function upload_rejects_disallowed_file_types(): void
     {
         $file = UploadedFile::fake()->create('payload.php', 10, 'application/x-httpd-php');
@@ -112,7 +116,7 @@ class ChatAttachmentUploadTest extends TestCase
         $this->assertDatabaseCount('chat_files', 0);
     }
 
-    /** @test */
+    #[Test]
     public function deleting_an_attachment_message_removes_the_file_record_and_blob(): void
     {
         $file = UploadedFile::fake()->create('progress-report.pdf', 256, 'application/pdf');
@@ -148,7 +152,7 @@ class ChatAttachmentUploadTest extends TestCase
         Storage::disk('local')->assertMissing($storedPath);
     }
 
-    /** @test */
+    #[Test]
     public function missing_attachment_blob_does_not_emit_broken_signed_urls(): void
     {
         $file = UploadedFile::fake()->create('missing-report.pdf', 256, 'application/pdf');
@@ -164,7 +168,7 @@ class ChatAttachmentUploadTest extends TestCase
         Storage::disk('local')->delete($storedPath);
 
         $messagesResponse = $this->actingAs($this->counselor)->getJson(
-            '/api/chat/messages?session_id=' . $this->session->id
+            '/api/chat/messages?session_id='.$this->session->id
         );
 
         $messagesResponse
@@ -182,7 +186,7 @@ class ChatAttachmentUploadTest extends TestCase
             ->assertJson(['message' => 'File not found']);
     }
 
-    /** @test */
+    #[Test]
     public function voice_attachment_upload_can_be_streamed_through_voice_note_endpoint(): void
     {
         $voice = UploadedFile::fake()->create('student-check-in.webm', 128, 'audio/webm');
@@ -217,7 +221,7 @@ class ChatAttachmentUploadTest extends TestCase
         $this->assertSame('inline', (string) $streamResponse->headers->get('Content-Disposition'));
     }
 
-    /** @test */
+    #[Test]
     public function assigned_peer_counselor_can_upload_voice_note_but_not_file_attachment(): void
     {
         $peerSession = CounselingSession::create([
@@ -293,7 +297,7 @@ class ChatAttachmentUploadTest extends TestCase
         $documentResponse->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function peer_assignment_table_access_uses_same_voice_and_attachment_rules(): void
     {
         $this->session->update(['status' => 'completed']);

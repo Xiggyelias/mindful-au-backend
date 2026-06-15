@@ -5,8 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Appointment;
 use App\Models\User;
 use App\Support\SafeEmail;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ProfileController extends Controller
@@ -16,7 +17,7 @@ class ProfileController extends Controller
         $user = $request->user();
         $profile = $user->profile;
 
-        if (!$profile) {
+        if (! $profile) {
             return response()->json(['message' => 'Profile not found'], 404);
         }
 
@@ -35,21 +36,21 @@ class ProfileController extends Controller
 
         if (
             array_key_exists('peer_available', $profileData)
-            && !$user->hasRole('peer_counselor')
-            && !$user->hasRole('admin')
+            && ! $user->hasRole('peer_counselor')
+            && ! $user->hasRole('admin')
         ) {
             unset($profileData['peer_available']);
         }
 
         if (
             array_key_exists('anonymous_mode', $profileData)
-            && !$user->hasRole('student')
-            && !$user->hasRole('admin')
+            && ! $user->hasRole('student')
+            && ! $user->hasRole('admin')
         ) {
             unset($profileData['anonymous_mode']);
         }
 
-        if (!empty($profileData)) {
+        if (! empty($profileData)) {
             $oldMode = (bool) $profile->anonymous_mode;
             $profile->update($profileData);
             $newMode = (bool) $profile->anonymous_mode;
@@ -90,7 +91,7 @@ class ProfileController extends Controller
         $user = $request->user();
         $profile = $user->profile;
 
-        if (!$profile) {
+        if (! $profile) {
             return response()->json(['message' => 'Profile not found'], 404);
         }
 
@@ -145,7 +146,7 @@ class ProfileController extends Controller
     private function generateAnonymousIdForAppointment(): string
     {
         do {
-            $candidate = 'User_' . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+            $candidate = 'User_'.str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         } while (Appointment::query()->where('anonymous_id', $candidate)->exists());
 
         return $candidate;
@@ -153,7 +154,6 @@ class ProfileController extends Controller
 
     private function appointmentSupportsCallTypeColumn(): bool
     {
-        return \Illuminate\Support\Facades\Schema::hasColumn('appointments', 'call_type');
+        return Schema::hasColumn('appointments', 'call_type');
     }
 }
-

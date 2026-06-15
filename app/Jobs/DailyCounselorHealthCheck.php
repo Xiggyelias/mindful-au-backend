@@ -2,8 +2,8 @@
 
 namespace App\Jobs;
 
-use App\Models\User;
 use App\Models\CounselorWellnessLog;
+use App\Models\User;
 use App\Services\CounselorLiveHealthCheckService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -18,18 +18,19 @@ class DailyCounselorHealthCheck implements ShouldQueue
 
     public function handle(CounselorLiveHealthCheckService $liveHealthCheck): void
     {
-        $counselors = User::whereHas('roles', function($query) {
+        $counselors = User::whereHas('roles', function ($query) {
             $query->where('role', 'counselor')->where('approved', true);
         })->get();
 
         foreach ($counselors as $counselor) {
             try {
                 $summary = $liveHealthCheck->buildLiveSummary($counselor);
-                if (!($summary['has_live_activity'] ?? false)) {
+                if (! ($summary['has_live_activity'] ?? false)) {
                     Log::info('Skipped daily counselor health check without live activity.', [
                         'counselor_id' => $counselor->id,
                         'source' => $summary['source'] ?? null,
                     ]);
+
                     continue;
                 }
 
@@ -54,17 +55,8 @@ class DailyCounselorHealthCheck implements ShouldQueue
                     ]);
                 }
             } catch (\Exception $e) {
-                Log::error("Failed to process health check for counselor {$counselor->id}: " . $e->getMessage());
+                Log::error("Failed to process health check for counselor {$counselor->id}: ".$e->getMessage());
             }
         }
     }
-
 }
-
-
-
-
-
-
-
-

@@ -20,7 +20,7 @@ class Message extends Model
             $hasSenderRole = self::databaseHasColumn('sender_role');
             $hasSenderNameSnapshot = self::databaseHasColumn('sender_name_snapshot');
 
-            if ($hasCaseId && empty($message->case_id) && !empty($message->session_id)) {
+            if ($hasCaseId && empty($message->case_id) && ! empty($message->session_id)) {
                 $message->case_id = (int) $message->session_id;
             }
 
@@ -80,7 +80,7 @@ class Message extends Model
     {
         if (self::$databaseColumns === null) {
             try {
-                self::$databaseColumns = Schema::getColumnListing((new self())->getTable());
+                self::$databaseColumns = Schema::getColumnListing((new self)->getTable());
             } catch (\Throwable) {
                 self::$databaseColumns = [];
             }

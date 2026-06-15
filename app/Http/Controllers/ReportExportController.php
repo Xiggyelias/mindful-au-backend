@@ -7,7 +7,6 @@ use App\Models\AiDiagnostic;
 use App\Models\Appointment;
 use App\Models\CounselingSession;
 use App\Models\User;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -17,7 +16,7 @@ class ReportExportController extends Controller
     public function export(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -53,8 +52,8 @@ class ReportExportController extends Controller
     private function buildOverviewRows(): array
     {
         $totalUsers = User::query()->count();
-        $students = User::query()->whereHas('roles', fn($q) => $q->where('role', 'student')->where('approved', true))->count();
-        $counselors = User::query()->whereHas('roles', fn($q) => $q->where('role', 'counselor')->where('approved', true))->count();
+        $students = User::query()->whereHas('roles', fn ($q) => $q->where('role', 'student')->where('approved', true))->count();
+        $counselors = User::query()->whereHas('roles', fn ($q) => $q->where('role', 'counselor')->where('approved', true))->count();
         $sessions = CounselingSession::query()->count();
         $activeSessions = CounselingSession::query()->where('status', 'active')->count();
         $appointments = Appointment::query()->count();
@@ -85,7 +84,7 @@ class ReportExportController extends Controller
             ->groupBy('period', 'risk_level')
             ->orderBy('period')
             ->get()
-            ->map(fn($row) => [
+            ->map(fn ($row) => [
                 $row->period,
                 (string) $row->risk_level,
                 (int) $row->total,
@@ -104,15 +103,15 @@ class ReportExportController extends Controller
     {
         $since = now()->subDays($days);
         $rows = User::query()
-            ->whereHas('roles', fn($q) => $q->where('role', 'counselor')->where('approved', true))
+            ->whereHas('roles', fn ($q) => $q->where('role', 'counselor')->where('approved', true))
             ->withCount([
-                'counselorSessions as sessions_in_window_count' => fn($q) => $q->where('created_at', '>=', $since),
-                'appointmentsAsCounselor as appointments_in_window_count' => fn($q) => $q->where('created_at', '>=', $since),
+                'counselorSessions as sessions_in_window_count' => fn ($q) => $q->where('created_at', '>=', $since),
+                'appointmentsAsCounselor as appointments_in_window_count' => fn ($q) => $q->where('created_at', '>=', $since),
             ])
             ->orderByDesc('sessions_in_window_count')
             ->get()
-            ->map(fn($c) => [
-                'Counselor #' . str_pad((string) $c->id, 4, '0', STR_PAD_LEFT),
+            ->map(fn ($c) => [
+                'Counselor #'.str_pad((string) $c->id, 4, '0', STR_PAD_LEFT),
                 (int) $c->sessions_in_window_count,
                 (int) $c->appointments_in_window_count,
             ])
@@ -136,7 +135,7 @@ class ReportExportController extends Controller
             ->orderBy('faculty')
             ->orderBy('risk_type')
             ->get()
-            ->map(fn($row) => [
+            ->map(fn ($row) => [
                 (string) ($row->faculty ?: 'Unknown'),
                 (string) $row->risk_type,
                 (int) $row->total,
@@ -155,7 +154,7 @@ class ReportExportController extends Controller
     {
         $tmp = tempnam(sys_get_temp_dir(), 'aucms-report-');
         $file = fopen($tmp, 'wb');
-        if (!$file) {
+        if (! $file) {
             return response()->json(['message' => 'Unable to generate CSV export'], 500);
         }
 
@@ -166,6 +165,7 @@ class ReportExportController extends Controller
         fclose($file);
 
         $fileName = sprintf('%s-%s.csv', Str::slug($report), now()->format('Ymd-His'));
+
         return response()->download($tmp, $fileName, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ])->deleteFileAfterSend(true);
@@ -173,12 +173,12 @@ class ReportExportController extends Controller
 
     private function streamXlsx(string $report, array $headers, array $rows)
     {
-        if (!class_exists(\ZipArchive::class)) {
+        if (! class_exists(\ZipArchive::class)) {
             return response()->json(['message' => 'XLSX export requires ZipArchive extension'], 500);
         }
 
         $tmp = tempnam(sys_get_temp_dir(), 'aucms-report-');
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         if ($zip->open($tmp, \ZipArchive::OVERWRITE) !== true) {
             return response()->json(['message' => 'Unable to generate XLSX export'], 500);
         }
@@ -194,6 +194,7 @@ class ReportExportController extends Controller
         $zip->close();
 
         $fileName = sprintf('%s-%s.xlsx', Str::slug($report), now()->format('Ymd-His'));
+
         return response()->download($tmp, $fileName, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend(true);
@@ -202,7 +203,7 @@ class ReportExportController extends Controller
     private function streamPdf(string $title, string $report, array $headers, array $rows)
     {
         $lines = [];
-        $lines[] = $title . ' - ' . now()->toDateTimeString();
+        $lines[] = $title.' - '.now()->toDateTimeString();
         $lines[] = implode(' | ', array_map('strval', $headers));
         foreach ($rows as $row) {
             $lines[] = implode(' | ', array_map('strval', $row));
@@ -213,6 +214,7 @@ class ReportExportController extends Controller
         file_put_contents($tmp, $pdfBinary);
 
         $fileName = sprintf('%s-%s.pdf', Str::slug($report), now()->format('Ymd-His'));
+
         return response()->download($tmp, $fileName, [
             'Content-Type' => 'application/pdf',
         ])->deleteFileAfterSend(true);
@@ -236,9 +238,9 @@ class ReportExportController extends Controller
         }
 
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            . '<sheetData>' . implode('', $xmlRows) . '</sheetData>'
-            . '</worksheet>';
+            .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            .'<sheetData>'.implode('', $xmlRows).'</sheetData>'
+            .'</worksheet>';
     }
 
     private function xlsxCellRef(int $row, int $column): string
@@ -246,47 +248,47 @@ class ReportExportController extends Controller
         $letters = '';
         while ($column > 0) {
             $mod = ($column - 1) % 26;
-            $letters = chr(65 + $mod) . $letters;
+            $letters = chr(65 + $mod).$letters;
             $column = intdiv($column - 1, 26);
         }
 
-        return $letters . $row;
+        return $letters.$row;
     }
 
     private function contentTypesXml(): string
     {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            . '<Default Extension="xml" ContentType="application/xml"/>'
-            . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-            . '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
-            . '</Types>';
+            .'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            .'<Default Extension="xml" ContentType="application/xml"/>'
+            .'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            .'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            .'</Types>';
     }
 
     private function rootRelsXml(): string
     {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
-            . '</Relationships>';
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            .'</Relationships>';
     }
 
     private function workbookXml(): string
     {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-            . 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-            . '<sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets>'
-            . '</workbook>';
+            .'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            .'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            .'<sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets>'
+            .'</workbook>';
     }
 
     private function workbookRelsXml(): string
     {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
-            . '</Relationships>';
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            .'</Relationships>';
     }
 
     private function buildSimplePdf(array $lines): string
@@ -301,30 +303,30 @@ class ReportExportController extends Controller
             }
             $content .= "({$lineText}) Tj\n";
         }
-        $content .= "ET";
+        $content .= 'ET';
 
         $objects = [];
-        $objects[] = "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj";
-        $objects[] = "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj";
-        $objects[] = "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj";
-        $objects[] = "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj";
-        $objects[] = "5 0 obj << /Length " . strlen($content) . " >> stream\n{$content}\nendstream endobj";
+        $objects[] = '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj';
+        $objects[] = '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj';
+        $objects[] = '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj';
+        $objects[] = '4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj';
+        $objects[] = '5 0 obj << /Length '.strlen($content)." >> stream\n{$content}\nendstream endobj";
 
         $pdf = "%PDF-1.4\n";
         $offsets = [0];
         foreach ($objects as $object) {
             $offsets[] = strlen($pdf);
-            $pdf .= $object . "\n";
+            $pdf .= $object."\n";
         }
 
         $xrefOffset = strlen($pdf);
-        $pdf .= "xref\n0 " . (count($objects) + 1) . "\n";
+        $pdf .= "xref\n0 ".(count($objects) + 1)."\n";
         $pdf .= "0000000000 65535 f \n";
         for ($i = 1; $i <= count($objects); $i++) {
             $pdf .= sprintf("%010d 00000 n \n", $offsets[$i]);
         }
 
-        $pdf .= "trailer << /Size " . (count($objects) + 1) . " /Root 1 0 R >>\n";
+        $pdf .= 'trailer << /Size '.(count($objects) + 1)." /Root 1 0 R >>\n";
         $pdf .= "startxref\n{$xrefOffset}\n%%EOF";
 
         return $pdf;

@@ -2,18 +2,21 @@
 
 namespace Tests\Feature;
 
+use App\Models\CounselingSession;
+use App\Models\Notification;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class AIWellnessChatFallbackTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function greeting_messages_get_a_conversational_fallback_response(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -51,7 +54,7 @@ class AIWellnessChatFallbackTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function follow_up_messages_use_conversation_context_in_fallback_mode(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -88,7 +91,7 @@ class AIWellnessChatFallbackTest extends TestCase
         $this->assertStringNotContainsString('tell me a little more', $assistantText);
     }
 
-    /** @test */
+    #[Test]
     public function casual_check_in_replies_stay_conversational_instead_of_jump_to_old_advice(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -124,7 +127,7 @@ class AIWellnessChatFallbackTest extends TestCase
         $this->assertStringNotContainsString('academic pressure can feel intense', $assistantText);
     }
 
-    /** @test */
+    #[Test]
     public function physical_health_messages_receive_health_specific_support(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -153,7 +156,7 @@ class AIWellnessChatFallbackTest extends TestCase
         $this->assertStringNotContainsString('i am listening', $assistantText);
     }
 
-    /** @test */
+    #[Test]
     public function crisis_language_is_caught_before_any_provider_call_and_returns_immediate_help_guidance(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -176,7 +179,7 @@ class AIWellnessChatFallbackTest extends TestCase
         $counselor = $this->createPortalUser('counselor', 'ai-crisis-counselor@test.com', 'AI Crisis Counselor');
         $admin = $this->createPortalUser('admin', 'ai-crisis-admin@test.com', 'AI Crisis Admin');
 
-        \App\Models\CounselingSession::create([
+        CounselingSession::create([
             'student_id' => $student->id,
             'counselor_id' => $counselor->id,
             'status' => 'active',
@@ -206,12 +209,12 @@ class AIWellnessChatFallbackTest extends TestCase
         $this->assertStringNotContainsString('academic pressure can feel intense', $assistantText);
 
         $this->assertTrue(
-            \App\Models\Notification::query()->where('user_id', $counselor->id)->exists(),
+            Notification::query()->where('user_id', $counselor->id)->exists(),
             'Counselor should receive crisis notification'
         );
 
         $this->assertTrue(
-            \App\Models\Notification::query()->where('user_id', $admin->id)->exists(),
+            Notification::query()->where('user_id', $admin->id)->exists(),
             'Admin should receive crisis notification'
         );
 

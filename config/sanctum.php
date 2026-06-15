@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\EncryptCookies;
+use App\Http\Middleware\VerifyCsrfToken;
 use Laravel\Sanctum\Sanctum;
 
 return [
@@ -16,15 +18,7 @@ return [
     'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
 
     'middleware' => [
-        'verify_csrf_token' => App\Http\Middleware\VerifyCsrfToken::class,
-        'encrypt_cookies' => App\Http\Middleware\EncryptCookies::class,
+        'verify_csrf_token' => VerifyCsrfToken::class,
+        'encrypt_cookies' => EncryptCookies::class,
     ],
 ];
-
-
-
-
-
-
-
-

@@ -10,11 +10,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('messages', function (Blueprint $table) {
-            if (!Schema::hasColumn('messages', 'recipient_id')) {
+            if (! Schema::hasColumn('messages', 'recipient_id')) {
                 $table->unsignedBigInteger('recipient_id')->nullable()->after('sender_id');
             }
 
-            if (!Schema::hasColumn('messages', 'seen_at')) {
+            if (! Schema::hasColumn('messages', 'seen_at')) {
                 $table->timestamp('seen_at')->nullable()->after('is_encrypted');
             }
         });
@@ -23,7 +23,7 @@ return new class extends Migration
             Schema::table('messages', function (Blueprint $table) {
                 $table->index(['session_id', 'recipient_id', 'seen_at'], 'messages_session_recipient_seen_idx');
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Index already exists or unsupported by current driver.
         }
 
@@ -34,7 +34,7 @@ return new class extends Migration
                     ->on('users')
                     ->nullOnDelete();
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Foreign key already exists or unsupported by current driver.
         }
 
@@ -57,7 +57,7 @@ return new class extends Migration
                     END
                     WHERE m.recipient_id IS NULL
                 ");
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 // Best-effort backfill only.
             }
         }
@@ -69,7 +69,7 @@ return new class extends Migration
             Schema::table('messages', function (Blueprint $table) {
                 $table->dropForeign(['recipient_id']);
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Ignore if missing.
         }
 
@@ -77,7 +77,7 @@ return new class extends Migration
             Schema::table('messages', function (Blueprint $table) {
                 $table->dropIndex('messages_session_recipient_seen_idx');
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Ignore if missing.
         }
 

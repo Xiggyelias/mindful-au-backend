@@ -44,7 +44,7 @@ class HealthController extends Controller
             $components[$key] = (bool) ($check['ok'] ?? false);
         }
 
-        $isReady = !in_array(false, $components, true);
+        $isReady = ! in_array(false, $components, true);
 
         return response()->json([
             'status' => $isReady ? 'ok' : 'degraded',
@@ -77,7 +77,7 @@ class HealthController extends Controller
     private function checkCache(): array
     {
         try {
-            $cacheKey = 'health:ready:' . Str::uuid()->toString();
+            $cacheKey = 'health:ready:'.Str::uuid()->toString();
             Cache::put($cacheKey, 'ok', now()->addSeconds(5));
             $ok = Cache::get($cacheKey) === 'ok';
             Cache::forget($cacheKey);
@@ -156,7 +156,7 @@ class HealthController extends Controller
         $cacheSeconds = max(0, (int) env('HEALTH_DISK_CACHE_SECONDS', 15));
 
         if ($cacheSeconds > 0) {
-            $cacheKey = 'health:disk:status:' . md5($path . '|' . $requiredPercent);
+            $cacheKey = 'health:disk:status:'.md5($path.'|'.$requiredPercent);
             try {
                 return Cache::remember(
                     $cacheKey,
@@ -177,11 +177,11 @@ class HealthController extends Controller
         $totalSpaceResult = $this->readDiskSpaceMetric($path, 'total');
         $freeBytes = $freeSpaceResult['value'];
         $totalBytes = $totalSpaceResult['value'];
-        $warningCacheKey = 'health:disk-warning:' . md5($path);
+        $warningCacheKey = 'health:disk-warning:'.md5($path);
 
         if ($freeBytes === false || $totalBytes === false || $totalBytes <= 0) {
             $warningMessage = $freeSpaceResult['error'] ?? $totalSpaceResult['error'];
-            if (!Cache::has($warningCacheKey)) {
+            if (! Cache::has($warningCacheKey)) {
                 Log::warning('Disk health probe could not read disk usage metrics.', [
                     'path' => $path,
                     'warning' => $warningMessage,
@@ -198,7 +198,7 @@ class HealthController extends Controller
         }
 
         $freePercent = round(($freeBytes / $totalBytes) * 100, 2);
-        if ($freePercent < $requiredPercent && !Cache::has($warningCacheKey)) {
+        if ($freePercent < $requiredPercent && ! Cache::has($warningCacheKey)) {
             Log::warning('Disk free space below configured readiness threshold.', [
                 'path' => $path,
                 'free_percent' => $freePercent,
@@ -227,6 +227,7 @@ class HealthController extends Controller
         $warning = null;
         set_error_handler(function (int $severity, string $message) use (&$warning): bool {
             $warning = trim($message) !== '' ? $message : "disk_space_warning_{$severity}";
+
             return true;
         });
 
@@ -241,7 +242,7 @@ class HealthController extends Controller
             restore_error_handler();
         }
 
-        if (!is_int($value) && !is_float($value)) {
+        if (! is_int($value) && ! is_float($value)) {
             $value = false;
         }
 

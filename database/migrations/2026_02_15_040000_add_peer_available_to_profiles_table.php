@@ -8,12 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasTable('profiles')) {
+        if (! Schema::hasTable('profiles')) {
             return;
         }
 
         Schema::table('profiles', function (Blueprint $table) {
-            if (!Schema::hasColumn('profiles', 'peer_available')) {
+            if (! Schema::hasColumn('profiles', 'peer_available')) {
                 $table->boolean('peer_available')->default(true)->after('anonymous_mode');
                 $table->index('peer_available');
             }
@@ -22,7 +22,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (!Schema::hasTable('profiles')) {
+        if (! Schema::hasTable('profiles')) {
             return;
         }
 
@@ -34,4 +34,3 @@ return new class extends Migration
         });
     }
 };
-

@@ -11,6 +11,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class PeerChatRestrictionsTest extends TestCase
@@ -38,7 +39,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assignRole($this->peer, 'peer_counselor');
     }
 
-    /** @test */
+    #[Test]
     public function peer_counselor_cannot_upload_attachment_in_delegated_session(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -54,7 +55,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertDatabaseCount('chat_files', 0);
     }
 
-    /** @test */
+    #[Test]
     public function student_can_upload_attachment_in_peer_delegated_session(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -70,7 +71,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertDatabaseCount('chat_files', 1);
     }
 
-    /** @test */
+    #[Test]
     public function peer_counselor_cannot_post_non_text_message_type(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -91,7 +92,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertDatabaseCount('messages', 0);
     }
 
-    /** @test */
+    #[Test]
     public function supervising_counselor_can_join_peer_delegated_thread_without_new_room(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -116,7 +117,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertSame(1, CounselingSession::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function assigned_peer_counselor_can_create_session_note(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -130,7 +131,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('session.notes', 'Student asked for follow-up tomorrow.');
     }
 
-    /** @test */
+    #[Test]
     public function assigning_peer_counselor_creates_a_separate_peer_room(): void
     {
         $session = $this->makeDirectCounselorSession();
@@ -168,7 +169,7 @@ class PeerChatRestrictionsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function student_chat_list_returns_direct_and_peer_rooms_as_separate_rows(): void
     {
         $directSession = $this->makeDirectCounselorSession();
@@ -196,7 +197,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertSame('peer_counselor', $peerRow['assigned_role']);
     }
 
-    /** @test */
+    #[Test]
     public function student_chat_list_keeps_unread_counts_per_session(): void
     {
         $directSession = $this->makeDirectCounselorSession();
@@ -251,7 +252,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertSame(1, (int) $peerRow['unread_count']);
     }
 
-    /** @test */
+    #[Test]
     public function assigning_peer_counselor_rejects_the_student_as_the_peer(): void
     {
         $this->assignRole($this->student, 'peer_counselor');
@@ -268,7 +269,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertSame(1, CounselingSession::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function assigning_peer_counselor_rejects_the_supervising_counselor_as_the_peer(): void
     {
         $this->assignRole($this->counselor, 'peer_counselor');
@@ -285,7 +286,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertSame(1, CounselingSession::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function counselor_starting_chat_with_peer_assigned_student_reuses_the_direct_room(): void
     {
         $directSession = $this->makeDirectCounselorSession();
@@ -305,7 +306,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertSame(2, CounselingSession::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function student_starting_same_counselor_chat_reuses_the_direct_room(): void
     {
         $directSession = $this->makeDirectCounselorSession();
@@ -326,7 +327,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertSame(2, CounselingSession::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function active_direct_counselor_session_constraint_rejects_duplicate_relationships(): void
     {
         $this->makeDirectCounselorSession();
@@ -344,7 +345,7 @@ class PeerChatRestrictionsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function active_peer_support_session_constraint_rejects_duplicate_relationships(): void
     {
         $this->makeDelegatedPeerSession();
@@ -361,7 +362,7 @@ class PeerChatRestrictionsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function active_peer_assignment_constraint_rejects_duplicate_rows(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -385,7 +386,7 @@ class PeerChatRestrictionsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function unassigning_peer_counselor_closes_peer_room_without_mutating_direct_room(): void
     {
         $directSession = $this->makeDirectCounselorSession();
@@ -417,7 +418,7 @@ class PeerChatRestrictionsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function assigning_peer_counselor_preserves_anonymous_source_chat(): void
     {
         $session = $this->makeDirectCounselorSession();
@@ -443,7 +444,7 @@ class PeerChatRestrictionsTest extends TestCase
         $this->assertNotSame($anonymousId, $peerRoom->anonymous_id);
     }
 
-    /** @test */
+    #[Test]
     public function peer_escalation_keeps_peer_and_counselor_in_shared_case_room(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -474,7 +475,7 @@ class PeerChatRestrictionsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function urgent_peer_flag_keeps_peer_visible_in_shared_case_room(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -505,7 +506,7 @@ class PeerChatRestrictionsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function message_sender_snapshots_survive_counselor_join_and_assignment_changes(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -553,7 +554,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('1.sender_display_name', 'peer-restrict-counselor');
     }
 
-    /** @test */
+    #[Test]
     public function counselor_chat_list_exposes_case_peer_even_for_legacy_escalated_rooms(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -580,7 +581,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('0.case_peer_counselor.email', $this->peer->email);
     }
 
-    /** @test */
+    #[Test]
     public function peer_chat_list_shows_student_identity_for_nonanonymous_peer_rooms(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -597,7 +598,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('0.student.profile.full_name', 'peer-restrict-student');
     }
 
-    /** @test */
+    #[Test]
     public function counselor_chat_list_shows_student_identity_for_nonanonymous_shared_peer_rooms(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -614,7 +615,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('0.student.profile.full_name', 'peer-restrict-student');
     }
 
-    /** @test */
+    #[Test]
     public function peer_counselor_sees_student_messages_masked_in_delegated_session(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -641,7 +642,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('0.sent_as_anonymous', true);
     }
 
-    /** @test */
+    #[Test]
     public function student_can_turn_off_anonymous_mode_for_supervised_peer_room(): void
     {
         $directSession = $this->makeDirectCounselorSession();
@@ -682,7 +683,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('0.student.profile.full_name', 'peer-restrict-student');
     }
 
-    /** @test */
+    #[Test]
     public function legacy_escalated_case_peer_can_still_send_in_the_shared_room(): void
     {
         $session = $this->makeDelegatedPeerSession();
@@ -716,7 +717,7 @@ class PeerChatRestrictionsTest extends TestCase
             ->assertJsonPath('recipient_id', $this->student->id);
     }
 
-    /** @test */
+    #[Test]
     public function peer_room_message_notifications_only_go_to_the_direct_recipient(): void
     {
         $session = $this->makeDelegatedPeerSession();

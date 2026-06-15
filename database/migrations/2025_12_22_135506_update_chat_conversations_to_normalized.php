@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('chat_conversations', function (Blueprint $table) {
             // Add foreign key to ai_models table
             $table->foreignId('ai_model_id')->nullable()->after('user_id')->constrained('ai_models')->onDelete('set null');
-            
+
             // Add indexes for better performance
             $table->index(['user_id', 'is_active']);
             $table->index(['ai_model_id']);
@@ -24,7 +24,7 @@ return new class extends Migration
         Schema::table('chat_messages', function (Blueprint $table) {
             // Remove the redundant metadata JSON column
             $table->dropColumn('metadata');
-            
+
             // Add indexes for better performance
             $table->index(['conversation_id', 'role']);
             $table->index('created_at');

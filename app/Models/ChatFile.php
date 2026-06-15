@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
@@ -64,8 +65,9 @@ class ChatFile extends Model
                     str_replace(['"', '\\'], ['_', '_'], (string) $this->file_name)
                 );
             }
-            /** @var \Illuminate\Filesystem\FilesystemAdapter $storage */
+            /** @var FilesystemAdapter $storage */
             $storage = Storage::disk('s3');
+
             return $storage->temporaryUrl($this->file_path, $expiry, $options);
         }
 
@@ -95,6 +97,7 @@ class ChatFile extends Model
 
         try {
             $disk = (string) config('chat.attachments.disk', 'local');
+
             return Storage::disk($disk)->exists($this->file_path);
         } catch (\Throwable) {
             return false;

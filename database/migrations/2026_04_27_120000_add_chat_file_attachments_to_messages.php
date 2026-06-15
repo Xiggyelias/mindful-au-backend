@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('messages', function (Blueprint $table) {
-            if (!Schema::hasColumn('messages', 'has_file')) {
+            if (! Schema::hasColumn('messages', 'has_file')) {
                 $table->boolean('has_file')->default(false)->after('file_url');
             }
         });

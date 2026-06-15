@@ -7,13 +7,14 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class IntakeReferralEndpointsTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function students_cannot_access_intake_endpoints(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -60,7 +61,7 @@ class IntakeReferralEndpointsTest extends TestCase
         $this->actingAs($counselor)->getJson("/api/intake-submissions/{$intakeId}")->assertStatus(200);
     }
 
-    /** @test */
+    #[Test]
     public function high_risk_intake_alert_can_be_acknowledged_and_resolved(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -112,7 +113,7 @@ class IntakeReferralEndpointsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function referral_endpoints_enforce_role_scope_and_consent_rules(): void
     {
         SystemSetting::query()->updateOrCreate(

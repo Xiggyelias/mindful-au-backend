@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 class SendDailySystemReportCommand extends Command
 {
     protected $signature = 'system:daily-report';
+
     protected $description = 'Send the daily system summary report to admins';
 
     public function handle(): int
@@ -25,6 +26,7 @@ class SendDailySystemReportCommand extends Command
 
         if ($admins->isEmpty()) {
             $this->info('No approved admins available. Skipping daily report.');
+
             return self::SUCCESS;
         }
 
@@ -68,7 +70,7 @@ class SendDailySystemReportCommand extends Command
         }
 
         $this->info('Daily system report delivered to admins.');
+
         return self::SUCCESS;
     }
 }
-

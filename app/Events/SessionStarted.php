@@ -3,7 +3,6 @@
 namespace App\Events;
 
 use App\Models\CounselingSession;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -24,11 +23,11 @@ class SessionStarted implements ShouldBroadcast
     public function broadcastOn(): array
     {
         $channels = [
-            new PrivateChannel('user.' . $this->session->student_id),
+            new PrivateChannel('user.'.$this->session->student_id),
         ];
 
         if ($this->session->counselor_id) {
-            $channels[] = new PrivateChannel('user.' . $this->session->counselor_id);
+            $channels[] = new PrivateChannel('user.'.$this->session->counselor_id);
         }
 
         return $channels;
@@ -39,11 +38,3 @@ class SessionStarted implements ShouldBroadcast
         return 'session.started';
     }
 }
-
-
-
-
-
-
-
-

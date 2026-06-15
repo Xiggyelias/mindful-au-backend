@@ -23,4 +23,3 @@ class InstitutionAccount extends Model
         'is_active' => 'boolean',
     ];
 }
-

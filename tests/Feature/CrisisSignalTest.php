@@ -6,6 +6,7 @@ use App\Models\CounselingSession;
 use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class CrisisSignalTest extends TestCase
@@ -20,7 +21,7 @@ class CrisisSignalTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function student_posting_verified_keywords_triggers_staff_notification(): void
     {
         $student = User::factory()->create();
@@ -54,7 +55,7 @@ class CrisisSignalTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function counselor_cannot_post_crisis_signal_for_student_session(): void
     {
         $student = User::factory()->create();
@@ -77,7 +78,7 @@ class CrisisSignalTest extends TestCase
         $this->assertSame(0, Notification::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function unverified_keywords_return_422(): void
     {
         $student = User::factory()->create();

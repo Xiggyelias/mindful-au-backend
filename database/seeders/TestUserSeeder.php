@@ -94,10 +94,10 @@ class TestUserSeeder extends Seeder
             ->where('name', 'user_roles')
             ->value('sql');
 
-        if (!is_string($tableDefinition) || trim($tableDefinition) === '') {
+        if (! is_string($tableDefinition) || trim($tableDefinition) === '') {
             return true;
         }
 
-        return str_contains(strtolower($tableDefinition), "'" . strtolower($role) . "'");
+        return str_contains(strtolower($tableDefinition), "'".strtolower($role)."'");
     }
 }

@@ -46,15 +46,16 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) use ($apiAuthPerMinute, $apiGuestPerMinute) {
             $userId = $request->user()?->id;
             if ($userId) {
-                return Limit::perMinute($apiAuthPerMinute)->by('auth:' . $userId);
+                return Limit::perMinute($apiAuthPerMinute)->by('auth:'.$userId);
             }
 
-            return Limit::perMinute($apiGuestPerMinute)->by('guest:' . $request->ip());
+            return Limit::perMinute($apiGuestPerMinute)->by('guest:'.$request->ip());
         });
 
         RateLimiter::for('auth-login', function (Request $request) use ($authLoginPerMinute) {
             $email = strtolower((string) $request->input('email', ''));
-            return Limit::perMinute($authLoginPerMinute)->by($request->ip() . '|' . $email);
+
+            return Limit::perMinute($authLoginPerMinute)->by($request->ip().'|'.$email);
         });
 
         RateLimiter::for('auth-register', function (Request $request) use ($authRegisterPerMinute) {
@@ -66,7 +67,7 @@ class RouteServiceProvider extends ServiceProvider
             $ticketHash = $ticket !== '' ? substr(hash('sha256', $ticket), 0, 24) : 'no-ticket';
 
             return Limit::perMinute($oauthTicketExchangePerMinute)
-                ->by($request->ip() . '|' . $ticketHash);
+                ->by($request->ip().'|'.$ticketHash);
         });
 
         RateLimiter::for('messages-read', function (Request $request) use ($messagesReadPerMinute) {
@@ -79,8 +80,9 @@ class RouteServiceProvider extends ServiceProvider
 
         RateLimiter::for('session-touch', function (Request $request) use ($sessionTouchPerMinute) {
             $sessionId = (string) $request->route('id');
+
             return Limit::perMinute($sessionTouchPerMinute)
-                ->by(($request->user()?->id ?: $request->ip()) . '|session-touch|' . $sessionId);
+                ->by(($request->user()?->id ?: $request->ip()).'|session-touch|'.$sessionId);
         });
 
         RateLimiter::for('presence', function (Request $request) use ($presencePerMinute) {

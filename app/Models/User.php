@@ -53,6 +53,7 @@ class User extends Authenticatable
     public function hasRole(string $role): bool
     {
         $lookup = $this->getRoleLookup();
+
         return isset($lookup['approved'][$role]);
     }
 

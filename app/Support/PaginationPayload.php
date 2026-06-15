@@ -10,7 +10,7 @@ class PaginationPayload
     /**
      * Build a consistent JSON payload from Laravel paginate().
      *
-     * @param array<int, string> $filterKeys
+     * @param  array<int, string>  $filterKeys
      */
     public static function fromPaginator(
         LengthAwarePaginator $paginator,

@@ -18,19 +18,19 @@ class AuditDataAccess
         $response = $next($request);
 
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return $response;
         }
 
-        if (!$this->shouldLog($request)) {
+        if (! $this->shouldLog($request)) {
             return $response;
         }
 
-        if (!SystemSettings::getBool('audit_logging', true)) {
+        if (! SystemSettings::getBool('audit_logging', true)) {
             return $response;
         }
 
-        if (!Schema::hasTable('data_access_logs')) {
+        if (! Schema::hasTable('data_access_logs')) {
             return $response;
         }
 
@@ -84,7 +84,7 @@ class AuditDataAccess
     private function extractPrimaryResource(Request $request): array
     {
         $route = $request->route();
-        if (!$route) {
+        if (! $route) {
             return [null, null];
         }
 

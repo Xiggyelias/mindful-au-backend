@@ -1,36 +1,48 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AcademicRiskWebhookController;
+use App\Http\Controllers\ActivityLogController;
+use App\Http\Controllers\AIDiagnosticController;
+use App\Http\Controllers\AIReportController;
+use App\Http\Controllers\AIWellnessChatController;
+use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AuthSessionController;
-use App\Http\Controllers\HealthController;
-use App\Http\Controllers\OAuthController;
-use App\Http\Controllers\SessionController;
-use App\Http\Controllers\MessageController;
-use App\Http\Controllers\AppointmentController;
-use App\Http\Controllers\CounselorSlotController;
-use App\Http\Controllers\EmergencyRequestController;
-use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\AnalyticsController;
-use App\Http\Controllers\VoiceNotesController;
-use App\Http\Controllers\VideoCallController;
-use App\Http\Controllers\CounselorIncomingCallController;
-use App\Http\Controllers\StudentIncomingCallController;
-use App\Http\Controllers\CounselorSessionReminderController;
-use App\Http\Controllers\OpenRouterChatController;
-use App\Http\Controllers\IntakeController;
-use App\Http\Controllers\ChatAttachmentController;
-use App\Http\Controllers\ReferralController;
 use App\Http\Controllers\BackupController;
-use App\Http\Controllers\ReportExportController;
-use App\Http\Controllers\AcademicRiskWebhookController;
+use App\Http\Controllers\ChatAttachmentController;
+use App\Http\Controllers\CounselorIncomingCallController;
+use App\Http\Controllers\CounselorSessionReminderController;
+use App\Http\Controllers\CounselorSlotController;
 use App\Http\Controllers\CounselorTwoFactorController;
+use App\Http\Controllers\CounselorWellnessController;
 use App\Http\Controllers\DataAccessLogController;
+use App\Http\Controllers\DiagnosticController;
+use App\Http\Controllers\EmergencyRequestController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\InstitutionAccountController;
+use App\Http\Controllers\IntakeController;
+use App\Http\Controllers\MessageController;
+use App\Http\Controllers\MlInsightsController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\OAuthController;
+use App\Http\Controllers\OpenRouterChatController;
+use App\Http\Controllers\PanicLogController;
 use App\Http\Controllers\PeerSupportController;
-use App\Http\Controllers\TipController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PushSubscriptionController;
+use App\Http\Controllers\ReferralController;
+use App\Http\Controllers\ReportExportController;
+use App\Http\Controllers\SessionController;
+use App\Http\Controllers\StudentIncomingCallController;
+use App\Http\Controllers\StudentMoodController;
+use App\Http\Controllers\StudentWellnessController;
+use App\Http\Controllers\SystemSettingController;
+use App\Http\Controllers\TipController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\VideoCallController;
+use App\Http\Controllers\VoiceNotesController;
+use Illuminate\Support\Facades\Route;
 
 // Authentication routes
 Route::get('/health', [HealthController::class, 'health']);
@@ -82,7 +94,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::delete('/sessions/{id}/messages/{messageId}', [MessageController::class, 'destroy'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/typing', [MessageController::class, 'setTyping'])->middleware('throttle:messages-write');
     Route::get('/sessions/{id}/typing', [MessageController::class, 'typingStatus'])->middleware('throttle:messages-read');
-    
+
     // Chat Attachments
     Route::post('/chat/upload-file', [ChatAttachmentController::class, 'uploadForChat'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/attachments', [ChatAttachmentController::class, 'upload'])->middleware('throttle:messages-write');
@@ -155,14 +167,14 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/counselor/session-reminders', [CounselorSessionReminderController::class, 'index'])->middleware(['counselor', 'throttle:messages-read']);
 
     // Users
-    Route::get('/users', [\App\Http\Controllers\UserController::class, 'index'])->middleware('admin');
-    Route::get('/users/counselors', [\App\Http\Controllers\UserController::class, 'counselors']);
-    Route::get('/users/peer-counselors', [\App\Http\Controllers\UserController::class, 'peerCounselors']);
-    Route::get('/users/students', [\App\Http\Controllers\UserController::class, 'students']);
-    Route::post('/users/counselors/{id}/approve', [\App\Http\Controllers\UserController::class, 'approveCounselor'])->middleware('admin');
-    Route::post('/users/counselors/approve-bulk', [\App\Http\Controllers\UserController::class, 'approveCounselorsBulk'])->middleware('admin');
-    Route::post('/users/counselors/{id}/reject', [\App\Http\Controllers\UserController::class, 'rejectCounselor'])->middleware('admin');
-    Route::delete('/users/counselors/{id}', [\App\Http\Controllers\UserController::class, 'destroyCounselor'])->middleware('admin');
+    Route::get('/users', [UserController::class, 'index'])->middleware('admin');
+    Route::get('/users/counselors', [UserController::class, 'counselors']);
+    Route::get('/users/peer-counselors', [UserController::class, 'peerCounselors']);
+    Route::get('/users/students', [UserController::class, 'students']);
+    Route::post('/users/counselors/{id}/approve', [UserController::class, 'approveCounselor'])->middleware('admin');
+    Route::post('/users/counselors/approve-bulk', [UserController::class, 'approveCounselorsBulk'])->middleware('admin');
+    Route::post('/users/counselors/{id}/reject', [UserController::class, 'rejectCounselor'])->middleware('admin');
+    Route::delete('/users/counselors/{id}', [UserController::class, 'destroyCounselor'])->middleware('admin');
 
     // Peer counselor dashboard
     Route::get('/peer/dashboard', [PeerSupportController::class, 'dashboard'])->middleware('role:peer_counselor');
@@ -176,50 +188,50 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::delete('/institution-accounts/{id}', [InstitutionAccountController::class, 'destroy'])->middleware('admin');
 
     // Profile
-    Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'show']);
-    Route::put('/profile', [\App\Http\Controllers\ProfileController::class, 'update']);
+    Route::get('/profile', [ProfileController::class, 'show']);
+    Route::put('/profile', [ProfileController::class, 'update']);
 
     // AI Wellness Chat
-    Route::get('/ai/wellness-chat/history', [\App\Http\Controllers\AIWellnessChatController::class, 'history'])->middleware('throttle:ai-read');
-    Route::post('/ai/wellness-chat', [\App\Http\Controllers\AIWellnessChatController::class, 'chat'])->middleware('throttle:ai-chat');
+    Route::get('/ai/wellness-chat/history', [AIWellnessChatController::class, 'history'])->middleware('throttle:ai-read');
+    Route::post('/ai/wellness-chat', [AIWellnessChatController::class, 'chat'])->middleware('throttle:ai-chat');
 
     // AI Diagnostics
-    Route::get('/ai-diagnostics', [\App\Http\Controllers\AIDiagnosticController::class, 'index']);
-    Route::get('/ai-diagnostics/summary', [\App\Http\Controllers\AIDiagnosticController::class, 'summary']);
-    Route::get('/ai-diagnostics/latest', [\App\Http\Controllers\AIDiagnosticController::class, 'latest']);
-    Route::get('/ai-diagnostics/{id}', [\App\Http\Controllers\AIDiagnosticController::class, 'show']);
-    Route::post('/sessions/{id}/analyze', [\App\Http\Controllers\AIDiagnosticController::class, 'analyzeSession']);
-    Route::post('/appointments/{id}/analyze', [\App\Http\Controllers\AIDiagnosticController::class, 'analyzeAppointment']);
-    
+    Route::get('/ai-diagnostics', [AIDiagnosticController::class, 'index']);
+    Route::get('/ai-diagnostics/summary', [AIDiagnosticController::class, 'summary']);
+    Route::get('/ai-diagnostics/latest', [AIDiagnosticController::class, 'latest']);
+    Route::get('/ai-diagnostics/{id}', [AIDiagnosticController::class, 'show']);
+    Route::post('/sessions/{id}/analyze', [AIDiagnosticController::class, 'analyzeSession']);
+    Route::post('/appointments/{id}/analyze', [AIDiagnosticController::class, 'analyzeAppointment']);
+
     // Diagnostic Assessment
-    Route::get('/diagnostics/questionnaire', [\App\Http\Controllers\DiagnosticController::class, 'getQuestionnaire']);
-    Route::post('/diagnostics/analyze', [\App\Http\Controllers\DiagnosticController::class, 'analyze'])->middleware('throttle:diagnostics-submit');
-    Route::get('/diagnostics/history', [\App\Http\Controllers\DiagnosticController::class, 'getHistory']);
-    Route::get('/diagnostics/latest', [\App\Http\Controllers\DiagnosticController::class, 'getLatest']);
-    Route::get('/diagnostics/trends', [\App\Http\Controllers\DiagnosticController::class, 'getTrends']);
-    Route::get('/diagnostics/counselor-dashboard', [\App\Http\Controllers\DiagnosticController::class, 'getCounselorDashboard'])->middleware('counselor');
-    Route::post('/diagnostics/assign', [\App\Http\Controllers\DiagnosticController::class, 'assignNewAssessment'])->middleware('counselor');
-    Route::get('/student-wellness/summary', [\App\Http\Controllers\StudentWellnessController::class, 'summary']);
-    Route::get('/ml/counselor-matches', [\App\Http\Controllers\MlInsightsController::class, 'counselorMatches']);
-    Route::get('/ml/health', [\App\Http\Controllers\MlInsightsController::class, 'health']);
-    Route::get('/student-mood/today', [\App\Http\Controllers\StudentMoodController::class, 'today']);
-    Route::post('/student-mood', [\App\Http\Controllers\StudentMoodController::class, 'store']);
+    Route::get('/diagnostics/questionnaire', [DiagnosticController::class, 'getQuestionnaire']);
+    Route::post('/diagnostics/analyze', [DiagnosticController::class, 'analyze'])->middleware('throttle:diagnostics-submit');
+    Route::get('/diagnostics/history', [DiagnosticController::class, 'getHistory']);
+    Route::get('/diagnostics/latest', [DiagnosticController::class, 'getLatest']);
+    Route::get('/diagnostics/trends', [DiagnosticController::class, 'getTrends']);
+    Route::get('/diagnostics/counselor-dashboard', [DiagnosticController::class, 'getCounselorDashboard'])->middleware('counselor');
+    Route::post('/diagnostics/assign', [DiagnosticController::class, 'assignNewAssessment'])->middleware('counselor');
+    Route::get('/student-wellness/summary', [StudentWellnessController::class, 'summary']);
+    Route::get('/ml/counselor-matches', [MlInsightsController::class, 'counselorMatches']);
+    Route::get('/ml/health', [MlInsightsController::class, 'health']);
+    Route::get('/student-mood/today', [StudentMoodController::class, 'today']);
+    Route::post('/student-mood', [StudentMoodController::class, 'store']);
 
     // Counselor Wellness
-    Route::get('/counselor-wellness', [\App\Http\Controllers\CounselorWellnessController::class, 'index']);
-    Route::get('/counselor-wellness/summary', [\App\Http\Controllers\CounselorWellnessController::class, 'summary']);
-    Route::post('/counselor-wellness', [\App\Http\Controllers\CounselorWellnessController::class, 'store']);
-    Route::post('/counselor-wellness/health-check', [\App\Http\Controllers\CounselorWellnessController::class, 'runHealthCheck']);
+    Route::get('/counselor-wellness', [CounselorWellnessController::class, 'index']);
+    Route::get('/counselor-wellness/summary', [CounselorWellnessController::class, 'summary']);
+    Route::post('/counselor-wellness', [CounselorWellnessController::class, 'store']);
+    Route::post('/counselor-wellness/health-check', [CounselorWellnessController::class, 'runHealthCheck']);
 
     // Panic Logs
-    Route::get('/panic-logs', [\App\Http\Controllers\PanicLogController::class, 'index']);
-    Route::post('/panic-logs', [\App\Http\Controllers\PanicLogController::class, 'store']);
-    Route::put('/panic-logs/{id}', [\App\Http\Controllers\PanicLogController::class, 'update']);
+    Route::get('/panic-logs', [PanicLogController::class, 'index']);
+    Route::post('/panic-logs', [PanicLogController::class, 'store']);
+    Route::put('/panic-logs/{id}', [PanicLogController::class, 'update']);
 
     // Settings (Admin only)
-    Route::get('/settings', [\App\Http\Controllers\SystemSettingController::class, 'index'])->middleware('admin');
-    Route::put('/settings', [\App\Http\Controllers\SystemSettingController::class, 'update'])->middleware('admin');
-    Route::post('/settings/clear-cache', [\App\Http\Controllers\SystemSettingController::class, 'clearCache'])->middleware('admin');
+    Route::get('/settings', [SystemSettingController::class, 'index'])->middleware('admin');
+    Route::put('/settings', [SystemSettingController::class, 'update'])->middleware('admin');
+    Route::post('/settings/clear-cache', [SystemSettingController::class, 'clearCache'])->middleware('admin');
     Route::get('/tips', [TipController::class, 'index'])->middleware('admin');
     Route::post('/tips', [TipController::class, 'store'])->middleware('admin');
     Route::put('/tips/{tip}', [TipController::class, 'update'])->middleware('admin');
@@ -232,16 +244,16 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/backups/drill', [BackupController::class, 'drill'])->middleware('admin');
 
     // Activity Logs (Admin only)
-    Route::get('/activity-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->middleware('admin');
-    Route::get('/activity-logs/stream', [\App\Http\Controllers\ActivityLogController::class, 'stream'])->middleware('admin');
-    Route::get('/activity-logs/stats', [\App\Http\Controllers\ActivityLogController::class, 'stats'])->middleware('admin');
+    Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('admin');
+    Route::get('/activity-logs/stream', [ActivityLogController::class, 'stream'])->middleware('admin');
+    Route::get('/activity-logs/stats', [ActivityLogController::class, 'stats'])->middleware('admin');
     Route::get('/data-access-logs', [DataAccessLogController::class, 'index'])->middleware('admin');
 
     // AI Reports (Admin only)
-    Route::get('/ai-reports', [\App\Http\Controllers\AIReportController::class, 'index'])->middleware('admin');
-    Route::get('/ai-reports/{id}', [\App\Http\Controllers\AIReportController::class, 'show'])->middleware('admin');
-    Route::post('/ai-reports/generate', [\App\Http\Controllers\AIReportController::class, 'generate'])->middleware('admin');
-    Route::delete('/ai-reports/{id}', [\App\Http\Controllers\AIReportController::class, 'destroy'])->middleware('admin');
+    Route::get('/ai-reports', [AIReportController::class, 'index'])->middleware('admin');
+    Route::get('/ai-reports/{id}', [AIReportController::class, 'show'])->middleware('admin');
+    Route::post('/ai-reports/generate', [AIReportController::class, 'generate'])->middleware('admin');
+    Route::delete('/ai-reports/{id}', [AIReportController::class, 'destroy'])->middleware('admin');
 
     // Academic Risk Integrations (Admin only - read endpoints)
     Route::get('/integrations/academic-risk/events', [AcademicRiskWebhookController::class, 'events'])->middleware('admin');

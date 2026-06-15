@@ -25,18 +25,18 @@ class CounselorSlotController extends Controller
         ]);
 
         $counselorId = (int) $validated['counselor_id'];
-        if (!$this->canViewCounselorSlots($request->user(), $counselorId)) {
+        if (! $this->canViewCounselorSlots($request->user(), $counselorId)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (!$this->isApprovedCounselor($counselorId)) {
+        if (! $this->isApprovedCounselor($counselorId)) {
             return response()->json(['message' => 'Selected counselor is not available'], 422);
         }
 
-        $from = !empty($validated['from'])
+        $from = ! empty($validated['from'])
             ? Carbon::parse($validated['from'])->startOfDay()
             : now()->startOfDay();
-        $to = !empty($validated['to'])
+        $to = ! empty($validated['to'])
             ? Carbon::parse($validated['to'])->endOfDay()
             : now()->addDays(7)->endOfDay();
 
@@ -109,7 +109,7 @@ class CounselorSlotController extends Controller
             if (strcmp((string) $schedule['end_time'], '16:00') > 0) {
                 return response()->json(['message' => 'Schedule end time cannot be after 16:00.'], 422);
             }
-            if (!empty($schedule['break_start']) && !empty($schedule['break_end']) && strcmp($schedule['break_end'], $schedule['break_start']) <= 0) {
+            if (! empty($schedule['break_start']) && ! empty($schedule['break_end']) && strcmp($schedule['break_end'], $schedule['break_start']) <= 0) {
                 return response()->json(['message' => 'Lunch break end time must be after break start time.'], 422);
             }
         }
@@ -138,7 +138,7 @@ class CounselorSlotController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $weekStart = !empty($validated['week_start'])
+        $weekStart = ! empty($validated['week_start'])
             ? Carbon::parse($validated['week_start'])->startOfWeek()
             : now()->startOfWeek();
         $weeks = (int) ($validated['weeks'] ?? 1);
@@ -161,6 +161,7 @@ class CounselorSlotController extends Controller
 
         if ($user->hasRole('counselor')) {
             $id = $requestedId ? (int) $requestedId : (int) $user->id;
+
             return $id === (int) $user->id ? $id : null;
         }
 

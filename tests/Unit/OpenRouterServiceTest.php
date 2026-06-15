@@ -3,12 +3,13 @@
 namespace Tests\Unit;
 
 use App\Services\OpenRouterService;
+use PHPUnit\Framework\Attributes\Test;
 use ReflectionClass;
 use Tests\TestCase;
 
 class OpenRouterServiceTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function it_normalizes_the_openrouter_base_url_for_relative_api_requests(): void
     {
         config([
@@ -23,7 +24,7 @@ class OpenRouterServiceTest extends TestCase
         $this->assertSame('https://openrouter.ai/api/v1/', $property->getValue($service));
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_the_configured_openrouter_model_roles(): void
     {
         config([
@@ -39,7 +40,7 @@ class OpenRouterServiceTest extends TestCase
         $this->assertSame('liquid/lfm-2.5-1.2b-thinking:free', OpenRouterService::configuredSpeedModel());
     }
 
-    /** @test */
+    #[Test]
     public function it_replaces_legacy_openai_chat_model_requests_with_llama(): void
     {
         config([
@@ -57,7 +58,7 @@ class OpenRouterServiceTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_ignores_legacy_openai_model_values_in_configuration(): void
     {
         config([

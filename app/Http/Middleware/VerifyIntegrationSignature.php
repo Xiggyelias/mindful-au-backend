@@ -27,7 +27,7 @@ class VerifyIntegrationSignature
         }
 
         $computed = hash_hmac('sha256', (string) $request->getContent(), $secret);
-        if (!hash_equals($computed, $provided)) {
+        if (! hash_equals($computed, $provided)) {
             return response()->json(['message' => 'Invalid webhook signature.'], 401);
         }
 

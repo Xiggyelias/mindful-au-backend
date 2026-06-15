@@ -11,13 +11,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class StressEdgeCaseTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function rapid_overlapping_booking_attempts_do_not_create_duplicates(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -46,7 +47,7 @@ class StressEdgeCaseTest extends TestCase
         $this->assertSame(1, Appointment::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function appointment_overlap_window_blocks_partial_overlap_but_allows_boundary_touch(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -79,7 +80,7 @@ class StressEdgeCaseTest extends TestCase
         ])->assertStatus(201);
     }
 
-    /** @test */
+    #[Test]
     public function booking_is_rejected_when_concurrent_slot_lock_is_already_held(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -109,7 +110,7 @@ class StressEdgeCaseTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function high_risk_intake_flood_creates_alerts_without_data_corruption(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -144,7 +145,7 @@ class StressEdgeCaseTest extends TestCase
         $this->assertGreaterThanOrEqual(80, $notifications);
     }
 
-    /** @test */
+    #[Test]
     public function multiple_anonymous_sessions_generate_unique_anonymous_ids(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-anon-stress@test.com', 'Counselor Anon Stress');

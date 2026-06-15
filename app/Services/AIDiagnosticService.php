@@ -5,25 +5,26 @@ namespace App\Services;
 use App\Models\AiDiagnostic;
 use App\Models\CounselingSession;
 use App\Models\User;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class AIDiagnosticService
 {
     private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8;
+
     private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
 
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService
-    ) {
-    }
+    ) {}
 
     public function analyzeSession(CounselingSession $session, array $messages): AiDiagnostic
     {
         $conversationText = $this->extractConversationText($messages, (int) $session->student_id);
         $promptContext = $this->mentalHealthMlService->buildPromptSafeStudentContext((int) $session->student_id);
         $localAnalysis = $this->analyzeLocally($conversationText);
-        
+
         $analysis = $localAnalysis;
         if ($this->externalDiagnosticsEnabled()) {
             $analysis = $this->analyzeWithOpenRouter($conversationText, $promptContext)
@@ -32,7 +33,7 @@ class AIDiagnosticService
                 ?? $localAnalysis;
         }
 
-        if (!$analysis) {
+        if (! $analysis) {
             throw new \RuntimeException('AI provider unavailable for session diagnostics.');
         }
 
@@ -63,16 +64,16 @@ class AIDiagnosticService
 
         $prompt = "Analyze counselor wellness based on:
         - Workload: {$workload} sessions
-        - Stress indicators: " . json_encode($stressIndicators) . "
+        - Stress indicators: ".json_encode($stressIndicators).'
         
-        Provide mood_score (0-100), stress_level (0-100), burnout_index (0-100), and recommendations.";
+        Provide mood_score (0-100), stress_level (0-100), burnout_index (0-100), and recommendations.';
 
         $analysis = $this->analyzeCounselorWellnessWithOpenRouter($prompt)
-            ?? $this->analyzeCounselorWellnessWithGemini($prompt) 
+            ?? $this->analyzeCounselorWellnessWithGemini($prompt)
             ?? $this->analyzeCounselorWellnessWithEcoBot($prompt)
             ?? $this->analyzeCounselorWellnessLocally($stressIndicators);
 
-        if (!$analysis) {
+        if (! $analysis) {
             throw new \RuntimeException('AI provider unavailable for counselor wellness.');
         }
 
@@ -82,7 +83,9 @@ class AIDiagnosticService
     private function analyzeWithOpenRouter(string $text, array $context = []): ?array
     {
         $apiKey = config('services.openrouter.api_key');
-        if (!$apiKey) return null;
+        if (! $apiKey) {
+            return null;
+        }
 
         try {
             $prompt = $this->buildDiagnosticPrompt($text, $context);
@@ -93,7 +96,7 @@ class AIDiagnosticService
                         'model' => $model,
                         'messages' => [
                             ['role' => 'system', 'content' => 'You are a professional counseling diagnostic assistant. Respond ONLY with valid JSON.'],
-                            ['role' => 'user', 'content' => $prompt]
+                            ['role' => 'user', 'content' => $prompt],
                         ],
                         'max_tokens' => 1000,
                         'temperature' => 0.3,
@@ -102,7 +105,7 @@ class AIDiagnosticService
                 if ($response->successful()) {
                     $data = $response->json();
                     $content = $data['choices'][0]['message']['content'] ?? null;
-                    if (!$content) {
+                    if (! $content) {
                         continue;
                     }
 
@@ -132,7 +135,9 @@ class AIDiagnosticService
     private function analyzeCounselorWellnessWithOpenRouter(string $prompt): ?array
     {
         $apiKey = config('services.openrouter.api_key');
-        if (!$apiKey) return null;
+        if (! $apiKey) {
+            return null;
+        }
 
         try {
             $wellnessPrompt = "Analyze counselor wellness and provide a JSON response with:
@@ -158,7 +163,7 @@ class AIDiagnosticService
                         'model' => $model,
                         'messages' => [
                             ['role' => 'system', 'content' => 'You are a professional counselor wellness assistant. Respond ONLY with valid JSON.'],
-                            ['role' => 'user', 'content' => $wellnessPrompt]
+                            ['role' => 'user', 'content' => $wellnessPrompt],
                         ],
                         'max_tokens' => 1000,
                         'temperature' => 0.3,
@@ -167,7 +172,7 @@ class AIDiagnosticService
                 if ($response->successful()) {
                     $data = $response->json();
                     $content = $data['choices'][0]['message']['content'] ?? null;
-                    if (!$content) {
+                    if (! $content) {
                         continue;
                     }
 
@@ -197,8 +202,8 @@ class AIDiagnosticService
     private function analyzeCounselorWellnessWithGemini(string $prompt): ?array
     {
         $apiKey = config('services.gemini.api_key');
-        
-        if (!$apiKey) {
+
+        if (! $apiKey) {
             return null;
         }
 
@@ -221,23 +226,28 @@ class AIDiagnosticService
 
             $response = $this->providerHttp()
                 ->post(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' . $apiKey,
-                [
-                    'contents' => [['parts' => [['text' => $wellnessPrompt]]]],
-                    'system_instruction' => ['parts' => [['text' => 'You are a professional counselor wellness assistant. Respond ONLY with valid JSON.']]]
-                ]
-            );
+                    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='.$apiKey,
+                    [
+                        'contents' => [['parts' => [['text' => $wellnessPrompt]]]],
+                        'system_instruction' => ['parts' => [['text' => 'You are a professional counselor wellness assistant. Respond ONLY with valid JSON.']]],
+                    ]
+                );
 
             if ($response->successful()) {
                 $content = $response->json();
                 $text = $content['candidates'][0]['content']['parts'][0]['text'] ?? null;
-                if (!$text) return null;
+                if (! $text) {
+                    return null;
+                }
 
                 // Extract JSON from response
                 preg_match('/\{.*\}/s', $text, $matches);
-                if (empty($matches)) return null;
+                if (empty($matches)) {
+                    return null;
+                }
 
                 $data = json_decode($matches[0], true);
+
                 return $this->validateCounselorWellnessData($data);
             }
         } catch (\Throwable $e) {
@@ -252,16 +262,16 @@ class AIDiagnosticService
         $endpoint = config('services.ecobot.endpoint');
         $apiKey = config('services.ecobot.api_key');
 
-        if (!$endpoint || !$apiKey) {
+        if (! $endpoint || ! $apiKey) {
             return null;
         }
 
         try {
             $response = $this->providerHttp()
-                ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
-                ->post($endpoint . '/analyze', [
+                ->withHeaders(['Authorization' => 'Bearer '.$apiKey])
+                ->post($endpoint.'/analyze', [
                     'text' => $prompt,
-                    'type' => 'counselor_wellness'
+                    'type' => 'counselor_wellness',
                 ]);
 
             if ($response->successful()) {
@@ -276,12 +286,14 @@ class AIDiagnosticService
 
     private function validateCounselorWellnessData(?array $data): ?array
     {
-        if (!$data) return null;
+        if (! $data) {
+            return null;
+        }
 
         return [
-            'mood_score' => isset($data['mood_score']) ? min(100, max(0, (int)$data['mood_score'])) : null,
-            'stress_level' => isset($data['stress_level']) ? min(100, max(0, (int)$data['stress_level'])) : null,
-            'burnout_index' => isset($data['burnout_index']) ? min(100, max(0, (int)$data['burnout_index'])) : null,
+            'mood_score' => isset($data['mood_score']) ? min(100, max(0, (int) $data['mood_score'])) : null,
+            'stress_level' => isset($data['stress_level']) ? min(100, max(0, (int) $data['stress_level'])) : null,
+            'burnout_index' => isset($data['burnout_index']) ? min(100, max(0, (int) $data['burnout_index'])) : null,
             'recommendations' => $data['recommendations'] ?? null,
         ];
     }
@@ -289,23 +301,24 @@ class AIDiagnosticService
     private function analyzeWithGemini(string $text, array $context = []): ?array
     {
         $apiKey = config('services.gemini.api_key');
-        
-        if (!$apiKey) {
+
+        if (! $apiKey) {
             return null;
         }
 
         try {
             $response = $this->providerHttp()
                 ->post(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' . $apiKey,
-                [
-                    'contents' => [['parts' => [['text' => $this->buildDiagnosticPrompt($text, $context)]]]],
-                    'system_instruction' => ['parts' => [['text' => 'You are a professional counseling diagnostic assistant. Respond ONLY with valid JSON.']]]
-                ]
-            );
+                    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='.$apiKey,
+                    [
+                        'contents' => [['parts' => [['text' => $this->buildDiagnosticPrompt($text, $context)]]]],
+                        'system_instruction' => ['parts' => [['text' => 'You are a professional counseling diagnostic assistant. Respond ONLY with valid JSON.']]],
+                    ]
+                );
 
             if ($response->successful()) {
                 $content = $response->json();
+
                 return $this->parseGeminiResponse($content);
             }
         } catch (\Throwable $e) {
@@ -320,16 +333,16 @@ class AIDiagnosticService
         $endpoint = config('services.ecobot.endpoint');
         $apiKey = config('services.ecobot.api_key');
 
-        if (!$endpoint || !$apiKey) {
+        if (! $endpoint || ! $apiKey) {
             return null;
         }
 
         try {
             $response = $this->providerHttp()
-                ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
-                ->post($endpoint . '/analyze', [
+                ->withHeaders(['Authorization' => 'Bearer '.$apiKey])
+                ->post($endpoint.'/analyze', [
                     'text' => $text,
-                    'type' => 'counseling_session'
+                    'type' => 'counseling_session',
                 ]);
 
             if ($response->successful()) {
@@ -345,8 +358,8 @@ class AIDiagnosticService
     private function buildDiagnosticPrompt(string $conversation, array $context = []): string
     {
         $contextParts = [];
-        if (!empty($context['prompt_summary']) && is_string($context['prompt_summary'])) {
-            $contextParts[] = 'Aggregated student context: ' . trim($context['prompt_summary']);
+        if (! empty($context['prompt_summary']) && is_string($context['prompt_summary'])) {
+            $contextParts[] = 'Aggregated student context: '.trim($context['prompt_summary']);
         }
 
         $recommendedActions = array_slice(
@@ -354,13 +367,13 @@ class AIDiagnosticService
             0,
             2
         );
-        if (!empty($recommendedActions)) {
-            $contextParts[] = 'Preferred support directions: ' . implode(' ', $recommendedActions);
+        if (! empty($recommendedActions)) {
+            $contextParts[] = 'Preferred support directions: '.implode(' ', $recommendedActions);
         }
 
         $contextBlock = empty($contextParts)
             ? ''
-            : "\n\nContext (privacy-safe aggregated features only):\n- " . implode("\n- ", $contextParts);
+            : "\n\nContext (privacy-safe aggregated features only):\n- ".implode("\n- ", $contextParts);
 
         return "Analyze this counseling session conversation and provide a JSON response with:
         - stress_level: integer 0-100
@@ -389,16 +402,22 @@ class AIDiagnosticService
     {
         try {
             $text = $response['candidates'][0]['content']['parts'][0]['text'] ?? null;
-            if (!$text) return null;
+            if (! $text) {
+                return null;
+            }
 
             // Extract JSON from response
             preg_match('/\{.*\}/s', $text, $matches);
-            if (empty($matches)) return null;
+            if (empty($matches)) {
+                return null;
+            }
 
             $data = json_decode($matches[0], true);
+
             return $this->validateAnalysisData($data);
         } catch (\Throwable $e) {
             $this->logProviderException('Gemini response parsing failed.', $e);
+
             return null;
         }
     }
@@ -418,7 +437,7 @@ class AIDiagnosticService
 
     private function extractConversationText(array $messages, ?int $studentId = null): string
     {
-        return implode("\n", array_map(function($msg) use ($studentId) {
+        return implode("\n", array_map(function ($msg) use ($studentId) {
             $label = 'User';
             if (isset($msg['sender_id']) && $studentId !== null) {
                 $label = (int) $msg['sender_id'] === $studentId ? 'Student' : 'Counselor';
@@ -427,7 +446,8 @@ class AIDiagnosticService
             } elseif (isset($msg['sender'])) {
                 $label = ucfirst((string) $msg['sender']);
             }
-            return $label . ': ' . ($msg['content'] ?? '');
+
+            return $label.': '.($msg['content'] ?? '');
         }, $messages));
     }
 
@@ -572,15 +592,17 @@ class AIDiagnosticService
 
     private function validateAnalysisData(?array $data): ?array
     {
-        if (!$data) return null;
+        if (! $data) {
+            return null;
+        }
 
         return [
-            'stress_level' => isset($data['stress_level']) ? min(100, max(0, (int)$data['stress_level'])) : null,
-            'anxiety_level' => isset($data['anxiety_level']) ? min(100, max(0, (int)$data['anxiety_level'])) : null,
-            'depression_level' => isset($data['depression_level']) ? min(100, max(0, (int)$data['depression_level'])) : null,
+            'stress_level' => isset($data['stress_level']) ? min(100, max(0, (int) $data['stress_level'])) : null,
+            'anxiety_level' => isset($data['anxiety_level']) ? min(100, max(0, (int) $data['anxiety_level'])) : null,
+            'depression_level' => isset($data['depression_level']) ? min(100, max(0, (int) $data['depression_level'])) : null,
             'mood' => $data['mood'] ?? null,
-            'risk_level' => in_array($data['risk_level'] ?? null, ['low', 'medium', 'high', 'critical']) 
-                ? $data['risk_level'] 
+            'risk_level' => in_array($data['risk_level'] ?? null, ['low', 'medium', 'high', 'critical'])
+                ? $data['risk_level']
                 : 'low',
             'insights' => $data['insights'] ?? null,
             'recommendations' => $data['recommendations'] ?? null,
@@ -599,7 +621,7 @@ class AIDiagnosticService
     private function openRouterHeaders(string $apiKey): array
     {
         return [
-            'Authorization' => 'Bearer ' . $apiKey,
+            'Authorization' => 'Bearer '.$apiKey,
             'Content-Type' => 'application/json',
             'HTTP-Referer' => config('services.openrouter.site_url', 'https://mindful-au.local'),
             'X-Title' => config('services.openrouter.site_name', 'Mindful AU'),
@@ -608,7 +630,7 @@ class AIDiagnosticService
 
     private function openRouterChatEndpoint(): string
     {
-        return rtrim(config('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/') . '/chat/completions';
+        return rtrim(config('services.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/').'/chat/completions';
     }
 
     private function logProviderException(string $message, \Throwable $e): void
@@ -623,7 +645,7 @@ class AIDiagnosticService
         return (bool) config('services.ai.external_diagnostics_enabled', false);
     }
 
-    private function providerHttp(): \Illuminate\Http\Client\PendingRequest
+    private function providerHttp(): PendingRequest
     {
         return Http::connectTimeout($this->providerConnectTimeoutSeconds())
             ->timeout($this->providerTimeoutSeconds());
@@ -632,12 +654,14 @@ class AIDiagnosticService
     private function providerTimeoutSeconds(): int
     {
         $timeout = (int) config('services.ai.provider_timeout_seconds', self::DEFAULT_PROVIDER_TIMEOUT_SECONDS);
+
         return max(3, min(30, $timeout));
     }
 
     private function providerConnectTimeoutSeconds(): int
     {
         $timeout = (int) config('services.ai.provider_connect_timeout_seconds', self::DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS);
+
         return max(1, min(10, $timeout));
     }
 }

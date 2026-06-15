@@ -9,13 +9,14 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class VideoCallCompletionTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function ending_an_active_video_call_completes_the_matching_appointment(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -72,7 +73,7 @@ class VideoCallCompletionTest extends TestCase
         $this->assertNotNull($completedSession->ended_at);
     }
 
-    /** @test */
+    #[Test]
     public function ending_an_active_video_call_completes_the_appointment_when_session_notes_hold_no_reference_id(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -116,7 +117,7 @@ class VideoCallCompletionTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function ending_a_call_without_a_started_video_session_does_not_complete_the_appointment(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -161,7 +162,7 @@ class VideoCallCompletionTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function ending_an_active_call_does_not_complete_an_appointment_when_session_notes_reference_a_different_appointment_id(): void
     {
         SystemSetting::query()->updateOrCreate(

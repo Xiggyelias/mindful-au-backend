@@ -7,13 +7,14 @@ use App\Models\User;
 use App\Models\UserTwoFactorMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class CounselorTwoFactorLoginTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function counselor_login_reports_two_factor_required_when_enabled(): void
     {
         SystemSetting::query()->updateOrCreate(
@@ -54,7 +55,7 @@ class CounselorTwoFactorLoginTest extends TestCase
         $this->assertNotEmpty($response->json('access_token'));
     }
 
-    /** @test */
+    #[Test]
     public function counselor_login_reports_setup_required_when_two_factor_not_configured(): void
     {
         SystemSetting::query()->updateOrCreate(

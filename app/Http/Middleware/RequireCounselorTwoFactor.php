@@ -16,11 +16,11 @@ class RequireCounselorTwoFactor
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return $next($request);
         }
 
-        if (!$this->isCounselingRole($user)) {
+        if (! $this->isCounselingRole($user)) {
             return $next($request);
         }
 
@@ -28,7 +28,7 @@ class RequireCounselorTwoFactor
             return $next($request);
         }
 
-        if (!SystemSettings::getBool('two_factor_auth', false)) {
+        if (! SystemSettings::getBool('two_factor_auth', false)) {
             return $next($request);
         }
 
@@ -37,7 +37,7 @@ class RequireCounselorTwoFactor
             ->where('method', 'totp')
             ->first();
 
-        if (!$method || !$method->verified_at) {
+        if (! $method || ! $method->verified_at) {
             return response()->json([
                 'message' => 'Two-factor setup is required for counselor access.',
                 'two_factor_setup_required' => true,
@@ -45,12 +45,12 @@ class RequireCounselorTwoFactor
             ], 403);
         }
 
-        if (!Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
+        if (! Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
             return $next($request);
         }
 
         $token = $user->currentAccessToken();
-        if (!$token instanceof PersonalAccessToken) {
+        if (! $token instanceof PersonalAccessToken) {
             return response()->json([
                 'message' => 'Two-factor verification is required.',
                 'two_factor_required' => true,
@@ -62,7 +62,7 @@ class RequireCounselorTwoFactor
             ->where('tokenable_id', $user->id)
             ->where('tokenable_type', $user->getMorphClass())
             ->first();
-        if (!$freshToken) {
+        if (! $freshToken) {
             return response()->json([
                 'message' => 'Two-factor verification is required.',
                 'two_factor_required' => true,
@@ -76,10 +76,10 @@ class RequireCounselorTwoFactor
             hash('sha256', $currentTokenValue)
         );
         if (
-            !$hashesMatch
+            ! $hashesMatch
             || $freshTokenValue === ''
             || $currentTokenValue === ''
-            || !$freshToken->two_factor_passed_at
+            || ! $freshToken->two_factor_passed_at
         ) {
             return response()->json([
                 'message' => 'Two-factor verification is required.',

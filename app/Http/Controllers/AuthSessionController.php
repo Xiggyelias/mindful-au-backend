@@ -9,14 +9,12 @@ use Illuminate\Http\Request;
 
 class AuthSessionController extends Controller
 {
-    public function __construct(private readonly TokenSessionService $tokenSessionService)
-    {
-    }
+    public function __construct(private readonly TokenSessionService $tokenSessionService) {}
 
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return response()->json(['message' => 'Authentication required.'], 401);
         }
 
@@ -28,12 +26,12 @@ class AuthSessionController extends Controller
     public function destroy(Request $request, int $sessionId): JsonResponse
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return response()->json(['message' => 'Authentication required.'], 401);
         }
 
         $deleted = $this->tokenSessionService->revokeSession($user, $sessionId);
-        if (!$deleted) {
+        if (! $deleted) {
             return response()->json([
                 'message' => 'Unable to revoke that session.',
             ], 422);
@@ -48,11 +46,11 @@ class AuthSessionController extends Controller
     public function logoutOtherDevices(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             return response()->json(['message' => 'Authentication required.'], 401);
         }
 
-        if (!$user->currentAccessToken()) {
+        if (! $user->currentAccessToken()) {
             return response()->json([
                 'message' => 'Current token context was not available for this request.',
             ], 422);

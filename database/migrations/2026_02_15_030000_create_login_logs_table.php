@@ -30,4 +30,3 @@ return new class extends Migration
         Schema::dropIfExists('login_logs');
     }
 };
-

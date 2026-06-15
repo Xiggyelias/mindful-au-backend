@@ -18,7 +18,7 @@ class IntakeController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$this->canAccessIntakePortal($user)) {
+        if (! $this->canAccessIntakePortal($user)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -40,10 +40,10 @@ class IntakeController extends Controller
             $query->where('assigned_to', $user->id);
         }
 
-        if (!empty($validated['status'])) {
+        if (! empty($validated['status'])) {
             $query->where('status', (string) $validated['status']);
         }
-        if (!empty($validated['risk_level'])) {
+        if (! empty($validated['risk_level'])) {
             $query->where('risk_level', (string) $validated['risk_level']);
         }
 
@@ -61,12 +61,13 @@ class IntakeController extends Controller
         }
 
         $limit = (int) ($validated['limit'] ?? 50);
+
         return response()->json($query->limit($limit)->get());
     }
 
     public function show(Request $request, string $id): JsonResponse
     {
-        if (!$this->canAccessIntakePortal($request->user())) {
+        if (! $this->canAccessIntakePortal($request->user())) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -74,7 +75,7 @@ class IntakeController extends Controller
             ->with(['user.profile', 'assignedTo.profile', 'riskAlerts'])
             ->findOrFail($id);
 
-        if (!$this->canViewIntake($request->user(), $intake)) {
+        if (! $this->canViewIntake($request->user(), $intake)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -84,7 +85,7 @@ class IntakeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$this->canAccessIntakePortal($user)) {
+        if (! $this->canAccessIntakePortal($user)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -143,7 +144,7 @@ class IntakeController extends Controller
     public function acknowledgeAlert(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('admin') && !$user->hasRole('counselor')) {
+        if (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -191,6 +192,7 @@ class IntakeController extends Controller
 
         $truthy = function (string $key) use ($answers): bool {
             $value = $answers[$key] ?? false;
+
             return in_array($value, [true, 1, '1', 'true', 'yes', 'high'], true);
         };
 
@@ -226,7 +228,7 @@ class IntakeController extends Controller
 
     private function resolveCounselorAssignment(string $riskLevel): ?int
     {
-        if (!in_array($riskLevel, ['moderate', 'high'], true)) {
+        if (! in_array($riskLevel, ['moderate', 'high'], true)) {
             return null;
         }
 
@@ -247,7 +249,7 @@ class IntakeController extends Controller
 
     private function notifyHighRiskIntake(IntakeSubmission $intake): void
     {
-        if (!SystemSettings::getBool('ai_risk_alerts', true)) {
+        if (! SystemSettings::getBool('ai_risk_alerts', true)) {
             return;
         }
 
@@ -272,7 +274,7 @@ class IntakeController extends Controller
     private function generateAnonymousId(): string
     {
         do {
-            $candidate = 'ANON-I-' . Str::upper(Str::random(6));
+            $candidate = 'ANON-I-'.Str::upper(Str::random(6));
         } while (IntakeSubmission::query()->where('anonymous_id', $candidate)->exists());
 
         return $candidate;
@@ -280,7 +282,7 @@ class IntakeController extends Controller
 
     private function logIntakeCreation(Request $request, IntakeSubmission $intake): void
     {
-        if (!SystemSettings::getBool('audit_logging', true)) {
+        if (! SystemSettings::getBool('audit_logging', true)) {
             return;
         }
 

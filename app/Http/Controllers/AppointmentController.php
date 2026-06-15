@@ -2,21 +2,22 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Appointment;
-use App\Models\CounselorSlot;
-use App\Models\CounselingSession;
+use App\Events\NotificationCreated;
 use App\Models\ActivityLog;
+use App\Models\Appointment;
+use App\Models\CounselingSession;
+use App\Models\CounselorSlot;
 use App\Models\EmergencyRequest;
 use App\Models\Notification;
-use App\Events\NotificationCreated;
-use App\Support\PaginationPayload;
 use App\Models\User;
 use App\Services\CounselorSlotService;
 use App\Services\WebPushService;
+use App\Support\PaginationPayload;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -50,19 +51,19 @@ class AppointmentController extends Controller
             $query->where('student_id', $user->id);
         } elseif ($user->hasRole('counselor')) {
             $query->where('counselor_id', $user->id);
-        } elseif (!$user->hasRole('admin')) {
+        } elseif (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (!empty($validated['status'])) {
+        if (! empty($validated['status'])) {
             $query->where('status', $validated['status']);
         }
 
-        if (!empty($validated['from'])) {
+        if (! empty($validated['from'])) {
             $query->where('scheduled_at', '>=', $validated['from']);
         }
 
-        if (!empty($validated['to'])) {
+        if (! empty($validated['to'])) {
             $query->where('scheduled_at', '<=', $validated['to']);
         }
 
@@ -79,9 +80,10 @@ class AppointmentController extends Controller
             $paginator = $query
                 ->paginate($perPage, ['*'], 'page', $page)
                 ->appends($request->query());
-            /** @var \Illuminate\Pagination\LengthAwarePaginator $paginator */
+            /** @var LengthAwarePaginator $paginator */
             $paginator->through(function (Appointment $appointment) use ($user) {
                 $this->applyAnonymousAppointmentProjection($appointment, $user);
+
                 return $appointment;
             });
 
@@ -96,6 +98,7 @@ class AppointmentController extends Controller
         $appointments = $query->get();
         $appointments->transform(function (Appointment $appointment) use ($user) {
             $this->applyAnonymousAppointmentProjection($appointment, $user);
+
             return $appointment;
         });
 
@@ -104,7 +107,7 @@ class AppointmentController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (!$request->user()->hasRole('student')) {
+        if (! $request->user()->hasRole('student')) {
             return response()->json(['message' => 'Only students can create appointments'], 403);
         }
 
@@ -134,7 +137,7 @@ class AppointmentController extends Controller
             'call_type' => 'sometimes|in:audio,video',
         ]);
 
-        if (!$this->isApprovedCounselor((int) $validated['counselor_id'])) {
+        if (! $this->isApprovedCounselor((int) $validated['counselor_id'])) {
             return response()->json([
                 'message' => 'Selected counselor is not available',
                 'errors' => [
@@ -157,11 +160,11 @@ class AppointmentController extends Controller
         $proposedEnd = (clone $proposedStart)->addMinutes($durationMinutes);
         $studentId = (int) $request->user()->id;
         $counselorId = (int) $validated['counselor_id'];
-        $slotId = !empty($validated['counselor_slot_id']) ? (int) $validated['counselor_slot_id'] : null;
+        $slotId = ! empty($validated['counselor_slot_id']) ? (int) $validated['counselor_slot_id'] : null;
         $explicitSlot = null;
         if ($slotId !== null) {
             $explicitSlot = CounselorSlot::query()->find($slotId);
-            if (!$explicitSlot) {
+            if (! $explicitSlot) {
                 throw ValidationException::withMessages([
                     'counselor_slot_id' => ['Selected slot could not be found.'],
                 ]);
@@ -174,7 +177,7 @@ class AppointmentController extends Controller
         }
 
         $isExplicitEmergencySlot = $explicitSlot instanceof CounselorSlot && $explicitSlot->counselor_schedule_id === null;
-        if (!$isExplicitEmergencySlot) {
+        if (! $isExplicitEmergencySlot) {
             $slotResolution = $this->slotService->resolveSlotForBooking($counselorId, $proposedStart, $durationMinutes);
             if (($slotResolution['reason'] ?? null) === 'outside_hours') {
                 return $this->queueEmergencyFromAppointmentRequest(
@@ -206,7 +209,7 @@ class AppointmentController extends Controller
             ]);
         }
 
-        if ($isAnonymous && !$isPhysical) {
+        if ($isAnonymous && ! $isPhysical) {
             $finalNotes = 'Online audio';
             $callType = 'audio';
         } elseif ($isPhysical) {
@@ -214,7 +217,7 @@ class AppointmentController extends Controller
             $callType = 'video';
         } else {
             $callType = $validated['call_type'] ?? $this->inferCallTypeFromNotes($notesRaw);
-            if (!in_array($callType, ['audio', 'video'], true)) {
+            if (! in_array($callType, ['audio', 'video'], true)) {
                 $callType = 'video';
             }
             $finalNotes = $callType === 'audio' ? 'Online audio' : 'Online';
@@ -224,7 +227,7 @@ class AppointmentController extends Controller
             $studentId,
             $counselorId,
             function () use (
-                $validated,
+
                 $durationMinutes,
                 $proposedStart,
                 $proposedEnd,
@@ -236,7 +239,7 @@ class AppointmentController extends Controller
                 $callType
             ) {
                 return DB::transaction(function () use (
-                    $validated,
+
                     $durationMinutes,
                     $proposedStart,
                     $proposedEnd,
@@ -262,7 +265,7 @@ class AppointmentController extends Controller
                         }
                         $slotStart = Carbon::parse($slot->start_time);
                         $slotEnd = Carbon::parse($slot->end_time);
-                        if (!$slotStart->equalTo($proposedStart) || !$slotEnd->equalTo($proposedEnd)) {
+                        if (! $slotStart->equalTo($proposedStart) || ! $slotEnd->equalTo($proposedEnd)) {
                             throw ValidationException::withMessages([
                                 'scheduled_at' => ['Selected slot does not match the requested appointment time.'],
                             ]);
@@ -286,7 +289,7 @@ class AppointmentController extends Controller
                         $candidateEnd = (clone $candidateStart)->addMinutes((int) $candidate->duration_minutes);
 
                         $overlaps = $candidateStart->lt($proposedEnd) && $candidateEnd->gt($proposedStart);
-                        if (!$overlaps) {
+                        if (! $overlaps) {
                             continue;
                         }
 
@@ -350,7 +353,7 @@ class AppointmentController extends Controller
         $appointment = Appointment::findOrFail($id);
         $user = $request->user();
 
-        if (!$user->hasRole('admin') && (int) $appointment->counselor_id !== (int) $user->id) {
+        if (! $user->hasRole('admin') && (int) $appointment->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -378,7 +381,7 @@ class AppointmentController extends Controller
 
         if (isset($validated['notes']) && $appointment->is_anonymous) {
             $trim = strtolower(trim($validated['notes']));
-            if (!str_starts_with($trim, 'physical') && $trim === 'online') {
+            if (! str_starts_with($trim, 'physical') && $trim === 'online') {
                 throw ValidationException::withMessages([
                     'notes' => ['Anonymous online appointments are audio-only.'],
                 ]);
@@ -388,7 +391,7 @@ class AppointmentController extends Controller
         $payload = $validated;
         if ($this->supportsCallTypeColumn() && $appointment->is_anonymous && isset($validated['notes'])) {
             $trim = strtolower(trim($validated['notes']));
-            if (!str_starts_with($trim, 'physical')) {
+            if (! str_starts_with($trim, 'physical')) {
                 $payload['call_type'] = 'audio';
             }
         }
@@ -439,7 +442,7 @@ class AppointmentController extends Controller
     public function bulkCancel(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor')) {
+        if (! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Only counselors can bulk-cancel appointments.'], 403);
         }
 
@@ -476,7 +479,7 @@ class AppointmentController extends Controller
                     'cancelled_at' => $now,
                 ]);
 
-            \App\Models\CounselorSlot::query()
+            CounselorSlot::query()
                 ->whereIn('appointment_id', $ids)
                 ->update([
                     'status' => 'available',
@@ -549,13 +552,13 @@ class AppointmentController extends Controller
         $isAdmin = $user->hasRole('admin');
         $isStudentOwner = (int) $appointment->student_id === (int) $user->id;
 
-        if (!$isAdmin && !$isStudentOwner) {
+        if (! $isAdmin && ! $isStudentOwner) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
         $appointment->load(['student.profile', 'counselor.profile']);
 
-        if (!$isAdmin && $isStudentOwner) {
+        if (! $isAdmin && $isStudentOwner) {
             $validated = $request->validate([
                 'reason' => 'required|string|min:5|max:1000',
             ]);
@@ -617,7 +620,7 @@ class AppointmentController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (!$appointment->is_anonymous) {
+        if (! $appointment->is_anonymous) {
             return response()->json(['message' => 'Identity is already revealed.'], 422);
         }
 
@@ -771,14 +774,16 @@ class AppointmentController extends Controller
                 'DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) > ?',
                 [$startValue]
             );
+
             return;
         }
 
         if ($driver === 'pgsql') {
             $query->whereRaw(
-                "(scheduled_at + make_interval(mins => duration_minutes)) > ?::timestamp",
+                '(scheduled_at + make_interval(mins => duration_minutes)) > ?::timestamp',
                 [$startValue]
             );
+
             return;
         }
 
@@ -787,6 +792,7 @@ class AppointmentController extends Controller
                 "datetime(scheduled_at, '+' || duration_minutes || ' minutes') > datetime(?)",
                 [$startValue]
             );
+
             return;
         }
 
@@ -796,14 +802,14 @@ class AppointmentController extends Controller
 
     private function notifyStudentOnCounselorCancelledAppointment(Appointment $appointment, ?string $reason): void
     {
-        if (!$appointment->student_id) {
+        if (! $appointment->student_id) {
             return;
         }
 
         $message = 'Your session with the counselor has been cancelled.';
 
         if ($reason !== null && trim($reason) !== '') {
-            $message .= ' Reason: ' . trim($reason);
+            $message .= ' Reason: '.trim($reason);
         }
 
         $notification = Notification::create([
@@ -829,7 +835,7 @@ class AppointmentController extends Controller
 
     private function notifyCounselorOnAppointmentCreated(Appointment $appointment): void
     {
-        if (!$appointment->counselor_id) {
+        if (! $appointment->counselor_id) {
             return;
         }
 
@@ -861,7 +867,7 @@ class AppointmentController extends Controller
 
     private function notifyStudentOnAppointmentStatusChanged(Appointment $appointment, string $newStatus): void
     {
-        if (!$appointment->student_id) {
+        if (! $appointment->student_id) {
             return;
         }
 
@@ -899,7 +905,7 @@ class AppointmentController extends Controller
 
     private function notifyStudentOnAppointmentRescheduled(Appointment $appointment): void
     {
-        if (!$appointment->student_id) {
+        if (! $appointment->student_id) {
             return;
         }
 
@@ -930,9 +936,8 @@ class AppointmentController extends Controller
         Appointment $appointment,
         int $actorId,
         ?string $reason = null
-    ): void
-    {
-        if (!$appointment->counselor_id || $appointment->counselor_id === $actorId) {
+    ): void {
+        if (! $appointment->counselor_id || $appointment->counselor_id === $actorId) {
             return;
         }
 
@@ -969,7 +974,7 @@ class AppointmentController extends Controller
 
     private function formatAppointmentTime(mixed $scheduledAt): string
     {
-        if (!$scheduledAt) {
+        if (! $scheduledAt) {
             return 'a future date';
         }
 
@@ -988,8 +993,9 @@ class AppointmentController extends Controller
 
     private function applyAnonymousAppointmentProjection(Appointment $appointment, User $viewer): void
     {
-        if (!$appointment->is_anonymous) {
+        if (! $appointment->is_anonymous) {
             $appointment->setAttribute('identity_visible_to_viewer', true);
+
             return;
         }
 
@@ -997,6 +1003,7 @@ class AppointmentController extends Controller
         $isAdminViewer = $viewer->hasRole('admin');
         if ($isStudentViewer || $isAdminViewer) {
             $appointment->setAttribute('identity_visible_to_viewer', true);
+
             return;
         }
 
@@ -1044,6 +1051,7 @@ class AppointmentController extends Controller
         } catch (\Throwable) {
             $hasCallTypeColumn = false;
         }
+
         return $hasCallTypeColumn;
     }
 
@@ -1060,17 +1068,9 @@ class AppointmentController extends Controller
     private function generateAnonymousId(): string
     {
         do {
-            $candidate = 'User_' . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+            $candidate = 'User_'.str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         } while (Appointment::query()->where('anonymous_id', $candidate)->exists());
 
         return $candidate;
     }
 }
-
-
-
-
-
-
-
-

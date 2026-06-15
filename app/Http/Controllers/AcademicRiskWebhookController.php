@@ -9,7 +9,6 @@ use App\Models\User;
 use App\Support\SystemSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -115,7 +114,7 @@ class AcademicRiskWebhookController extends Controller
     public function events(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -129,21 +128,22 @@ class AcademicRiskWebhookController extends Controller
             ->with(['linkedUser.profile', 'syncRun'])
             ->orderByDesc('created_at');
 
-        if (!empty($validated['status'])) {
+        if (! empty($validated['status'])) {
             $query->where('status', $validated['status']);
         }
-        if (!empty($validated['risk_type'])) {
+        if (! empty($validated['risk_type'])) {
             $query->where('risk_type', $this->normalizeRiskType((string) $validated['risk_type']));
         }
 
         $limit = (int) ($validated['limit'] ?? 100);
+
         return response()->json($query->limit($limit)->get());
     }
 
     public function runs(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -166,6 +166,7 @@ class AcademicRiskWebhookController extends Controller
         }
 
         $clean = trim($value);
+
         return $clean !== '' ? $clean : null;
     }
 
@@ -213,7 +214,7 @@ class AcademicRiskWebhookController extends Controller
             'type' => 'info',
         ]);
 
-        if (!SystemSettings::getBool('ai_risk_alerts', true)) {
+        if (! SystemSettings::getBool('ai_risk_alerts', true)) {
             return;
         }
 

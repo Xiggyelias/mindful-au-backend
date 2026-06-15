@@ -12,7 +12,7 @@ class BackupController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -30,7 +30,7 @@ class BackupController extends Controller
     public function verify(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -48,7 +48,7 @@ class BackupController extends Controller
     public function drill(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 

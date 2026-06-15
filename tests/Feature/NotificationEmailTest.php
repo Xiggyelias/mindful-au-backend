@@ -7,6 +7,7 @@ use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class NotificationEmailTest extends TestCase
@@ -24,7 +25,7 @@ class NotificationEmailTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function notification_creation_sends_an_email_when_enabled(): void
     {
         Mail::fake();
@@ -49,7 +50,7 @@ class NotificationEmailTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function chat_notification_email_uses_privacy_safe_content(): void
     {
         Mail::fake();
@@ -76,7 +77,7 @@ class NotificationEmailTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function user_can_disable_email_notification_delivery(): void
     {
         Mail::fake();
@@ -93,7 +94,7 @@ class NotificationEmailTest extends TestCase
         Mail::assertNothingSent();
     }
 
-    /** @test */
+    #[Test]
     public function authenticated_user_can_update_email_notification_preference(): void
     {
         $user = $this->createPortalUser('student', 'preference@test.com');

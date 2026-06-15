@@ -2,11 +2,12 @@
 
 namespace Tests\Feature;
 
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class OAuthRedirectSecurityTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function production_oauth_redirect_ignores_untrusted_frontend_override(): void
     {
         $previousEnv = (string) config('app.env');
@@ -28,7 +29,7 @@ class OAuthRedirectSecurityTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function local_oauth_redirect_can_use_loopback_frontend_override(): void
     {
         $previousEnv = (string) config('app.env');

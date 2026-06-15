@@ -5,21 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\ActivityLog;
 use App\Services\ActivityLogStatsService;
 use App\Support\PaginationPayload;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class ActivityLogController extends Controller
 {
     public function __construct(
         private readonly ActivityLogStatsService $activityLogStatsService
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -37,30 +36,30 @@ class ActivityLogController extends Controller
             ->orderBy('created_at', 'desc');
 
         // Filter by type if provided
-        if (!empty($validated['type'])) {
+        if (! empty($validated['type'])) {
             $query->where('type', $validated['type']);
         }
 
         // Filter by date range if provided
-        if (!empty($validated['from'])) {
+        if (! empty($validated['from'])) {
             $query->where('created_at', '>=', $validated['from']);
         }
 
-        if (!empty($validated['to'])) {
+        if (! empty($validated['to'])) {
             $query->where('created_at', '<=', $validated['to']);
         }
 
         // Search by action or description
-        if (!empty($validated['search'])) {
+        if (! empty($validated['search'])) {
             $search = $validated['search'];
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('action', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
         $transformLogs = function ($logs) {
-            return collect($logs)->map(function($log) {
+            return collect($logs)->map(function ($log) {
                 return [
                     'id' => $log->id,
                     'timestamp' => $log->created_at->format('Y-m-d H:i:s'),
@@ -84,6 +83,7 @@ class ActivityLogController extends Controller
 
             $payload = PaginationPayload::fromPaginator($paginator, $request, ['type', 'from', 'to', 'search']);
             $payload['data'] = $transformLogs($paginator->items());
+
             return response()->json($payload);
         }
 
@@ -97,7 +97,7 @@ class ActivityLogController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -114,7 +114,7 @@ class ActivityLogController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 

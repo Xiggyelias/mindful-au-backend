@@ -47,7 +47,7 @@ return new class extends Migration
     {
         try {
             DB::statement("CREATE INDEX {$indexName} ON {$table} {$columnsSql}");
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Ignore if the index already exists or the driver does not support this DDL shape.
         }
     }
@@ -56,7 +56,7 @@ return new class extends Migration
     {
         try {
             DB::statement("DROP INDEX {$indexName} ON {$table}");
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Ignore if missing.
         }
     }

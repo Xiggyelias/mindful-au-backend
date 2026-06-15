@@ -2,15 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessAIDiagnostic;
 use App\Models\AiDiagnostic;
 use App\Models\Appointment;
 use App\Models\CounselingSession;
 use App\Models\Message;
-use App\Services\AIDiagnosticService;
-use App\Jobs\ProcessAIDiagnostic;
 use App\Support\PaginationPayload;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AIDiagnosticController extends Controller
@@ -31,14 +30,14 @@ class AIDiagnosticController extends Controller
             $query->where('student_id', $user->id);
         } elseif ($user->hasRole('counselor')) {
             // Counselors can see diagnostics for their students
-            $query->whereHas('session', function($q) use ($user) {
+            $query->whereHas('session', function ($q) use ($user) {
                 $q->where('counselor_id', $user->id);
             });
-        } elseif (!$user->hasRole('admin')) {
+        } elseif (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (!empty($validated['student_id'])) {
+        if (! empty($validated['student_id'])) {
             $query->where('student_id', (int) $validated['student_id']);
         }
 
@@ -77,7 +76,7 @@ class AIDiagnosticController extends Controller
         $isOwnerStudent = (int) $diagnostic->student_id === $uid;
         $isSessionCounselor = $diagnostic->session && (int) $diagnostic->session->counselor_id === $uid;
 
-        if (!$user->hasRole('admin') && !$isOwnerStudent && !$isSessionCounselor) {
+        if (! $user->hasRole('admin') && ! $isOwnerStudent && ! $isSessionCounselor) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -90,7 +89,7 @@ class AIDiagnosticController extends Controller
         $user = $request->user();
 
         // Only counselors and admins can trigger analysis
-        if (!$user->hasRole('admin') && (int) $session->counselor_id !== (int) $user->id) {
+        if (! $user->hasRole('admin') && (int) $session->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -102,7 +101,7 @@ class AIDiagnosticController extends Controller
             })
             ->orderBy('created_at')
             ->get()
-            ->map(function($msg) use ($session) {
+            ->map(function ($msg) use ($session) {
                 $content = trim((string) ($msg->content ?? ''));
                 if ($content === '') {
                     return null;
@@ -137,7 +136,7 @@ class AIDiagnosticController extends Controller
         $appointment = Appointment::findOrFail($appointmentId);
         $user = $request->user();
 
-        if (!$user->hasRole('admin') && (int) $appointment->counselor_id !== (int) $user->id) {
+        if (! $user->hasRole('admin') && (int) $appointment->counselor_id !== (int) $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -150,13 +149,13 @@ class AIDiagnosticController extends Controller
             [
                 'sender' => 'counselor',
                 'content' => $appointment->notes,
-            ]
+            ],
         ];
 
         // Create a lightweight CounselingSession wrapper for the job if necessary,
         // or update ProcessAIDiagnostic to handle Appointments directly.
         // For now, we simulate a session for the AI engine.
-        $session = new CounselingSession();
+        $session = new CounselingSession;
         $session->fill([
             'student_id' => $appointment->student_id,
             'counselor_id' => $appointment->counselor_id,
@@ -181,16 +180,16 @@ class AIDiagnosticController extends Controller
         if ($user->hasRole('student')) {
             $query->where('student_id', $user->id);
         } elseif ($user->hasRole('counselor')) {
-            $query->whereHas('session', function($q) use ($user) {
+            $query->whereHas('session', function ($q) use ($user) {
                 $q->where('counselor_id', $user->id);
             });
-        } elseif (!$user->hasRole('admin')) {
+        } elseif (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
         $diagnostic = $query->latest()->first();
 
-        if (!$diagnostic) {
+        if (! $diagnostic) {
             return response()->json(['message' => 'No diagnostics found'], 404);
         }
 
@@ -234,7 +233,7 @@ class AIDiagnosticController extends Controller
             }
 
             $query->whereIn('student_id', $studentIds->all());
-        } elseif (!$user->hasRole('admin')) {
+        } elseif (! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

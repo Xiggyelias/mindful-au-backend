@@ -12,7 +12,7 @@ class DataAccessLogController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -32,22 +32,22 @@ class DataAccessLogController extends Controller
             ->with('user.profile')
             ->orderByDesc('created_at');
 
-        if (!empty($validated['user_id'])) {
+        if (! empty($validated['user_id'])) {
             $query->where('user_id', (int) $validated['user_id']);
         }
-        if (!empty($validated['method'])) {
+        if (! empty($validated['method'])) {
             $query->where('method', strtoupper((string) $validated['method']));
         }
-        if (!empty($validated['path'])) {
-            $query->where('path', 'like', '%' . $validated['path'] . '%');
+        if (! empty($validated['path'])) {
+            $query->where('path', 'like', '%'.$validated['path'].'%');
         }
-        if (!empty($validated['status_code'])) {
+        if (! empty($validated['status_code'])) {
             $query->where('status_code', (int) $validated['status_code']);
         }
-        if (!empty($validated['from'])) {
+        if (! empty($validated['from'])) {
             $query->where('created_at', '>=', $validated['from']);
         }
-        if (!empty($validated['to'])) {
+        if (! empty($validated['to'])) {
             $query->where('created_at', '<=', $validated['to']);
         }
 

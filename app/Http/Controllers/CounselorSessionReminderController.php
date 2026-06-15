@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Services\WebPushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 class CounselorSessionReminderController extends Controller
 {
     public function __construct(
-        private readonly \App\Services\WebPushService $webPush,
+        private readonly WebPushService $webPush,
     ) {}
 
     /**
@@ -23,7 +24,7 @@ class CounselorSessionReminderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor')) {
+        if (! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 

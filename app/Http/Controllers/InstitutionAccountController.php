@@ -13,7 +13,7 @@ class InstitutionAccountController extends Controller
     public function index(Request $request): JsonResponse
     {
         $admin = $request->user();
-        if (!$admin || !$admin->hasRole('admin')) {
+        if (! $admin || ! $admin->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -27,7 +27,7 @@ class InstitutionAccountController extends Controller
     public function store(Request $request): JsonResponse
     {
         $admin = $request->user();
-        if (!$admin || !$admin->hasRole('admin')) {
+        if (! $admin || ! $admin->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -55,7 +55,7 @@ class InstitutionAccountController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
-        if (!$admin || !$admin->hasRole('admin')) {
+        if (! $admin || ! $admin->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
@@ -82,7 +82,7 @@ class InstitutionAccountController extends Controller
     public function destroy(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
-        if (!$admin || !$admin->hasRole('admin')) {
+        if (! $admin || ! $admin->hasRole('admin')) {
             return response()->json(['message' => 'Admin access required'], 403);
         }
 

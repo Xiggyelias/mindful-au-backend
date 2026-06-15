@@ -8,13 +8,14 @@ use App\Models\CounselingSession;
 use App\Models\CounselorWellnessLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class CounselorLiveHealthCheckTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function live_health_check_does_not_persist_demo_scores_without_live_activity(): void
     {
         $counselor = $this->portalUser('counselor');
@@ -34,7 +35,7 @@ class CounselorLiveHealthCheckTest extends TestCase
         $this->assertSame(0, CounselorWellnessLog::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function live_health_check_uses_saved_self_check_in_but_does_not_save_it_as_live_activity(): void
     {
         $counselor = $this->portalUser('counselor');
@@ -80,7 +81,7 @@ class CounselorLiveHealthCheckTest extends TestCase
         $this->assertSame(1, CounselorWellnessLog::query()->count());
     }
 
-    /** @test */
+    #[Test]
     public function live_health_check_persists_scores_when_real_activity_exists(): void
     {
         $student = $this->portalUser('student');

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\CounselingSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class AdminSessionNoteRestrictionsTest extends TestCase
@@ -12,8 +13,11 @@ class AdminSessionNoteRestrictionsTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+
     private User $student;
+
     private User $counselor;
+
     private CounselingSession $session;
 
     protected function setUp(): void
@@ -37,7 +41,7 @@ class AdminSessionNoteRestrictionsTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function admin_sees_redacted_notes_when_fetching_session(): void
     {
         $response = $this->actingAs($this->admin)->getJson("/api/sessions/{$this->session->id}");
@@ -51,7 +55,7 @@ class AdminSessionNoteRestrictionsTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function admin_cannot_update_confidential_notes(): void
     {
         $response = $this->actingAs($this->admin)->putJson("/api/sessions/{$this->session->id}", [
@@ -65,7 +69,7 @@ class AdminSessionNoteRestrictionsTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function admin_cannot_use_note_upsert_endpoint(): void
     {
         $response = $this->actingAs($this->admin)->putJson("/api/sessions/{$this->session->id}/note", [

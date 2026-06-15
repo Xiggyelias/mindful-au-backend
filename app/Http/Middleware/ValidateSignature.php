@@ -10,11 +10,3 @@ class ValidateSignature extends Middleware
         //
     ];
 }
-
-
-
-
-
-
-
-

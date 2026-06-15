@@ -2,20 +2,24 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ChatFile;
+use App\Events\MessageSent;
 use App\Models\AiDiagnostic;
-use App\Models\Message;
+use App\Models\ChatFile;
 use App\Models\CounselingSession;
+use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\ChatMessageData;
-use Illuminate\Http\Request;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
+
 class ChatAttachmentController extends Controller
 {
     private const ANONYMOUS_SESSION_TTL_HOURS = 24;
@@ -54,15 +58,15 @@ class ChatAttachmentController extends Controller
 
         $uid = (int) $user->id;
         if (
-            !$user->hasRole('admin')
+            ! $user->hasRole('admin')
             && (int) $session->student_id !== $uid
             && (int) $session->counselor_id !== $uid
-            && !$isAssignedPeerCounselor
+            && ! $isAssignedPeerCounselor
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (!$user->hasRole('admin') && in_array($session->status, ['completed', 'cancelled'], true)) {
+        if (! $user->hasRole('admin') && in_array($session->status, ['completed', 'cancelled'], true)) {
             return response()->json([
                 'message' => 'This session is closed and cannot receive new messages.',
             ], 422);
@@ -72,8 +76,8 @@ class ChatAttachmentController extends Controller
             'file' => [
                 'required',
                 'file',
-                'max:' . (int) config('chat.attachments.max_upload_kb', 5120),
-                'extensions:' . implode(',', (array) config('chat.attachments.allowed_extensions', [])),
+                'max:'.(int) config('chat.attachments.max_upload_kb', 5120),
+                'extensions:'.implode(',', (array) config('chat.attachments.allowed_extensions', [])),
             ],
             'message_type' => 'nullable|in:file,voice',
         ]);
@@ -85,14 +89,14 @@ class ChatAttachmentController extends Controller
         }
 
         $mimeType = strtolower((string) $file->getMimeType());
-        if (!$this->isAllowedMimeType($mimeType)) {
+        if (! $this->isAllowedMimeType($mimeType)) {
             return response()->json([
                 'message' => 'File type is not supported for chat uploads.',
             ], 422);
         }
 
-        if (!$user->hasRole('admin') && $isAssignedPeerCounselor) {
-            if ($messageType !== 'voice' || !$this->isVoiceUploadMimeType($mimeType)) {
+        if (! $user->hasRole('admin') && $isAssignedPeerCounselor) {
+            if ($messageType !== 'voice' || ! $this->isVoiceUploadMimeType($mimeType)) {
                 return response()->json([
                     'message' => 'Peer counselors can send voice notes, but cannot upload file attachments in supervised chat.',
                 ], 422);
@@ -110,13 +114,13 @@ class ChatAttachmentController extends Controller
         $disk = (string) config('chat.attachments.disk', 'local');
         $directory = trim((string) config('chat.attachments.directory', 'uploads/chat_files'), '/');
         $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin'));
-        $storedFileName = Str::uuid()->toString() . '.' . $extension;
-        $datedDirectory = trim($directory . '/' . now()->format('Y/m'), '/');
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $storage */
+        $storedFileName = Str::uuid()->toString().'.'.$extension;
+        $datedDirectory = trim($directory.'/'.now()->format('Y/m'), '/');
+        /** @var FilesystemAdapter $storage */
         $storage = Storage::disk($disk);
         $storedPath = $storage->putFileAs($datedDirectory, $file, $storedFileName);
 
-        if (!$storedPath) {
+        if (! $storedPath) {
             return response()->json([
                 'message' => 'Unable to store attachment.',
             ], 500);
@@ -165,7 +169,7 @@ class ChatAttachmentController extends Controller
         );
         if ($legacyBroadcastEnabled) {
             try {
-                event(new \App\Events\MessageSent($message));
+                event(new MessageSent($message));
             } catch (\Throwable $_) {
                 // no-op
             }
@@ -189,10 +193,10 @@ class ChatAttachmentController extends Controller
         $uid = (int) $user->id;
 
         if (
-            !$user->hasRole('admin')
+            ! $user->hasRole('admin')
             && (int) $session->student_id !== $uid
             && (int) $session->counselor_id !== $uid
-            && !$isAssignedPeerCounselor
+            && ! $isAssignedPeerCounselor
         ) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -210,12 +214,12 @@ class ChatAttachmentController extends Controller
             ]);
         }
 
-        if (!in_array((string) $message->message_type, ['file', 'voice'], true) || !$message->file_url) {
+        if (! in_array((string) $message->message_type, ['file', 'voice'], true) || ! $message->file_url) {
             return response()->json(['message' => 'Not a file attachment'], 400);
         }
 
         $urlPath = parse_url((string) $message->file_url, PHP_URL_PATH);
-        if (!is_string($urlPath) || !str_starts_with($urlPath, '/storage/chat-attachments/')) {
+        if (! is_string($urlPath) || ! str_starts_with($urlPath, '/storage/chat-attachments/')) {
             return response()->json(['message' => 'Invalid attachment path'], 400);
         }
 
@@ -223,20 +227,21 @@ class ChatAttachmentController extends Controller
         if (str_contains($path, '..')) {
             return response()->json(['message' => 'Invalid attachment path'], 400);
         }
-        
-        if (!Storage::disk('public')->exists($path)) {
+
+        if (! Storage::disk('public')->exists($path)) {
             return response()->json(['message' => 'File not found'], 404);
         }
 
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $publicStorage */
+        /** @var FilesystemAdapter $publicStorage */
         $publicStorage = Storage::disk('public');
+
         return response()->json([
             'download_url' => $publicStorage->url($path),
             'message' => ChatMessageData::make($message, true),
         ]);
     }
 
-    public function show(Request $request, ChatFile $chatFile): \Symfony\Component\HttpFoundation\Response
+    public function show(Request $request, ChatFile $chatFile): Response
     {
         $disk = (string) config('chat.attachments.disk', 'local');
         $download = filter_var((string) $request->query('download', '0'), FILTER_VALIDATE_BOOL);
@@ -245,12 +250,13 @@ class ChatAttachmentController extends Controller
         // file is streamed directly from the object store — not proxied through the app.
         if ($disk === 's3') {
             $url = $chatFile->signedUrl($download);
+
             return redirect()->away($url, 302);
         }
 
         abort_unless(Storage::disk($disk)->exists($chatFile->file_path), 404);
 
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $storage */
+        /** @var FilesystemAdapter $storage */
         $storage = Storage::disk($disk);
         $absolutePath = $storage->path($chatFile->file_path);
         $disposition = $download ? 'attachment' : 'inline';
@@ -411,7 +417,7 @@ class ChatAttachmentController extends Controller
 
     private function isAnonymousSessionExpired(CounselingSession $session): bool
     {
-        if (!$session->is_anonymous) {
+        if (! $session->is_anonymous) {
             return false;
         }
 
@@ -450,7 +456,7 @@ class ChatAttachmentController extends Controller
         }
 
         $recipient = User::with('roles')->find($recipientId);
-        if (!$recipient) {
+        if (! $recipient) {
             return true;
         }
 

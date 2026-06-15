@@ -9,6 +9,7 @@ use Illuminate\Console\Command;
 class ApproveCounselorRole extends Command
 {
     protected $signature = 'counselor:approve {email}';
+
     protected $description = 'Approve a counselor role by email';
 
     public function handle()
@@ -16,8 +17,9 @@ class ApproveCounselorRole extends Command
         $email = $this->argument('email');
         $user = User::where('email', $email)->first();
 
-        if (!$user) {
+        if (! $user) {
             $this->error("User not found: $email");
+
             return 1;
         }
 
@@ -25,14 +27,16 @@ class ApproveCounselorRole extends Command
             ->where('role', 'counselor')
             ->first();
 
-        if (!$role) {
+        if (! $role) {
             $this->error("Counselor role not found for: $email");
+
             return 1;
         }
 
         $role->update(['approved' => true]);
 
         $this->info("✓ Counselor role approved for: $email");
+
         return 0;
     }
 }

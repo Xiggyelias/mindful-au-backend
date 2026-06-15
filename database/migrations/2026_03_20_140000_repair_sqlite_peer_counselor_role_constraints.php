@@ -25,7 +25,7 @@ return new class extends Migration
 
     private function repairUserRolesTable(): void
     {
-        if (!Schema::hasTable('user_roles') || $this->sqliteTableSupportsRole('user_roles', 'peer_counselor')) {
+        if (! Schema::hasTable('user_roles') || $this->sqliteTableSupportsRole('user_roles', 'peer_counselor')) {
             return;
         }
 
@@ -80,7 +80,7 @@ return new class extends Migration
     private function repairInstitutionAccountsTable(): void
     {
         if (
-            !Schema::hasTable('institution_accounts')
+            ! Schema::hasTable('institution_accounts')
             || $this->sqliteTableSupportsRole('institution_accounts', 'peer_counselor')
         ) {
             return;
@@ -136,10 +136,10 @@ return new class extends Migration
             ->where('name', $table)
             ->value('sql');
 
-        if (!is_string($definition) || trim($definition) === '') {
+        if (! is_string($definition) || trim($definition) === '') {
             return false;
         }
 
-        return str_contains(strtolower($definition), "'" . strtolower($role) . "'");
+        return str_contains(strtolower($definition), "'".strtolower($role)."'");
     }
 };

@@ -4,36 +4,35 @@ namespace App\Http\Controllers;
 
 use App\Models\InstitutionAccount;
 use App\Models\LoginLog;
-use App\Models\User;
 use App\Models\Profile;
+use App\Models\User;
 use App\Models\UserRole;
 use App\Services\TokenSessionService;
 use App\Support\SafeEmail;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Throwable;
 use Laravel\Socialite\Facades\Socialite;
+use Throwable;
 
 class OAuthController extends Controller
 {
     private const OAUTH_TICKET_CACHE_PREFIX = 'oauth:ticket:';
+
     private const OAUTH_FRONTEND_URL_SESSION_KEY = 'oauth:frontend:url';
 
-    public function __construct(private readonly TokenSessionService $tokenSessionService)
-    {
-    }
+    public function __construct(private readonly TokenSessionService $tokenSessionService) {}
 
     public function redirectToGoogle(Request $request): RedirectResponse
     {
         $this->rememberFrontendUrl($request);
 
-        if (!$this->isGoogleOAuthConfigured()) {
+        if (! $this->isGoogleOAuthConfigured()) {
             return $this->redirectToFrontendWithError(
                 'Google sign-in is not configured yet. Please contact support.'
             );
@@ -65,7 +64,7 @@ class OAuthController extends Controller
 
     public function handleGoogleCallback(Request $request): RedirectResponse
     {
-        if (!$this->isGoogleOAuthConfigured()) {
+        if (! $this->isGoogleOAuthConfigured()) {
             return $this->redirectToFrontendWithError(
                 'Google sign-in is not configured yet. Please contact support.'
             );
@@ -80,7 +79,7 @@ class OAuthController extends Controller
                     user: null,
                     email: null,
                     success: false,
-                    failureReason: 'provider_error:' . $providerError
+                    failureReason: 'provider_error:'.$providerError
                 );
 
                 return $this->redirectToFrontendWithError(
@@ -88,8 +87,9 @@ class OAuthController extends Controller
                 );
             }
 
-            if (!$request->filled('code')) {
+            if (! $request->filled('code')) {
                 $this->recordGoogleLogin($request, null, null, false, 'missing_authorization_code');
+
                 return $this->redirectToFrontendWithError(
                     'Google sign-in did not return a valid authorization code. Please try again.'
                 );
@@ -100,27 +100,31 @@ class OAuthController extends Controller
             $email = SafeEmail::normalize((string) ($googleUser->getEmail() ?? ''));
             if ($email === '' || SafeEmail::hasControlCharacters((string) ($googleUser->getEmail() ?? ''))) {
                 $this->recordGoogleLogin($request, null, null, false, 'missing_email');
+
                 return $this->redirectToFrontendWithError('Google account did not provide an email address.');
             }
 
-            if (!$this->isAllowedInstitutionEmail($email)) {
+            if (! $this->isAllowedInstitutionEmail($email)) {
                 $this->recordGoogleLogin($request, null, $email, false, 'non_institution_email');
+
                 return $this->redirectToFrontendWithError(
                     'Only official institutional accounts are allowed.'
                 );
             }
 
             $emailVerified = (bool) data_get($googleUser->user, 'email_verified', false);
-            if (!$emailVerified) {
+            if (! $emailVerified) {
                 $this->recordGoogleLogin($request, null, $email, false, 'email_not_verified');
+
                 return $this->redirectToFrontendWithError(
                     'Your Google account email is not verified.'
                 );
             }
 
             $resolved = $this->resolveRoleForEmail($email);
-            if (!$resolved['role']) {
+            if (! $resolved['role']) {
                 $this->recordGoogleLogin($request, null, $email, false, 'role_not_authorized');
+
                 return $this->redirectToFrontendWithError(
                     'Your account is not authorized for this platform. Contact the system administrator.'
                 );
@@ -128,13 +132,15 @@ class OAuthController extends Controller
 
             if ($resolved['role'] === 'admin') {
                 $this->recordGoogleLogin($request, null, $email, false, 'admin_must_use_password_portal');
+
                 return $this->redirectToFrontendWithError(
                     'Administrators must sign in from the Admin portal using email and password.'
                 );
             }
 
-            if (!$resolved['approved']) {
+            if (! $resolved['approved']) {
                 $this->recordGoogleLogin($request, null, $email, false, 'account_pending_approval');
+
                 return $this->redirectToFrontendWithError(
                     'Your account exists but is pending approval.'
                 );
@@ -152,7 +158,7 @@ class OAuthController extends Controller
             $profile = Profile::query()->firstOrNew(['user_id' => $user->id]);
             if (($resolved['full_name'] ?? null) !== null) {
                 $profile->full_name = (string) $resolved['full_name'];
-            } elseif (!$profile->full_name) {
+            } elseif (! $profile->full_name) {
                 $profile->full_name = (string) ($googleUser->getName() ?: Str::before($email, '@'));
             }
 
@@ -214,7 +220,7 @@ class OAuthController extends Controller
 
         $cacheKey = $this->oauthTicketCacheKey($ticket);
         $payload = Cache::pull($cacheKey);
-        if (!is_array($payload)) {
+        if (! is_array($payload)) {
             return response()->json([
                 'message' => 'OAuth login ticket is invalid or expired.',
             ], 422);
@@ -228,7 +234,7 @@ class OAuthController extends Controller
         }
 
         $user = User::query()->with(['profile', 'roles'])->find($userId);
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'message' => 'OAuth login ticket is invalid or expired.',
             ], 422);
@@ -265,7 +271,7 @@ class OAuthController extends Controller
                     ->where('is_active', true)
                     ->first();
             }
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::warning('Institution account lookup skipped during OAuth role resolution', [
                 'error' => $e->getMessage(),
             ]);
@@ -369,6 +375,7 @@ class OAuthController extends Controller
     private function primaryAllowedDomain(): string
     {
         $domains = $this->allowedDomains();
+
         return $domains[0] ?? 'africau.edu';
     }
 
@@ -451,7 +458,7 @@ class OAuthController extends Controller
         }
 
         $appEnv = Str::lower((string) config('app.env', env('APP_ENV', 'production')));
-        if (!in_array($appEnv, ['local', 'testing'], true)) {
+        if (! in_array($appEnv, ['local', 'testing'], true)) {
             return false;
         }
 
@@ -468,19 +475,19 @@ class OAuthController extends Controller
         }
 
         $parts = parse_url($trimmed);
-        if (!is_array($parts)) {
+        if (! is_array($parts)) {
             return null;
         }
 
         $scheme = Str::lower((string) ($parts['scheme'] ?? ''));
         $host = (string) ($parts['host'] ?? '');
-        if (!in_array($scheme, ['http', 'https'], true) || $host === '') {
+        if (! in_array($scheme, ['http', 'https'], true) || $host === '') {
             return null;
         }
 
-        $normalized = $scheme . '://' . $host;
+        $normalized = $scheme.'://'.$host;
         if (isset($parts['port'])) {
-            $normalized .= ':' . (int) $parts['port'];
+            $normalized .= ':'.(int) $parts['port'];
         }
 
         $path = rtrim((string) ($parts['path'] ?? ''), '/');
@@ -499,7 +506,7 @@ class OAuthController extends Controller
         }
 
         $parts = parse_url($normalized);
-        if (!is_array($parts)) {
+        if (! is_array($parts)) {
             return null;
         }
 
@@ -509,9 +516,9 @@ class OAuthController extends Controller
             return null;
         }
 
-        $origin = $scheme . '://' . $host;
+        $origin = $scheme.'://'.$host;
         if (isset($parts['port'])) {
-            $origin .= ':' . (int) $parts['port'];
+            $origin .= ':'.(int) $parts['port'];
         }
 
         return $origin;
@@ -567,7 +574,7 @@ class OAuthController extends Controller
         }
 
         if (str_contains($message, 'redirect_uri_mismatch')) {
-            return 'Google redirect URI mismatch. Add this URI in Google Cloud Console: ' . $this->googleRedirectUrl();
+            return 'Google redirect URI mismatch. Add this URI in Google Cloud Console: '.$this->googleRedirectUrl();
         }
 
         if (str_contains($message, 'invalid_client')) {
@@ -590,7 +597,8 @@ class OAuthController extends Controller
         if ((bool) config('app.debug', false)) {
             $raw = trim((string) $e->getMessage());
             $snippet = Str::limit($raw !== '' ? $raw : get_class($e), 240);
-            return 'Google sign-in failed: ' . $snippet;
+
+            return 'Google sign-in failed: '.$snippet;
         }
 
         return 'Google sign-in failed. Please try again.';
@@ -603,7 +611,7 @@ class OAuthController extends Controller
         ];
         $query = http_build_query($payload);
 
-        return redirect()->away($this->oauthCallbackUrl() . '?' . $query);
+        return redirect()->away($this->oauthCallbackUrl().'?'.$query);
     }
 
     private function redirectToFrontendWithError(string $errorMessage): RedirectResponse
@@ -613,7 +621,7 @@ class OAuthController extends Controller
         ];
         $query = http_build_query($payload);
 
-        return redirect()->away($this->oauthCallbackUrl() . '?' . $query);
+        return redirect()->away($this->oauthCallbackUrl().'?'.$query);
     }
 
     private function issueLoginTicket(User $user): string
@@ -633,7 +641,7 @@ class OAuthController extends Controller
 
     private function oauthTicketCacheKey(string $ticket): string
     {
-        return self::OAUTH_TICKET_CACHE_PREFIX . hash('sha256', $ticket);
+        return self::OAUTH_TICKET_CACHE_PREFIX.hash('sha256', $ticket);
     }
 
     private function oauthTicketTtlSeconds(): int
@@ -663,7 +671,7 @@ class OAuthController extends Controller
             return $base;
         }
 
-        return $base . '/oauth/callback';
+        return $base.'/oauth/callback';
     }
 
     private function recordGoogleLogin(
@@ -674,7 +682,7 @@ class OAuthController extends Controller
         ?string $failureReason
     ): void {
         try {
-            if (!Schema::hasTable('login_logs')) {
+            if (! Schema::hasTable('login_logs')) {
                 return;
             }
 
@@ -688,7 +696,7 @@ class OAuthController extends Controller
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
             ]);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // OAuth flow should not fail because audit logging failed.
         }
     }

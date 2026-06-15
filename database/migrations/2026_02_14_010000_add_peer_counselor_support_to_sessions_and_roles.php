@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         if (Schema::hasTable('counseling_sessions')) {
-            if (!Schema::hasColumn('counseling_sessions', 'peer_counselor_id')) {
+            if (! Schema::hasColumn('counseling_sessions', 'peer_counselor_id')) {
                 Schema::table('counseling_sessions', function (Blueprint $table) {
                     $table->foreignId('peer_counselor_id')
                         ->nullable()
@@ -24,7 +24,7 @@ return new class extends Migration
                 });
             }
 
-            if (!Schema::hasColumn('counseling_sessions', 'assigned_by')) {
+            if (! Schema::hasColumn('counseling_sessions', 'assigned_by')) {
                 Schema::table('counseling_sessions', function (Blueprint $table) {
                     $table->foreignId('assigned_by')
                         ->nullable()
@@ -34,7 +34,7 @@ return new class extends Migration
                 });
             }
 
-            if (!Schema::hasColumn('counseling_sessions', 'assigned_role')) {
+            if (! Schema::hasColumn('counseling_sessions', 'assigned_role')) {
                 Schema::table('counseling_sessions', function (Blueprint $table) {
                     $table->string('assigned_role', 32)->nullable()->after('assigned_by');
                     $table->index(
@@ -103,4 +103,3 @@ return new class extends Migration
         }
     }
 };
-

@@ -18,7 +18,7 @@ return new class extends Migration
 
         try {
             DB::statement('CREATE INDEX messages_recipient_id_id_idx ON messages (recipient_id, id)');
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Index may already exist or driver uses different DDL.
         }
     }
@@ -30,7 +30,7 @@ return new class extends Migration
         if ($driver === 'sqlite') {
             try {
                 DB::statement('DROP INDEX IF EXISTS messages_recipient_id_id_idx');
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 // Ignore.
             }
 
@@ -39,12 +39,12 @@ return new class extends Migration
 
         try {
             DB::statement('DROP INDEX messages_recipient_id_id_idx ON messages');
-        } catch (\Throwable) {
+        } catch (Throwable) {
             try {
                 Schema::table('messages', function ($table) {
                     $table->dropIndex('messages_recipient_id_id_idx');
                 });
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 // Ignore.
             }
         }

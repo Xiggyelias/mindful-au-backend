@@ -112,7 +112,7 @@ class CounselorLiveHealthCheckService
         $activeDays7d = $merged7d
             ->map(function ($item) {
                 $reference = $item->started_at ?? $item->scheduled_at ?? $item->updated_at ?? $item->created_at;
-                if (!$reference) {
+                if (! $reference) {
                     return null;
                 }
 
@@ -210,7 +210,7 @@ class CounselorLiveHealthCheckService
             'schedule_pressure_index' => 0,
         ];
 
-        if (!$metrics['has_live_activity']) {
+        if (! $metrics['has_live_activity']) {
             if ($hasRecentSelfCheckIn) {
                 return [
                     'source' => 'self-check-in-only',
@@ -307,12 +307,14 @@ class CounselorLiveHealthCheckService
                 $minutes = $start->diffInMinutes($end, false);
                 if ($minutes > 0) {
                     $total += $minutes;
+
                     continue;
                 }
             }
 
             if (isset($session->duration_minutes) && $session->duration_minutes > 0) {
                 $total += (int) $session->duration_minutes;
+
                 continue;
             }
 
@@ -372,7 +374,7 @@ class CounselorLiveHealthCheckService
 
     private function blendWithSelfCheckIn(int $computedValue, ?int $selfCheckInValue): int
     {
-        if (!is_numeric($selfCheckInValue)) {
+        if (! is_numeric($selfCheckInValue)) {
             return $computedValue;
         }
 

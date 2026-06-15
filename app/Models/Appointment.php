@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Schema;
 class Appointment extends Model
 {
     use HasFactory;
+
     private static ?bool $hasCallTypeColumnCache = null;
 
     /**
@@ -18,7 +19,7 @@ class Appointment extends Model
     protected static function booted(): void
     {
         static::saving(function (Appointment $appointment): void {
-            if (!self::supportsCallTypeColumn()) {
+            if (! self::supportsCallTypeColumn()) {
                 return;
             }
             if (! $appointment->is_anonymous) {
@@ -42,6 +43,7 @@ class Appointment extends Model
         } catch (\Throwable) {
             self::$hasCallTypeColumnCache = false;
         }
+
         return self::$hasCallTypeColumnCache;
     }
 

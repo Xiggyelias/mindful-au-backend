@@ -38,10 +38,10 @@ class ReferralController extends Controller
             $query->where('student_id', $user->id);
         }
 
-        if (!empty($validated['status'])) {
+        if (! empty($validated['status'])) {
             $query->where('status', (string) $validated['status']);
         }
-        if (!empty($validated['direction'])) {
+        if (! empty($validated['direction'])) {
             $query->where('direction', (string) $validated['direction']);
         }
 
@@ -59,6 +59,7 @@ class ReferralController extends Controller
         }
 
         $limit = (int) ($validated['limit'] ?? 50);
+
         return response()->json($query->limit($limit)->get());
     }
 
@@ -68,7 +69,7 @@ class ReferralController extends Controller
             ->with(['student.profile', 'referredBy.profile', 'events.actor.profile', 'session', 'intakeSubmission'])
             ->findOrFail($id);
 
-        if (!$this->canViewReferral($request->user(), $referral)) {
+        if (! $this->canViewReferral($request->user(), $referral)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -78,7 +79,7 @@ class ReferralController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('admin') && !$user->hasRole('counselor')) {
+        if (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Only counselors or admins can create referrals'], 403);
         }
 
@@ -94,7 +95,7 @@ class ReferralController extends Controller
             'notes' => 'sometimes|nullable|string|max:2000',
         ]);
 
-        if (!$validated['consent_granted'] && !empty($validated['shared_fields'])) {
+        if (! $validated['consent_granted'] && ! empty($validated['shared_fields'])) {
             return response()->json([
                 'message' => 'Cannot share referral fields without consent.',
             ], 422);
@@ -134,7 +135,7 @@ class ReferralController extends Controller
         $referral = Referral::query()->findOrFail($id);
         $user = $request->user();
 
-        if (!$this->canManageReferral($user, $referral)) {
+        if (! $this->canManageReferral($user, $referral)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -145,22 +146,22 @@ class ReferralController extends Controller
             'shared_fields' => 'sometimes|nullable|array',
         ]);
 
-        if (($validated['consent_granted'] ?? $referral->consent_granted) === false && !empty($validated['shared_fields'])) {
+        if (($validated['consent_granted'] ?? $referral->consent_granted) === false && ! empty($validated['shared_fields'])) {
             return response()->json(['message' => 'Cannot share fields without consent.'], 422);
         }
 
-        if (!empty($validated['status']) && in_array($validated['status'], ['completed', 'declined', 'cancelled'], true)) {
+        if (! empty($validated['status']) && in_array($validated['status'], ['completed', 'declined', 'cancelled'], true)) {
             $validated['closed_at'] = now();
         }
 
         $referral->update($validated);
 
-        if (!empty($validated['status']) || array_key_exists('outcome_notes', $validated)) {
+        if (! empty($validated['status']) || array_key_exists('outcome_notes', $validated)) {
             ReferralEvent::query()->create([
                 'referral_id' => $referral->id,
                 'actor_id' => $user->id,
                 'event_type' => 'status_updated',
-                'notes' => $validated['outcome_notes'] ?? ('Status updated to ' . ($validated['status'] ?? $referral->status)),
+                'notes' => $validated['outcome_notes'] ?? ('Status updated to '.($validated['status'] ?? $referral->status)),
                 'metadata' => [
                     'status' => $validated['status'] ?? $referral->status,
                 ],
@@ -174,7 +175,7 @@ class ReferralController extends Controller
     {
         $referral = Referral::query()->findOrFail($id);
         $user = $request->user();
-        if (!$this->canManageReferral($user, $referral)) {
+        if (! $this->canManageReferral($user, $referral)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

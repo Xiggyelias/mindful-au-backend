@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -96,7 +97,7 @@ return new class extends Migration
         }
     }
 
-    private function closeDuplicateSessionRows(\Illuminate\Database\Query\Builder $query): void
+    private function closeDuplicateSessionRows(Builder $query): void
     {
         $ids = $query
             ->orderByDesc('updated_at')
@@ -217,6 +218,7 @@ return new class extends Migration
                 'sessions_active_peer_unique',
                 'CREATE UNIQUE INDEX sessions_active_peer_unique ON counseling_sessions (active_peer_dedupe_key)'
             );
+
             return;
         }
 
@@ -245,6 +247,7 @@ return new class extends Migration
                 'peer_assignments_active_unique',
                 'CREATE UNIQUE INDEX peer_assignments_active_unique ON peer_assignments (active_assignment_dedupe_key)'
             );
+
             return;
         }
 
@@ -261,20 +264,21 @@ return new class extends Migration
             $this->addMysqlGeneratedColumn(
                 'chat_conversations',
                 'active_wellness_dedupe_key',
-                "CASE WHEN `is_active` = 1 AND `model` = '" . self::WELLNESS_MODEL . "' THEN CONCAT(`user_id`, ':', `model`) ELSE NULL END"
+                "CASE WHEN `is_active` = 1 AND `model` = '".self::WELLNESS_MODEL."' THEN CONCAT(`user_id`, ':', `model`) ELSE NULL END"
             );
             $this->createIndexIfMissing(
                 'chat_conversations',
                 'chat_conversations_active_wellness_unique',
                 'CREATE UNIQUE INDEX chat_conversations_active_wellness_unique ON chat_conversations (active_wellness_dedupe_key)'
             );
+
             return;
         }
 
         $this->createIndexIfMissing(
             'chat_conversations',
             'chat_conversations_active_wellness_unique',
-            "CREATE UNIQUE INDEX IF NOT EXISTS chat_conversations_active_wellness_unique ON chat_conversations (user_id, model) WHERE is_active = 1 AND model = '" . self::WELLNESS_MODEL . "'"
+            "CREATE UNIQUE INDEX IF NOT EXISTS chat_conversations_active_wellness_unique ON chat_conversations (user_id, model) WHERE is_active = 1 AND model = '".self::WELLNESS_MODEL."'"
         );
     }
 
@@ -295,7 +299,7 @@ return new class extends Migration
             if (Schema::hasIndex($table, $index)) {
                 return;
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Older drivers may not expose index metadata consistently.
         }
 
@@ -308,7 +312,7 @@ return new class extends Migration
             if (Schema::hasIndex($table, $index) === false) {
                 return;
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Continue with best-effort SQL below.
         }
 
@@ -318,7 +322,7 @@ return new class extends Migration
             } else {
                 DB::statement("DROP INDEX IF EXISTS {$index}");
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Best-effort rollback; duplicate index absence should not block rollback.
         }
     }
@@ -331,7 +335,7 @@ return new class extends Migration
 
         try {
             DB::statement("ALTER TABLE `{$table}` DROP COLUMN `{$column}`");
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Best-effort rollback for generated-column capable databases.
         }
     }

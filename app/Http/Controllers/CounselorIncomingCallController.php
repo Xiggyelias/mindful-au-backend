@@ -14,7 +14,7 @@ class CounselorIncomingCallController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor')) {
+        if (! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -73,7 +73,7 @@ class CounselorIncomingCallController extends Controller
     public function update(Request $request, CounselingCall $counselingCall): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor')) {
+        if (! $user->hasRole('counselor')) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 

@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\DiagnosticQuestionnaire;
 use App\Models\Diagnostic;
+use App\Models\DiagnosticQuestionnaire;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class DiagnosticTest extends TestCase
@@ -13,7 +14,9 @@ class DiagnosticTest extends TestCase
     use RefreshDatabase;
 
     protected User $student;
+
     protected User $counselor;
+
     protected DiagnosticQuestionnaire $questionnaire;
 
     protected function setUp(): void
@@ -49,7 +52,7 @@ class DiagnosticTest extends TestCase
                         'description' => 'Rate from 1-5',
                         'options' => null,
                     ],
-                ]
+                ],
             ],
             'status' => 'active',
             'version' => 1,
@@ -58,7 +61,7 @@ class DiagnosticTest extends TestCase
         DiagnosticQuestionnaire::where('id', '!=', $this->questionnaire->id)->update(['status' => 'inactive']);
     }
 
-    /** @test */
+    #[Test]
     public function can_get_active_questionnaire()
     {
         $response = $this->actingAs($this->student)
@@ -75,7 +78,7 @@ class DiagnosticTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function can_submit_diagnostic_assessment()
     {
         $responses = [
@@ -110,7 +113,7 @@ class DiagnosticTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function can_submit_anonymous_assessment()
     {
         $responses = ['q1' => 2, 'q2' => 2];
@@ -130,7 +133,7 @@ class DiagnosticTest extends TestCase
         $this->assertStringStartsWith('ANON-', $diagnostic->anonymous_id);
     }
 
-    /** @test */
+    #[Test]
     public function scoring_algorithm_calculates_correctly()
     {
         $responses = ['q1' => 5, 'q2' => 5]; // High scores
@@ -150,7 +153,7 @@ class DiagnosticTest extends TestCase
         $this->assertContains($data['risk_level'], ['high', 'critical', 'medium']);
     }
 
-    /** @test */
+    #[Test]
     public function low_scores_result_in_low_risk()
     {
         $responses = ['q1' => 1, 'q2' => 1]; // Low scores
@@ -170,7 +173,7 @@ class DiagnosticTest extends TestCase
         $this->assertEquals('low', $data['risk_level']);
     }
 
-    /** @test */
+    #[Test]
     public function can_get_diagnostic_history()
     {
         // Create multiple diagnostics
@@ -194,7 +197,7 @@ class DiagnosticTest extends TestCase
             ->assertJsonCount(3);
     }
 
-    /** @test */
+    #[Test]
     public function can_get_latest_diagnostic()
     {
         Diagnostic::create([
@@ -219,7 +222,7 @@ class DiagnosticTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function can_get_diagnostic_trends()
     {
         // Create diagnostics over time
@@ -247,7 +250,7 @@ class DiagnosticTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function counselor_can_view_dashboard()
     {
         // Create high-risk diagnostic
@@ -272,7 +275,7 @@ class DiagnosticTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function student_cannot_view_counselor_dashboard()
     {
         $response = $this->actingAs($this->student)
@@ -281,7 +284,7 @@ class DiagnosticTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function unauthenticated_user_cannot_submit_assessment()
     {
         $response = $this->postJson('/api/diagnostics/analyze', [
@@ -292,7 +295,7 @@ class DiagnosticTest extends TestCase
         $response->assertStatus(401);
     }
 
-    /** @test */
+    #[Test]
     public function recommendations_are_generated_for_high_risk()
     {
         $responses = ['q1' => 5, 'q2' => 5];
@@ -312,7 +315,7 @@ class DiagnosticTest extends TestCase
         $this->assertGreaterThan(0, count($recommendations['actions']));
     }
 
-    /** @test */
+    #[Test]
     public function category_scores_are_calculated()
     {
         $responses = ['q1' => 4, 'q2' => 2];
@@ -332,7 +335,7 @@ class DiagnosticTest extends TestCase
         $this->assertArrayHasKey('depression', $categoryScores);
     }
 
-    /** @test */
+    #[Test]
     public function questionnaire_endpoint_bootstraps_default_when_missing(): void
     {
         DiagnosticQuestionnaire::query()->delete();

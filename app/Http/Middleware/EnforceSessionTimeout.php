@@ -3,31 +3,31 @@
 namespace App\Http\Middleware;
 
 use App\Support\SystemSettings;
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Carbon\CarbonInterface;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnforceSessionTimeout
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (!$this->routeRequiresAdmin($request)) {
+        if (! $this->routeRequiresAdmin($request)) {
             return $next($request);
         }
 
         $user = $request->user();
-        if (!$user || !$user->hasRole('admin')) {
+        if (! $user || ! $user->hasRole('admin')) {
             return $next($request);
         }
 
-        if (!SystemSettings::getBool('session_timeout', false)) {
+        if (! SystemSettings::getBool('session_timeout', false)) {
             return $next($request);
         }
 
         $token = $user->currentAccessToken();
-        if (!$token) {
+        if (! $token) {
             return $next($request);
         }
 
@@ -61,7 +61,7 @@ class EnforceSessionTimeout
     private function routeRequiresAdmin(Request $request): bool
     {
         $route = $request->route();
-        if (!$route) {
+        if (! $route) {
             return false;
         }
 
@@ -72,7 +72,7 @@ class EnforceSessionTimeout
                 return true;
             }
 
-            if ($value === \App\Http\Middleware\AdminMiddleware::class) {
+            if ($value === AdminMiddleware::class) {
                 return true;
             }
         }

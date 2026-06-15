@@ -14,16 +14,25 @@ use Illuminate\Support\Str;
 class OpenRouterService
 {
     private const FALLBACK_MODEL = 'mindful/offline-assistant-v1';
+
     private const FALLBACK_RESPONSE = 'I am currently using local support mode. Share one specific concern, and I can suggest a short coping plan while you connect with a counselor.';
+
     public const DEFAULT_CHAT_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+
     public const DEFAULT_CORE_MODEL = 'qwen/qwen3-next-80b-a3b-thinking';
+
     public const DEFAULT_HEAVY_ANALYSIS_MODEL = 'deepseek/deepseek-v4-pro';
+
     public const DEFAULT_SPEED_MODEL = 'liquid/lfm-2.5-1.2b-thinking:free';
+
     private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8;
+
     private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
 
     private Client $client;
+
     private string $apiKey;
+
     private string $baseUrl;
 
     public function __construct()
@@ -36,7 +45,7 @@ class OpenRouterService
         $this->client = new Client([
             'base_uri' => $this->baseUrl,
             'headers' => [
-                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Authorization' => 'Bearer '.$this->apiKey,
                 'Content-Type' => 'application/json',
                 'HTTP-Referer' => (string) config('services.openrouter.site_url', 'http://localhost'),
                 'X-Title' => (string) config('services.openrouter.site_name', 'AI Chat'),
@@ -50,7 +59,7 @@ class OpenRouterService
     {
         $normalized = rtrim(trim($baseUrl), '/');
 
-        return $normalized === '' ? 'https://openrouter.ai/api/v1/' : $normalized . '/';
+        return $normalized === '' ? 'https://openrouter.ai/api/v1/' : $normalized.'/';
     }
 
     /**
@@ -60,7 +69,7 @@ class OpenRouterService
     {
         $model = self::resolveChatModel($model);
 
-        if (!$this->hasConfiguredApiKey()) {
+        if (! $this->hasConfiguredApiKey()) {
             return $this->fallbackResult($messages, $model, $conversationId, 'missing_api_key');
         }
 
@@ -73,14 +82,16 @@ class OpenRouterService
             ]);
 
             $data = json_decode((string) $response->getBody(), true);
-            if (!is_array($data)) {
+            if (! is_array($data)) {
                 Log::warning('OpenRouter API returned non-JSON payload. Falling back to local assistant.');
+
                 return $this->fallbackResult($messages, $model, $conversationId, 'invalid_json');
             }
 
             $content = trim($this->extractContent($data));
             if ($content === '') {
                 Log::warning('OpenRouter API returned empty content. Falling back to local assistant.');
+
                 return $this->fallbackResult($messages, $model, $conversationId, 'empty_content');
             }
 
@@ -117,8 +128,9 @@ class OpenRouterService
     {
         $model = self::resolveChatModel($model);
 
-        if (!$this->hasConfiguredApiKey()) {
+        if (! $this->hasConfiguredApiKey()) {
             yield from $this->streamFallback($messages, $model, $conversationId);
+
             return;
         }
 
@@ -141,7 +153,7 @@ class OpenRouterService
                 foreach ($lines as $line) {
                     $line = trim($line);
 
-                    if ($line === '' || !str_starts_with($line, 'data: ')) {
+                    if ($line === '' || ! str_starts_with($line, 'data: ')) {
                         continue;
                     }
 
@@ -155,6 +167,7 @@ class OpenRouterService
                         } else {
                             yield ['content' => '', 'done' => true];
                         }
+
                         return;
                     }
 
@@ -173,6 +186,7 @@ class OpenRouterService
 
             if ($fullContent !== '') {
                 yield ['content' => '', 'done' => true];
+
                 return;
             }
 
@@ -195,7 +209,7 @@ class OpenRouterService
      */
     private function extractContent(?array $data): string
     {
-        if (!$data) {
+        if (! $data) {
             return '';
         }
 
@@ -236,7 +250,7 @@ class OpenRouterService
      */
     public function getModels(): array
     {
-        if (!$this->hasConfiguredApiKey()) {
+        if (! $this->hasConfiguredApiKey()) {
             return [
                 'success' => true,
                 'models' => $this->fallbackModels(),
@@ -247,7 +261,7 @@ class OpenRouterService
             $response = $this->client->get('models');
             $data = json_decode((string) $response->getBody(), true);
 
-            if (!is_array($data)) {
+            if (! is_array($data)) {
                 return [
                     'success' => true,
                     'models' => $this->fallbackModels(),
@@ -286,7 +300,7 @@ class OpenRouterService
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             throw new \RuntimeException('Authenticated user required to persist conversation.');
         }
 
@@ -303,7 +317,7 @@ class OpenRouterService
                 ->first();
         }
 
-        if (!$conversation) {
+        if (! $conversation) {
             $conversation = ChatConversation::create([
                 'user_id' => $user->id,
                 'ai_model_id' => $aiModel->id,
@@ -354,7 +368,7 @@ class OpenRouterService
     {
         foreach ($messages as $message) {
             if ($message['role'] === 'user') {
-                return substr($message['content'], 0, 50) .
+                return substr($message['content'], 0, 50).
                     (strlen($message['content']) > 50 ? '...' : '');
             }
         }
@@ -403,7 +417,7 @@ class OpenRouterService
             ->with(['aiModel'])
             ->first();
 
-        if (!$conversation) {
+        if (! $conversation) {
             return [
                 'success' => false,
                 'error' => 'Conversation not found',
@@ -491,12 +505,14 @@ class OpenRouterService
     private function providerTimeoutSeconds(): int
     {
         $timeout = (int) config('services.ai.provider_timeout_seconds', self::DEFAULT_PROVIDER_TIMEOUT_SECONDS);
+
         return max(3, min(30, $timeout));
     }
 
     private function providerConnectTimeoutSeconds(): int
     {
         $timeout = (int) config('services.ai.provider_connect_timeout_seconds', self::DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS);
+
         return max(1, min(10, $timeout));
     }
 
@@ -592,7 +608,7 @@ class OpenRouterService
     {
         for ($idx = count($messages) - 1; $idx >= 0; $idx--) {
             $message = $messages[$idx] ?? null;
-            if (!is_array($message)) {
+            if (! is_array($message)) {
                 continue;
             }
 
@@ -674,13 +690,27 @@ class OpenRouterService
     {
         $lower = Str::lower($model);
 
-        if ($model === self::FALLBACK_MODEL) return 'local';
-        if (str_contains($lower, 'meta-llama') || str_contains($lower, 'llama')) return 'meta';
-        if (str_contains($lower, 'deepseek')) return 'deepseek';
-        if (str_contains($lower, 'liquid') || str_contains($lower, 'lfm')) return 'liquid';
-        if (str_contains($lower, 'nvidia')) return 'nvidia';
-        if (str_contains($lower, 'qwen')) return 'qwen';
-        if (str_contains($lower, 'claude')) return 'anthropic';
+        if ($model === self::FALLBACK_MODEL) {
+            return 'local';
+        }
+        if (str_contains($lower, 'meta-llama') || str_contains($lower, 'llama')) {
+            return 'meta';
+        }
+        if (str_contains($lower, 'deepseek')) {
+            return 'deepseek';
+        }
+        if (str_contains($lower, 'liquid') || str_contains($lower, 'lfm')) {
+            return 'liquid';
+        }
+        if (str_contains($lower, 'nvidia')) {
+            return 'nvidia';
+        }
+        if (str_contains($lower, 'qwen')) {
+            return 'qwen';
+        }
+        if (str_contains($lower, 'claude')) {
+            return 'anthropic';
+        }
 
         return 'openrouter';
     }

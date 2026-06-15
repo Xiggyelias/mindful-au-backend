@@ -2,26 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AiDiagnostic;
 use App\Models\Appointment;
 use App\Models\CounselingSession;
 use App\Models\Diagnostic;
 use App\Models\DiagnosticQuestionnaire;
-use App\Models\Message;
 use App\Models\Notification;
 use App\Models\User;
-use App\Support\SystemSettings;
 use App\Services\DiagnosticScoringService;
 use App\Services\MentalHealthMlService;
+use App\Support\SystemSettings;
+use Database\Seeders\DiagnosticQuestionnaireSeeder;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 
 class DiagnosticController extends Controller
 {
     private DiagnosticScoringService $scoringService;
+
     private MentalHealthMlService $mlService;
 
     public function __construct(
@@ -46,10 +47,10 @@ class DiagnosticController extends Controller
 
     public function getQuestionnaire(): JsonResponse
     {
-        if (!DiagnosticQuestionnaire::query()->exists()) {
+        if (! DiagnosticQuestionnaire::query()->exists()) {
             try {
-                \Illuminate\Support\Facades\Artisan::call('db:seed', [
-                    '--class' => \Database\Seeders\DiagnosticQuestionnaireSeeder::class,
+                Artisan::call('db:seed', [
+                    '--class' => DiagnosticQuestionnaireSeeder::class,
                     '--force' => true,
                 ]);
             } catch (\Throwable $e) {
@@ -60,7 +61,7 @@ class DiagnosticController extends Controller
         $questionnaire = DiagnosticQuestionnaire::where('status', 'active')->latest()->first()
             ?? DiagnosticQuestionnaire::query()->latest()->first();
 
-        if (!$questionnaire) {
+        if (! $questionnaire) {
             return response()->json(['message' => 'No active questionnaire available'], 404);
         }
 
@@ -69,7 +70,7 @@ class DiagnosticController extends Controller
 
     public function analyze(Request $request): JsonResponse
     {
-        if (!$request->user()->hasRole('student')) {
+        if (! $request->user()->hasRole('student')) {
             return response()->json(['message' => 'Only students can submit diagnostics'], 403);
         }
 
@@ -123,7 +124,7 @@ class DiagnosticController extends Controller
         ]);
 
         if ($diagnostic->is_anonymous) {
-            $diagnostic->anonymous_id = 'ANON-' . Str::random(12);
+            $diagnostic->anonymous_id = 'ANON-'.Str::random(12);
         }
 
         $diagnostic->save();
@@ -151,7 +152,7 @@ class DiagnosticController extends Controller
     public function getHistory(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('student')) {
+        if (! $user->hasRole('student')) {
             return response()->json(['message' => 'Only students can view this history'], 403);
         }
 
@@ -165,7 +166,7 @@ class DiagnosticController extends Controller
     public function getLatest(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('student')) {
+        if (! $user->hasRole('student')) {
             return response()->json(['message' => 'Only students can view this data'], 403);
         }
 
@@ -173,7 +174,7 @@ class DiagnosticController extends Controller
             ->latest()
             ->first();
 
-        if (!$diagnostic) {
+        if (! $diagnostic) {
             return response()->json(['message' => 'No diagnostic found'], 404);
         }
 
@@ -183,7 +184,7 @@ class DiagnosticController extends Controller
     public function getTrends(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('student')) {
+        if (! $user->hasRole('student')) {
             return response()->json(['message' => 'Only students can view trends'], 403);
         }
 
@@ -214,7 +215,7 @@ class DiagnosticController extends Controller
     public function getCounselorDashboard(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor') && !$user->hasRole('admin')) {
+        if (! $user->hasRole('counselor') && ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -267,7 +268,7 @@ class DiagnosticController extends Controller
         ];
         foreach ($observations as $observation) {
             $level = (string) ($observation['risk_level'] ?? 'low');
-            if (!array_key_exists($level, $riskDistributionMap)) {
+            if (! array_key_exists($level, $riskDistributionMap)) {
                 continue;
             }
             $riskDistributionMap[$level]++;
@@ -309,7 +310,7 @@ class DiagnosticController extends Controller
     /** @param  list<string>  $riskFlags */
     private function notifyCounselors(User $user, Diagnostic $diagnostic, array $riskFlags = []): void
     {
-        if (!SystemSettings::getBool('ai_risk_alerts', true)) {
+        if (! SystemSettings::getBool('ai_risk_alerts', true)) {
             return;
         }
 
@@ -471,7 +472,7 @@ class DiagnosticController extends Controller
     public function assignNewAssessment(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('counselor') && !$user->hasRole('admin')) {
+        if (! $user->hasRole('counselor') && ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -480,7 +481,7 @@ class DiagnosticController extends Controller
         ]);
 
         $student = User::findOrFail($validated['student_id']);
-        if (!$student->hasRole('student')) {
+        if (! $student->hasRole('student')) {
             return response()->json(['message' => 'Assessment can only be assigned to students'], 422);
         }
 
@@ -503,4 +504,3 @@ class DiagnosticController extends Controller
         ]);
     }
 }
-

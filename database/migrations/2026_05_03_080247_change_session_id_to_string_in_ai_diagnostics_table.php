@@ -12,15 +12,15 @@ return new class extends Migration
     public function up(): void
     {
         // Confirming there is no data to preserve (Count was 0)
-        // Recreating the table is the safest way to change column types in SQLite 
+        // Recreating the table is the safest way to change column types in SQLite
         // when doctrine/dbal is missing and foreign keys are involved.
         Schema::dropIfExists('ai_diagnostics');
         Schema::create('ai_diagnostics', function (Blueprint $table) {
             $table->id();
             $table->foreignId('student_id')->constrained('users')->onDelete('cascade');
-            // Changed from foreignId to string to support polymorphic-like behavior 
+            // Changed from foreignId to string to support polymorphic-like behavior
             // for both CounselingSession (int) and Physical Appointment (string "apt_ID")
-            $table->string('session_id')->nullable(); 
+            $table->string('session_id')->nullable();
             $table->integer('stress_level')->nullable();
             $table->integer('anxiety_level')->nullable();
             $table->integer('depression_level')->nullable();

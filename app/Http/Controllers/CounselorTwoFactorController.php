@@ -23,7 +23,7 @@ class CounselorTwoFactorController extends Controller
         $isConfigured = (bool) $method;
         $isVerified = (bool) $method?->verified_at;
         $tokenVerified = $this->isCurrentTokenVerified($user);
-        $required = $enabled && $isCounselingRole && (!$isConfigured || !$isVerified || !$tokenVerified);
+        $required = $enabled && $isCounselingRole && (! $isConfigured || ! $isVerified || ! $tokenVerified);
 
         return response()->json([
             'enabled' => $enabled,
@@ -32,18 +32,18 @@ class CounselorTwoFactorController extends Controller
             'configured' => $isConfigured,
             'verified' => $isVerified,
             'token_verified' => $tokenVerified,
-            'setup_required' => $enabled && $isCounselingRole && !$isConfigured,
+            'setup_required' => $enabled && $isCounselingRole && ! $isConfigured,
         ]);
     }
 
     public function setup(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$this->isCounselingRole($user)) {
+        if (! $this->isCounselingRole($user)) {
             return response()->json(['message' => 'Only counselors can configure two-factor authentication.'], 403);
         }
 
-        if (!SystemSettings::getBool('two_factor_auth', false)) {
+        if (! SystemSettings::getBool('two_factor_auth', false)) {
             return response()->json([
                 'message' => 'Two-factor authentication is currently disabled by system settings.',
             ], 422);
@@ -76,7 +76,7 @@ class CounselorTwoFactorController extends Controller
     public function verify(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$this->isCounselingRole($user)) {
+        if (! $this->isCounselingRole($user)) {
             return response()->json(['message' => 'Only counselors can verify two-factor authentication.'], 403);
         }
 
@@ -84,14 +84,14 @@ class CounselorTwoFactorController extends Controller
             'code' => ['required', 'string', 'max:12'],
         ]);
 
-        if (!SystemSettings::getBool('two_factor_auth', false)) {
+        if (! SystemSettings::getBool('two_factor_auth', false)) {
             return response()->json([
                 'message' => 'Two-factor authentication is currently disabled by system settings.',
             ], 422);
         }
 
         $method = $this->resolveMethod($user);
-        if (!$method) {
+        if (! $method) {
             return response()->json([
                 'message' => 'Two-factor is not configured yet. Complete setup first.',
                 'setup_required' => true,
@@ -115,13 +115,13 @@ class CounselorTwoFactorController extends Controller
             periodSeconds: 30
         );
 
-        if (!$isValid) {
+        if (! $isValid) {
             return response()->json([
                 'message' => 'Invalid verification code. Please try again.',
             ], 422);
         }
 
-        if (!$method->verified_at) {
+        if (! $method->verified_at) {
             $method->forceFill(['verified_at' => now()])->save();
         }
 
@@ -156,7 +156,7 @@ class CounselorTwoFactorController extends Controller
     private function isCurrentTokenVerified(User $user): bool
     {
         $token = $user->currentAccessToken();
-        if (!$token instanceof PersonalAccessToken || !Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
+        if (! $token instanceof PersonalAccessToken || ! Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
             return false;
         }
 
@@ -165,7 +165,7 @@ class CounselorTwoFactorController extends Controller
             ->where('tokenable_id', $user->id)
             ->where('tokenable_type', $user->getMorphClass())
             ->first();
-        if (!$freshToken) {
+        if (! $freshToken) {
             return false;
         }
 
@@ -175,21 +175,21 @@ class CounselorTwoFactorController extends Controller
             hash('sha256', $freshTokenValue),
             hash('sha256', $currentTokenValue)
         );
-        if (!$hashesMatch || $freshTokenValue === '' || $currentTokenValue === '') {
+        if (! $hashesMatch || $freshTokenValue === '' || $currentTokenValue === '') {
             return false;
         }
 
-        return !empty($freshToken->two_factor_passed_at);
+        return ! empty($freshToken->two_factor_passed_at);
     }
 
     private function markCurrentTokenVerified(User $user): void
     {
-        if (!Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
+        if (! Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
             return;
         }
 
         $token = $user->currentAccessToken();
-        if (!$token) {
+        if (! $token) {
             return;
         }
 
@@ -200,12 +200,12 @@ class CounselorTwoFactorController extends Controller
 
     private function markCurrentTokenUnverified(User $user): void
     {
-        if (!Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
+        if (! Schema::hasColumn('personal_access_tokens', 'two_factor_passed_at')) {
             return;
         }
 
         $token = $user->currentAccessToken();
-        if (!$token) {
+        if (! $token) {
             return;
         }
 

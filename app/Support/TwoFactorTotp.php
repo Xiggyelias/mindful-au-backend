@@ -51,7 +51,7 @@ class TwoFactorTotp
         string $issuer
     ): string {
         $safeIssuer = trim($issuer) !== '' ? trim($issuer) : 'AUCMS';
-        $label = rawurlencode($safeIssuer . ':' . $accountName);
+        $label = rawurlencode($safeIssuer.':'.$accountName);
         $encodedIssuer = rawurlencode($safeIssuer);
         $encodedSecret = rawurlencode($secret);
 
@@ -65,18 +65,19 @@ class TwoFactorTotp
             return '';
         }
 
-        $counterBytes = pack('N*', 0) . pack('N*', $counter);
+        $counterBytes = pack('N*', 0).pack('N*', $counter);
         $hash = hash_hmac('sha1', $counterBytes, $key, true);
-        $offset = ord(substr($hash, -1)) & 0x0f;
+        $offset = ord(substr($hash, -1)) & 0x0F;
 
         $binary = (
-            ((ord($hash[$offset]) & 0x7f) << 24)
-            | ((ord($hash[$offset + 1]) & 0xff) << 16)
-            | ((ord($hash[$offset + 2]) & 0xff) << 8)
-            | (ord($hash[$offset + 3]) & 0xff)
+            ((ord($hash[$offset]) & 0x7F) << 24)
+            | ((ord($hash[$offset + 1]) & 0xFF) << 16)
+            | ((ord($hash[$offset + 2]) & 0xFF) << 8)
+            | (ord($hash[$offset + 3]) & 0xFF)
         );
 
         $mod = 10 ** $digits;
+
         return str_pad((string) ($binary % $mod), $digits, '0', STR_PAD_LEFT);
     }
 
@@ -92,7 +93,7 @@ class TwoFactorTotp
         $bits = '';
 
         foreach (str_split($clean) as $char) {
-            if (!array_key_exists($char, $alphabetMap)) {
+            if (! array_key_exists($char, $alphabetMap)) {
                 continue;
             }
             $bits .= str_pad(decbin((int) $alphabetMap[$char]), 5, '0', STR_PAD_LEFT);

@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('emergency_requests', function (Blueprint $table) {
-            if (!Schema::hasColumn('emergency_requests', 'counselor_slot_id')) {
+            if (! Schema::hasColumn('emergency_requests', 'counselor_slot_id')) {
                 $table->foreignId('counselor_slot_id')
                     ->nullable()
                     ->after('assigned_to')

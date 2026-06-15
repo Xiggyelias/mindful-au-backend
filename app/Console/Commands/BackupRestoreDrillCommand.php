@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\File;
 class BackupRestoreDrillCommand extends Command
 {
     protected $signature = 'system:backup:drill {path? : Relative backup path in storage/app}';
+
     protected $description = 'Run a dry-run restore drill by validating backup readability and payload schema';
 
     public function handle(): int
@@ -22,16 +23,18 @@ class BackupRestoreDrillCommand extends Command
                 ->whereNotNull('file_path')
                 ->orderByDesc('created_at')
                 ->first();
-            if (!$run) {
+            if (! $run) {
                 $this->error('No backup file available for restore drill.');
+
                 return self::FAILURE;
             }
             $relativePath = (string) $run->file_path;
         }
 
-        $absolutePath = storage_path('app/' . ltrim($relativePath, '/'));
-        if (!File::exists($absolutePath)) {
+        $absolutePath = storage_path('app/'.ltrim($relativePath, '/'));
+        if (! File::exists($absolutePath)) {
             $this->error("Backup file not found: {$relativePath}");
+
             return self::FAILURE;
         }
 
@@ -40,7 +43,7 @@ class BackupRestoreDrillCommand extends Command
             $expectedFingerprint = data_get($run?->metadata ?? [], 'backup_encryption.key_fingerprint');
             if ($run?->is_encrypted && is_string($expectedFingerprint) && $expectedFingerprint !== '') {
                 $currentFingerprint = $this->currentAppKeyFingerprint();
-                if (!hash_equals($expectedFingerprint, $currentFingerprint)) {
+                if (! hash_equals($expectedFingerprint, $currentFingerprint)) {
                     throw new \RuntimeException(
                         'Backup key fingerprint mismatch. Backup was encrypted with a different APP_KEY.'
                     );
@@ -52,15 +55,15 @@ class BackupRestoreDrillCommand extends Command
                 : (string) $raw;
 
             $decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
-            if (!is_array($decoded) || !is_array($decoded['tables'] ?? null)) {
+            if (! is_array($decoded) || ! is_array($decoded['tables'] ?? null)) {
                 throw new \RuntimeException('Invalid backup structure: tables section missing.');
             }
 
             $tables = array_keys($decoded['tables']);
             $required = ['users', 'profiles', 'user_roles', 'counseling_sessions', 'messages'];
             $missing = array_values(array_diff($required, $tables));
-            if (!empty($missing)) {
-                throw new \RuntimeException('Backup restore drill failed. Missing tables: ' . implode(', ', $missing));
+            if (! empty($missing)) {
+                throw new \RuntimeException('Backup restore drill failed. Missing tables: '.implode(', ', $missing));
             }
 
             if ($run) {
@@ -72,7 +75,8 @@ class BackupRestoreDrillCommand extends Command
                 ]);
             }
 
-            $this->info('Restore drill succeeded. Verified tables: ' . count($tables));
+            $this->info('Restore drill succeeded. Verified tables: '.count($tables));
+
             return self::SUCCESS;
         } catch (\Throwable $e) {
             if ($run) {
@@ -84,7 +88,8 @@ class BackupRestoreDrillCommand extends Command
                     ]),
                 ]);
             }
-            $this->error('Restore drill failed: ' . $e->getMessage());
+            $this->error('Restore drill failed: '.$e->getMessage());
+
             return self::FAILURE;
         }
     }

@@ -2,32 +2,37 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CounselingSession;
+use App\Models\Notification;
+use App\Models\User;
 use App\Services\MentalHealthMlService;
-use Illuminate\Http\Request;
+use App\Services\OpenRouterService;
+use App\Services\WebPushService;
+use App\Support\SystemSettings;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use App\Support\SystemSettings;
-use App\Services\WebPushService;
-use App\Services\OpenRouterService;
-use App\Models\User;
-use App\Models\Notification;
 
 class AIWellnessChatController extends Controller
 {
     private const WELLNESS_MODEL = 'wellness-assistant-v1';
+
     private const CONTEXT_WINDOW_MESSAGES = 10;
+
     private const HISTORY_LIMIT_MESSAGES = 100;
+
     private const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 25;
+
     private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 8;
 
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService,
         private readonly WebPushService $webPush
-    ) {
-    }
+    ) {}
 
     public function chat(Request $request): JsonResponse
     {
@@ -78,7 +83,7 @@ class AIWellnessChatController extends Controller
         $conversation = $conversationResolution['conversation'];
         $created = $conversationResolution['created'];
 
-        if (!$conversation) {
+        if (! $conversation) {
             return response()->json([
                 'message' => 'Conversation not found.',
             ], 404);
@@ -138,7 +143,7 @@ CRITICAL:
 - If they mention suicide or self-harm, give immediate safety guidance to contact emergency services, a counselor, or a trusted person.
 - Use mindfulness and CBT insights naturally in conversation, never as clinical exercises.";
 
-        if (!empty($promptSafeContext['prompt_summary']) && is_string($promptSafeContext['prompt_summary'])) {
+        if (! empty($promptSafeContext['prompt_summary']) && is_string($promptSafeContext['prompt_summary'])) {
             $systemPrompt .= "\n- Internal privacy-safe context: {$promptSafeContext['prompt_summary']}";
         }
 
@@ -162,13 +167,13 @@ CRITICAL:
             try {
                 $this->triggerAiCrisisAlert($user, $crisisWords, (int) $conversation->id);
             } catch (\Throwable $e) {
-                Log::error('Failed to trigger AI crisis alert: ' . $e->getMessage());
+                Log::error('Failed to trigger AI crisis alert: '.$e->getMessage());
             }
         } else {
             $messages = [
                 ['role' => 'system', 'content' => $systemPrompt],
                 ...$historyMessages,
-                ['role' => 'user', 'content' => $message]
+                ['role' => 'user', 'content' => $message],
             ];
 
             // Try providers in order, then fall back to local deterministic guidance.
@@ -183,7 +188,7 @@ CRITICAL:
                 }
             }
 
-            if (!is_string($response) || trim($response) === '') {
+            if (! is_string($response) || trim($response) === '') {
                 $response = $this->buildLocalWellnessFallbackResponse($message, $historyMessages);
                 Log::info('AI wellness chat provider fallback used.');
             }
@@ -250,9 +255,10 @@ CRITICAL:
     public function providerHealthSnapshot(): array
     {
         $providers = $this->configuredAiProviders();
+
         return [
             'configured_external_providers' => $providers,
-            'external_ai_configured' => !empty($providers),
+            'external_ai_configured' => ! empty($providers),
         ];
     }
 
@@ -266,7 +272,7 @@ CRITICAL:
             $conversationId !== null ? (int) $conversationId : null
         );
 
-        if (!$conversation) {
+        if (! $conversation) {
             return response()->json([
                 'conversation' => null,
                 'messages' => [],
@@ -305,7 +311,7 @@ CRITICAL:
     {
         if ($requestedConversationId !== null) {
             $conversation = $this->resolveConversationForHistory($userId, $requestedConversationId);
-            if (!$conversation) {
+            if (! $conversation) {
                 return [
                     'conversation' => null,
                     'created' => false,
@@ -370,8 +376,7 @@ CRITICAL:
         bool $isNewConversation,
         array $userMetadata = [],
         array $assistantMetadata = []
-    ): array
-    {
+    ): array {
         $now = now();
 
         $userMessageId = DB::table('chat_messages')->insertGetId([
@@ -418,7 +423,7 @@ CRITICAL:
         $rows = [];
 
         foreach ($metadata as $key => $value) {
-            if (!is_string($key) || trim($key) === '' || $value === null) {
+            if (! is_string($key) || trim($key) === '' || $value === null) {
                 continue;
             }
 
@@ -443,7 +448,7 @@ CRITICAL:
             ];
         }
 
-        if (!empty($rows)) {
+        if (! empty($rows)) {
             DB::table('message_metadata')->upsert(
                 $rows,
                 ['message_id', 'key'],
@@ -455,8 +460,8 @@ CRITICAL:
     private function tryOpenRouter(array $messages): ?string
     {
         $apiKey = config('services.openrouter.api_key');
-        
-        if (!$apiKey) {
+
+        if (! $apiKey) {
             return null;
         }
 
@@ -484,12 +489,12 @@ CRITICAL:
 
                 $response = $this->providerHttp()
                     ->withHeaders([
-                        'Authorization' => 'Bearer ' . $apiKey,
+                        'Authorization' => 'Bearer '.$apiKey,
                         'Content-Type' => 'application/json',
                         'HTTP-Referer' => config('services.openrouter.site_url', 'https://mindful-au.local'),
                         'X-Title' => config('services.openrouter.site_name', 'Mindful AU'),
                     ])
-                    ->post(rtrim($baseUrl, '/') . '/chat/completions', $payload);
+                    ->post(rtrim($baseUrl, '/').'/chat/completions', $payload);
 
                 if ($response->successful()) {
                     $data = $response->json();
@@ -508,6 +513,7 @@ CRITICAL:
                         'model' => $model,
                         'status' => $status,
                     ]);
+
                     continue;
                 }
 
@@ -520,6 +526,7 @@ CRITICAL:
                     'model' => $model,
                     'exception' => $e::class,
                 ]);
+
                 continue;
             }
         }
@@ -549,7 +556,7 @@ CRITICAL:
     {
         $apiKey = config('services.gemini.api_key');
 
-        if (!$apiKey) {
+        if (! $apiKey) {
             return null;
         }
 
@@ -566,14 +573,15 @@ CRITICAL:
             $systemInstructions = [];
             foreach ($messages as $msg) {
                 if ($msg['role'] === 'system') {
-                    if (!empty($msg['content'])) {
+                    if (! empty($msg['content'])) {
                         $systemInstructions[] = $msg['content'];
                     }
+
                     continue;
                 }
                 $geminiMessages[] = [
                     'role' => $msg['role'] === 'user' ? 'user' : 'model',
-                    'parts' => [['text' => $msg['content']]]
+                    'parts' => [['text' => $msg['content']]],
                 ];
             }
 
@@ -585,7 +593,7 @@ CRITICAL:
                 'contents' => $geminiMessages,
             ];
 
-            if (!empty($systemInstructions)) {
+            if (! empty($systemInstructions)) {
                 $payload['system_instruction'] = [
                     'parts' => [[
                         'text' => implode("\n\n", $systemInstructions),
@@ -613,6 +621,7 @@ CRITICAL:
                         'model' => $model,
                         'status' => $response->status(),
                     ]);
+
                     continue;
                 }
 
@@ -624,6 +633,7 @@ CRITICAL:
                         'model' => $model,
                         'status' => $status,
                     ]);
+
                     continue;
                 }
 
@@ -1042,6 +1052,7 @@ CRITICAL:
     private function resolveCrisisHotline(): ?string
     {
         $hotline = trim(SystemSettings::getString('crisis_hotline', ''));
+
         return $hotline !== '' ? $hotline : null;
     }
 
@@ -1077,6 +1088,7 @@ CRITICAL:
     {
         // Allow tabs/newlines but strip other control characters.
         $sanitized = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value);
+
         return is_string($sanitized) ? trim($sanitized) : trim($value);
     }
 
@@ -1089,7 +1101,7 @@ CRITICAL:
         return preg_match('/<\s*script\b/i', $value) === 1;
     }
 
-    private function providerHttp(): \Illuminate\Http\Client\PendingRequest
+    private function providerHttp(): PendingRequest
     {
         return Http::connectTimeout($this->providerConnectTimeoutSeconds())
             ->timeout($this->providerTimeoutSeconds());
@@ -1098,12 +1110,14 @@ CRITICAL:
     private function providerTimeoutSeconds(): int
     {
         $timeout = (int) config('services.ai.provider_timeout_seconds', self::DEFAULT_PROVIDER_TIMEOUT_SECONDS);
+
         return max(3, min(30, $timeout));
     }
 
     private function providerConnectTimeoutSeconds(): int
     {
         $timeout = (int) config('services.ai.provider_connect_timeout_seconds', self::DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS);
+
         return max(1, min(10, $timeout));
     }
 
@@ -1111,14 +1125,14 @@ CRITICAL:
     {
         $wordList = implode(', ', $words);
         $studentName = $student->profile?->full_name ?: $student->email;
-        
-        $activeSession = \App\Models\CounselingSession::where('student_id', $student->id)
+
+        $activeSession = CounselingSession::where('student_id', $student->id)
             ->where('status', 'active')
             ->first();
 
         $counselorId = $activeSession?->counselor_id;
         $peerCounselorId = $activeSession?->peer_counselor_id;
-        $adminIds = User::whereHas('roles', function($q) {
+        $adminIds = User::whereHas('roles', function ($q) {
             $q->where('role', 'admin')->where('approved', true);
         })->pluck('id')->all();
 
@@ -1157,9 +1171,9 @@ CRITICAL:
                         $studentName,
                         $wordList
                     ),
-                    '/admin/wellness-chat/' . $student->id,
+                    '/admin/wellness-chat/'.$student->id,
                     [
-                        'tag' => 'ai-crisis-' . $student->id . '-' . time(),
+                        'tag' => 'ai-crisis-'.$student->id.'-'.time(),
                         'urgency' => 'high',
                         'requireInteraction' => true,
                     ]

@@ -11,11 +11,17 @@ use Illuminate\Support\Collection;
 class CounselorSlotService
 {
     private const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5];
+
     private const DEFAULT_START_TIME = '08:00:00';
+
     private const DEFAULT_END_TIME = '16:00:00';
+
     private const DEFAULT_BREAK_START = '13:00:00';
+
     private const DEFAULT_BREAK_END = '14:00:00';
+
     private const DEFAULT_SLOT_DURATION_MINUTES = 30;
+
     private const DEFAULT_MAX_SLOTS_PER_DAY = 6;
 
     public function schedulesFor(int $counselorId): Collection
@@ -92,9 +98,10 @@ class CounselorSlotService
             $dayOfWeek = (int) $cursor->isoWeekday();
             /** @var CounselorSchedule|null $schedule */
             $schedule = $schedules->get($dayOfWeek);
-            if (!$schedule || !$schedule->is_working_day) {
+            if (! $schedule || ! $schedule->is_working_day) {
                 $this->deleteStaleGeneratedSlotsForDate($counselorId, $cursor, []);
                 $cursor->addDay();
+
                 continue;
             }
 
@@ -167,7 +174,7 @@ class CounselorSlotService
             ->where('end_time', $end->toDateTimeString())
             ->first();
 
-        if (!$slot) {
+        if (! $slot) {
             return ['slot' => null, 'reason' => 'unavailable'];
         }
 
@@ -181,7 +188,7 @@ class CounselorSlotService
     public function isOutsideNormalBookingWindow(int $counselorId, Carbon $start, int $durationMinutes = 0): bool
     {
         $schedule = $this->scheduleForDate($counselorId, $start);
-        if (!$schedule || !$schedule->is_working_day) {
+        if (! $schedule || ! $schedule->is_working_day) {
             return true;
         }
 
@@ -205,7 +212,7 @@ class CounselorSlotService
     public function overlapsBreak(int $counselorId, Carbon $start, int $durationMinutes): bool
     {
         $schedule = $this->scheduleForDate($counselorId, $start);
-        if (!$schedule || !$schedule->break_start || !$schedule->break_end) {
+        if (! $schedule || ! $schedule->break_start || ! $schedule->break_end) {
             return false;
         }
 
@@ -218,7 +225,7 @@ class CounselorSlotService
 
     public function releaseSlotForAppointment(Appointment $appointment): void
     {
-        if (!$appointment->counselor_slot_id) {
+        if (! $appointment->counselor_slot_id) {
             return;
         }
 
@@ -261,7 +268,7 @@ class CounselorSlotService
             $slotStart = $cursor->copy();
             $slotEnd = $cursor->copy()->addMinutes($duration);
             $overlapsBreak = $breakStart && $breakEnd && $slotStart->lt($breakEnd) && $slotEnd->gt($breakStart);
-            if (!$overlapsBreak) {
+            if (! $overlapsBreak) {
                 $windows[] = [$slotStart, $slotEnd];
                 if (count($windows) >= self::DEFAULT_MAX_SLOTS_PER_DAY) {
                     break;
@@ -326,6 +333,7 @@ class CounselorSlotService
                 }
 
                 $key = $this->slotKey(Carbon::parse($slot->start_time), Carbon::parse($slot->end_time));
+
                 return isset($allowedByDate[$slotDate][$key]);
             })
             ->values();
@@ -356,6 +364,7 @@ class CounselorSlotService
                 }
                 $appointmentStart = Carbon::parse($appointment->scheduled_at);
                 $appointmentEnd = $appointmentStart->copy()->addMinutes((int) $appointment->duration_minutes);
+
                 return $slotStart->lt($appointmentEnd) && $slotEnd->gt($appointmentStart);
             });
 
@@ -371,7 +380,7 @@ class CounselorSlotService
 
     private function dateTimeFor(Carbon $date, string $time): Carbon
     {
-        return Carbon::parse($date->toDateString() . ' ' . $this->normalizeTime($time, '00:00:00'));
+        return Carbon::parse($date->toDateString().' '.$this->normalizeTime($time, '00:00:00'));
     }
 
     private function normalizeTime(?string $value, string $fallback): string
@@ -381,6 +390,7 @@ class CounselorSlotService
             $hour = max(0, min(23, (int) $matches[1]));
             $minute = max(0, min(59, (int) $matches[2]));
             $second = isset($matches[3]) ? max(0, min(59, (int) $matches[3])) : 0;
+
             return sprintf('%02d:%02d:%02d', $hour, $minute, $second);
         }
 
@@ -412,6 +422,7 @@ class CounselorSlotService
     {
         $normalized = $this->normalizeTime($time, '00:00:00');
         [$hour, $minute] = array_map('intval', explode(':', substr($normalized, 0, 5)));
+
         return ($hour * 60) + $minute;
     }
 }

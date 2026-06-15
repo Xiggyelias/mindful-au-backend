@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 class RepairPasswordHashes extends Command
 {
     protected $signature = 'auth:repair-hashes {--dry-run}';
+
     protected $description = 'Find and re-hash plain text passwords in the database';
 
     public function handle()
@@ -29,24 +30,24 @@ class RepairPasswordHashes extends Command
             } else {
                 // Password is likely plain text
                 $this->warn("✗ {$user->email} - Plain text password detected!");
-                
-                if (!$dryRun) {
+
+                if (! $dryRun) {
                     // Re-hash the password (assume it's plain text)
                     $user->update(['password' => Hash::make($user->password)]);
-                    $this->info("  → Re-hashed successfully");
+                    $this->info('  → Re-hashed successfully');
                 }
                 $repaired++;
             }
         }
 
         $this->line('');
-        $this->info("Summary:");
+        $this->info('Summary:');
         $this->line("  Skipped (already hashed): $skipped");
         $this->line("  Repaired: $repaired");
 
         if ($dryRun && $repaired > 0) {
-            $this->warn("  (Dry run mode - no changes made)");
-            $this->line("  Run without --dry-run to apply fixes");
+            $this->warn('  (Dry run mode - no changes made)');
+            $this->line('  Run without --dry-run to apply fixes');
         }
     }
 }
