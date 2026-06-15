@@ -110,8 +110,22 @@ class VoiceNotesController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if ($message->message_type !== 'voice' || !$message->file_url) {
+        $message->loadMissing('chatFile');
+
+        if ($message->message_type !== 'voice' || (!$message->file_url && !$message->chatFile)) {
             return response()->json(['message' => 'Not a voice note'], 400);
+        }
+
+        if ($message->chatFile) {
+            if (! $message->chatFile->storedFileExists()) {
+                return response()->json(['message' => 'File not found'], 404);
+            }
+
+            return response()->json([
+                'stream_url' => url("/api/messages/{$messageId}/voice-note/stream"),
+                'download_url' => $message->chatFile->signedUrl(true),
+                'message' => ChatMessageData::make($message, true),
+            ]);
         }
 
         $fileUrl = (string) $message->file_url;
@@ -172,35 +186,48 @@ class VoiceNotesController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if ($message->message_type !== 'voice' || !$message->file_url) {
+        $message->loadMissing('chatFile');
+
+        if ($message->message_type !== 'voice' || (!$message->file_url && !$message->chatFile)) {
             return response()->json(['message' => 'Not a voice note'], 400);
         }
 
-        $fileUrl = (string) $message->file_url;
+        $mimeType = null;
 
-        if (str_starts_with($fileUrl, 'private://')) {
-            $path = Str::after($fileUrl, 'private://');
-            if (str_contains($path, '..') || !str_starts_with($path, 'voice-notes/')) {
-                return response()->json(['message' => 'Invalid voice note path'], 400);
+        if ($message->chatFile) {
+            if (! $message->chatFile->storedFileExists()) {
+                return response()->json(['message' => 'File not found'], 404);
             }
-            $disk = Storage::disk('local');
+            $disk = Storage::disk((string) config('chat.attachments.disk', 'local'));
+            $path = (string) $message->chatFile->file_path;
+            $mimeType = (string) $message->chatFile->file_type;
         } else {
-            $urlPath = parse_url($fileUrl, PHP_URL_PATH);
-            if (!is_string($urlPath) || !str_starts_with($urlPath, '/storage/voice-notes/')) {
-                return response()->json(['message' => 'Invalid voice note path'], 400);
+            $fileUrl = (string) $message->file_url;
+
+            if (str_starts_with($fileUrl, 'private://')) {
+                $path = Str::after($fileUrl, 'private://');
+                if (str_contains($path, '..') || !str_starts_with($path, 'voice-notes/')) {
+                    return response()->json(['message' => 'Invalid voice note path'], 400);
+                }
+                $disk = Storage::disk('local');
+            } else {
+                $urlPath = parse_url($fileUrl, PHP_URL_PATH);
+                if (!is_string($urlPath) || !str_starts_with($urlPath, '/storage/voice-notes/')) {
+                    return response()->json(['message' => 'Invalid voice note path'], 400);
+                }
+                $path = ltrim(Str::after($urlPath, '/storage/'), '/');
+                if (str_contains($path, '..')) {
+                    return response()->json(['message' => 'Invalid voice note path'], 400);
+                }
+                $disk = Storage::disk('public');
             }
-            $path = ltrim(Str::after($urlPath, '/storage/'), '/');
-            if (str_contains($path, '..')) {
-                return response()->json(['message' => 'Invalid voice note path'], 400);
-            }
-            $disk = Storage::disk('public');
         }
 
         if (!$disk->exists($path)) {
             return response()->json(['message' => 'File not found'], 404);
         }
 
-        $mimeType = $disk->mimeType($path) ?: 'audio/webm';
+        $mimeType = $mimeType ?: ($disk->mimeType($path) ?: 'audio/webm');
         $size     = $disk->size($path);
 
         return response()->stream(function () use ($disk, $path) {

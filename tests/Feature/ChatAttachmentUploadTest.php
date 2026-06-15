@@ -183,6 +183,41 @@ class ChatAttachmentUploadTest extends TestCase
     }
 
     /** @test */
+    public function voice_attachment_upload_can_be_streamed_through_voice_note_endpoint(): void
+    {
+        $voice = UploadedFile::fake()->create('student-check-in.webm', 128, 'audio/webm');
+
+        $uploadResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'message_type' => 'voice',
+            'file' => $voice,
+        ]);
+
+        $uploadResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice')
+            ->assertJsonPath('has_file', true);
+
+        $messageId = (int) $uploadResponse->json('id');
+
+        $downloadResponse = $this->actingAs($this->counselor)->getJson("/api/messages/{$messageId}/voice-note");
+
+        $downloadResponse
+            ->assertStatus(200)
+            ->assertJsonStructure(['stream_url', 'download_url', 'message'])
+            ->assertJsonPath('message.message_type', 'voice');
+
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$messageId}/voice-note/stream");
+
+        $streamResponse->assertStatus(200);
+        $this->assertStringStartsWith(
+            'audio/webm',
+            (string) $streamResponse->headers->get('Content-Type')
+        );
+        $this->assertSame('inline', (string) $streamResponse->headers->get('Content-Disposition'));
+    }
+
+    /** @test */
     public function assigned_peer_counselor_can_upload_voice_note_but_not_file_attachment(): void
     {
         $peerSession = CounselingSession::create([

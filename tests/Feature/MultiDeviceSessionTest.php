@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PersonalAccessToken;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -81,6 +82,41 @@ class MultiDeviceSessionTest extends TestCase
         $this->tokenRequest('GET', '/api/me', $tokenA, $deviceA)->assertStatus(401);
         $this->tokenRequest('GET', '/api/me', $replacementToken, $deviceA)->assertStatus(200);
         $this->tokenRequest('GET', '/api/me', $tokenB, $deviceB)->assertStatus(200);
+    }
+
+    /** @test */
+    public function mobile_login_tolerates_long_device_metadata_headers(): void
+    {
+        $user = $this->createPortalUser('counselor', 'mobile-login@test.com', 'Mobile Login Counselor');
+
+        $deviceId = str_repeat('mobile-device-', 20);
+        $deviceName = 'Mobile Safari ' . str_repeat('iPhone ', 40);
+        $userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+            . str_repeat('MobileSafari/very-long-agent ', 100);
+
+        $response = $this->withHeaders([
+            'X-Device-ID' => $deviceId,
+            'X-Device-Name' => $deviceName,
+            'User-Agent' => $userAgent,
+        ])->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => 'SecretPass123!',
+        ]);
+
+        $response->assertStatus(200);
+
+        $token = PersonalAccessToken::query()
+            ->where('tokenable_type', $user->getMorphClass())
+            ->where('tokenable_id', $user->id)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($token);
+        $this->assertLessThanOrEqual(191, strlen((string) $token->device_id));
+        $this->assertLessThanOrEqual(120, strlen((string) $token->device_name));
+        $this->assertLessThanOrEqual(2000, strlen((string) $token->user_agent));
+        $this->assertSame(substr($deviceId, 0, 191), (string) $token->device_id);
+        $this->assertSame(substr($deviceName, 0, 120), (string) $token->device_name);
     }
 
     /**

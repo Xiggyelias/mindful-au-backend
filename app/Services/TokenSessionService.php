@@ -6,6 +6,7 @@ use App\Models\PersonalAccessToken;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\NewAccessToken;
@@ -15,6 +16,10 @@ class TokenSessionService
     private const DEVICE_ID_HEADER = 'X-Device-ID';
     private const DEVICE_NAME_HEADER = 'X-Device-Name';
     private const MIN_ACTIVITY_WRITE_GAP_SECONDS = 30;
+    private const MAX_DEVICE_ID_LENGTH = 191;
+    private const MAX_DEVICE_NAME_LENGTH = 120;
+    private const MAX_IP_ADDRESS_LENGTH = 45;
+    private const MAX_USER_AGENT_LENGTH = 2000;
 
     public function issueToken(Request $request, User $user, string $tokenName = 'auth_token'): NewAccessToken
     {
@@ -158,8 +163,8 @@ class TokenSessionService
         return [
             'device_id' => $this->resolveDeviceId($request),
             'device_name' => $this->resolveDeviceName($request),
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
+            'ip_address' => $this->resolveIpAddress($request),
+            'user_agent' => $this->limitNullableString($request->userAgent(), self::MAX_USER_AGENT_LENGTH),
             'last_activity_at' => now(),
             'two_factor_passed_at' => null,
         ];
@@ -167,7 +172,7 @@ class TokenSessionService
 
     private function resolveDeviceId(Request $request): string
     {
-        $headerDeviceId = Str::of((string) $request->header(self::DEVICE_ID_HEADER, ''))->trim()->limit(191, '');
+        $headerDeviceId = Str::of((string) $request->header(self::DEVICE_ID_HEADER, ''))->trim()->limit(self::MAX_DEVICE_ID_LENGTH, '');
         if ($headerDeviceId->isNotEmpty()) {
             return (string) $headerDeviceId;
         }
@@ -182,15 +187,44 @@ class TokenSessionService
     {
         $headerDeviceName = trim((string) $request->header(self::DEVICE_NAME_HEADER, ''));
         if ($headerDeviceName !== '') {
-            return Str::limit($headerDeviceName, 120, '');
+            return Str::limit($headerDeviceName, self::MAX_DEVICE_NAME_LENGTH, '');
         }
 
         $userAgent = trim((string) $request->userAgent());
         if ($userAgent !== '') {
-            return Str::limit($userAgent, 120, '');
+            return Str::limit($userAgent, self::MAX_DEVICE_NAME_LENGTH, '');
         }
 
         return 'Browser session';
+    }
+
+    private function resolveIpAddress(Request $request): ?string
+    {
+        $ipAddress = $this->limitNullableString($request->ip(), self::MAX_IP_ADDRESS_LENGTH);
+        if ($ipAddress === null) {
+            return null;
+        }
+
+        if (filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+            return $ipAddress;
+        }
+
+        $firstForwardedIp = trim(strtok($ipAddress, ',') ?: '');
+        if ($firstForwardedIp !== '' && filter_var($firstForwardedIp, FILTER_VALIDATE_IP)) {
+            return Str::limit($firstForwardedIp, self::MAX_IP_ADDRESS_LENGTH, '');
+        }
+
+        return $ipAddress;
+    }
+
+    private function limitNullableString(mixed $value, int $maxLength): ?string
+    {
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        return Str::limit($normalized, $maxLength, '');
     }
 
     private function deleteSameDeviceTokens(User $user, string $deviceId): void
@@ -224,7 +258,14 @@ class TokenSessionService
             return;
         }
 
-        $token->forceFill($updates)->save();
+        try {
+            $token->forceFill($updates)->save();
+        } catch (\Throwable $e) {
+            Log::warning('Unable to persist auth token device metadata.', [
+                'token_id' => $token->getKey(),
+                'error' => $e::class,
+            ]);
+        }
     }
 
     /**
