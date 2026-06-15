@@ -6,6 +6,7 @@ use App\Events\NotificationCreated;
 use App\Models\Notification;
 use App\Models\PanicLog;
 use App\Models\User;
+use App\Support\AnalyticsCache;
 use App\Support\SystemSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -68,6 +69,7 @@ class PanicLogController extends Controller
             'location' => $combinedLocation,
             'resolved' => false,
         ]);
+        AnalyticsCache::clear();
 
         $recipientsNotified = 0;
         $recipientsFailed = 0;
@@ -219,6 +221,7 @@ class PanicLogController extends Controller
         } else {
             $panicLog->update($validated);
         }
+        AnalyticsCache::clear();
 
         return response()->json($panicLog->load($this->panicLogRelations()));
     }

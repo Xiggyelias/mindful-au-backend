@@ -12,6 +12,7 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Services\CounselorSlotService;
 use App\Services\WebPushService;
+use App\Support\AnalyticsCache;
 use App\Support\PaginationPayload;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Builder;
@@ -987,8 +988,7 @@ class AppointmentController extends Controller
 
     private function flushDashboardCaches(): void
     {
-        Cache::forget('analytics:admin:overview:v1');
-        Cache::forget('analytics:dashboard:v2');
+        AnalyticsCache::clear();
     }
 
     private function applyAnonymousAppointmentProjection(Appointment $appointment, User $viewer): void

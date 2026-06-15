@@ -20,6 +20,9 @@ class AdminDashboardOverviewTest extends TestCase
     #[Test]
     public function admin_can_load_a_single_dashboard_snapshot(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-06-15 09:00:00'));
+        $this->beforeApplicationDestroyed(fn () => Carbon::setTestNow());
+
         $admin = $this->createPortalUser('admin', 'admin-overview@test.com', 'Admin Overview');
         $student = $this->createPortalUser('student', 'student-overview@test.com', 'Student Overview');
         $counselor = $this->createPortalUser(

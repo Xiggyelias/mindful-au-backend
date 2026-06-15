@@ -10,9 +10,9 @@ use App\Models\PanicLog;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Services\MentalHealthMlService;
+use App\Support\AnalyticsCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class AnalyticsController extends Controller
@@ -29,8 +29,7 @@ class AnalyticsController extends Controller
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
-        $cacheKey = 'analytics:dashboard:v3';
-        $stats = Cache::remember($cacheKey, now()->addSeconds(20), function () {
+        $stats = AnalyticsCache::remember(AnalyticsCache::DASHBOARD_KEY, 20, function () {
             return [
                 'overview' => $this->getOverviewStats(),
                 'users' => $this->getUserStats(),
@@ -55,8 +54,7 @@ class AnalyticsController extends Controller
             return response()->json(['message' => 'Admin access required'], 403);
         }
 
-        $cacheKey = 'analytics:admin:overview:v2';
-        $stats = Cache::remember($cacheKey, now()->addSeconds(10), function () {
+        $stats = AnalyticsCache::remember(AnalyticsCache::ADMIN_OVERVIEW_KEY, 10, function () {
             return [
                 'overview' => $this->getOverviewStats(),
                 'sessions' => $this->getDashboardSessionOverview(),

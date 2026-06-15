@@ -8,10 +8,10 @@ use App\Models\CounselingCall;
 use App\Models\CounselingSession;
 use App\Models\Notification;
 use App\Services\WebPushService;
+use App\Support\AnalyticsCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -565,7 +565,6 @@ class VideoCallController extends Controller
 
     private function flushDashboardCaches(): void
     {
-        Cache::forget('analytics:admin:overview:v1');
-        Cache::forget('analytics:dashboard:v2');
+        AnalyticsCache::clear();
     }
 }

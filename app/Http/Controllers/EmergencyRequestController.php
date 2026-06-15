@@ -10,6 +10,7 @@ use App\Models\EmergencyRequest;
 use App\Models\Notification;
 use App\Models\User;
 use App\Services\CounselorSlotService;
+use App\Support\AnalyticsCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -70,6 +71,7 @@ class EmergencyRequestController extends Controller
             'location' => $validated['location'] ?? null,
             'reason' => $validated['reason'] ?? null,
         ]);
+        AnalyticsCache::clear();
 
         $recipientsNotified = $this->notifyEmergencyQueue($emergencyRequest);
 
@@ -180,6 +182,7 @@ class EmergencyRequestController extends Controller
         }
 
         $emergencyRequest->update($validated);
+        AnalyticsCache::clear();
 
         if ($shouldPreparePrioritySlot && $slot && $slotStart) {
             $counselorId = (int) ($validated['assigned_to'] ?? $emergencyRequest->assigned_to);

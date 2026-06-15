@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AiDiagnostic;
 use App\Models\CounselingSession;
 use App\Models\User;
+use App\Support\AnalyticsCache;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -44,7 +45,7 @@ class AIDiagnosticService
             $localAnalysis
         );
 
-        return AiDiagnostic::create([
+        $diagnostic = AiDiagnostic::create([
             'student_id' => $session->student_id,
             'session_id' => $session->id,
             'stress_level' => $analysis['stress_level'],
@@ -55,6 +56,10 @@ class AIDiagnosticService
             'insights' => $analysis['insights'],
             'recommendations' => $analysis['recommendations'],
         ]);
+
+        AnalyticsCache::clear();
+
+        return $diagnostic;
     }
 
     public function analyzeCounselorWellness(User $counselor, array $recentSessions): array
