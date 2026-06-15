@@ -11,6 +11,7 @@ use App\Models\LoginLog;
 use App\Models\Notification;
 use App\Models\UserTwoFactorMethod;
 use App\Services\TokenSessionService;
+use App\Support\SafeEmail;
 use App\Support\SystemSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -30,19 +31,15 @@ class AuthController extends Controller
 
     public function register(Request $request): JsonResponse
     {
-        $request->merge([
-            'email' => $this->normalizeEmail($request->input('email')),
-        ]);
-
         $validated = $request->validate([
-            'email' => 'required|email:rfc|max:255|unique:users,email',
+            'email' => SafeEmail::required([SafeEmail::unique('users')]),
             'password' => 'required|string|min:8|max:128',
             'full_name' => 'required|string|max:255',
             'id_number' => 'nullable|string|max:255|required_if:role,counselor,peer_counselor',
             'role' => 'required|in:student,counselor,peer_counselor',
         ]);
 
-        $normalizedEmail = $validated['email'];
+        $normalizedEmail = $this->normalizeEmail($validated['email']);
 
         $emailTaken = User::query()
             ->where('email', $normalizedEmail)
@@ -159,7 +156,7 @@ class AuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'email' => 'required|email:rfc|max:255',
+                'email' => SafeEmail::required(),
                 'password' => 'required|string|min:1|max:128',
             ]);
         } catch (ValidationException $e) {
@@ -459,7 +456,7 @@ class AuthController extends Controller
 
             LoginLog::query()->create([
                 'user_id' => $user?->id,
-                'email' => $email ? Str::lower(trim($email)) : null,
+                'email' => $email ? SafeEmail::normalize($email) : null,
                 'role' => $user ? $this->resolvePrimaryRole($user) : null,
                 'auth_method' => $method,
                 'success' => $success,
@@ -502,7 +499,7 @@ class AuthController extends Controller
 
     private function normalizeEmail(?string $email): string
     {
-        return Str::lower(trim((string) $email));
+        return SafeEmail::normalize($email);
     }
 
     private function findUserForLogin(string $normalizedEmail): ?User

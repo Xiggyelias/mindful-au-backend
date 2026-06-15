@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Appointment;
 use App\Models\User;
+use App\Support\SafeEmail;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
@@ -22,7 +23,7 @@ class ProfileController extends Controller
         $validated = $request->validate([
             'full_name' => 'sometimes|string|max:255',
             'id_number' => 'sometimes|nullable|string|max:255',
-            'email' => 'sometimes|email:rfc|max:255',
+            'email' => SafeEmail::sometimes(),
             'avatar_url' => 'sometimes|nullable|url|max:255',
             'anonymous_mode' => 'sometimes|boolean',
             'peer_available' => 'sometimes|boolean',
@@ -59,7 +60,7 @@ class ProfileController extends Controller
         }
 
         if (array_key_exists('email', $validated)) {
-            $normalizedEmail = Str::lower(trim((string) $validated['email']));
+            $normalizedEmail = SafeEmail::normalize($validated['email']);
 
             $emailInUse = User::query()
                 ->whereRaw('LOWER(email) = ?', [$normalizedEmail])

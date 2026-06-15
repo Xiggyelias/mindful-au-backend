@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\InstitutionAccount;
+use App\Support\SafeEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -31,7 +32,7 @@ class InstitutionAccountController extends Controller
         }
 
         $validated = $request->validate([
-            'email' => ['required', 'email:rfc', 'max:255', 'unique:institution_accounts,email'],
+            'email' => SafeEmail::required([SafeEmail::unique('institution_accounts')]),
             'role' => ['required', Rule::in(['student', 'staff', 'counselor', 'peer_counselor', 'admin'])],
             'approved' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
@@ -40,7 +41,7 @@ class InstitutionAccountController extends Controller
         ]);
 
         $account = InstitutionAccount::query()->create([
-            'email' => strtolower(trim((string) $validated['email'])),
+            'email' => SafeEmail::normalize($validated['email']),
             'role' => $validated['role'],
             'approved' => (bool) ($validated['approved'] ?? true),
             'is_active' => (bool) ($validated['is_active'] ?? true),
@@ -61,7 +62,7 @@ class InstitutionAccountController extends Controller
         $account = InstitutionAccount::query()->findOrFail($id);
 
         $validated = $request->validate([
-            'email' => ['sometimes', 'email:rfc', 'max:255', Rule::unique('institution_accounts', 'email')->ignore($account->id)],
+            'email' => SafeEmail::sometimes([Rule::unique('institution_accounts', 'email')->ignore($account->id)]),
             'role' => ['sometimes', Rule::in(['student', 'staff', 'counselor', 'peer_counselor', 'admin'])],
             'approved' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
@@ -70,7 +71,7 @@ class InstitutionAccountController extends Controller
         ]);
 
         if (array_key_exists('email', $validated)) {
-            $validated['email'] = strtolower(trim((string) $validated['email']));
+            $validated['email'] = SafeEmail::normalize($validated['email']);
         }
 
         $account->update($validated);

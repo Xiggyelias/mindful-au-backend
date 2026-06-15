@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Validation\ValidationException;
+use App\Support\SafeEmail;
 use App\Support\SystemSettings;
 
 class SystemSettingController extends Controller
@@ -43,8 +44,8 @@ class SystemSettingController extends Controller
             'settings.anonymous_mode_default' => 'sometimes|boolean',
             'settings.ai_auto_analysis' => 'sometimes|boolean',
             'settings.auto_backup' => 'sometimes|boolean',
-            'settings.admin_email' => 'sometimes|nullable|email:rfc|max:255',
-            'settings.support_email' => 'sometimes|nullable|email:rfc|max:255',
+            'settings.admin_email' => SafeEmail::nullable(),
+            'settings.support_email' => SafeEmail::nullable(),
             'settings.crisis_hotline' => 'sometimes|nullable|string|max:255',
         ]);
 

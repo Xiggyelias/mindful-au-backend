@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Profile;
 use App\Models\UserRole;
 use App\Services\TokenSessionService;
+use App\Support\SafeEmail;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -96,8 +97,8 @@ class OAuthController extends Controller
 
             $googleUser = Socialite::driver('google')->user();
 
-            $email = Str::lower(trim((string) ($googleUser->getEmail() ?? '')));
-            if ($email === '') {
+            $email = SafeEmail::normalize((string) ($googleUser->getEmail() ?? ''));
+            if ($email === '' || SafeEmail::hasControlCharacters((string) ($googleUser->getEmail() ?? ''))) {
                 $this->recordGoogleLogin($request, null, null, false, 'missing_email');
                 return $this->redirectToFrontendWithError('Google account did not provide an email address.');
             }
@@ -679,7 +680,7 @@ class OAuthController extends Controller
 
             LoginLog::query()->create([
                 'user_id' => $user?->id,
-                'email' => $email,
+                'email' => $email ? SafeEmail::normalize($email) : null,
                 'role' => $user ? $this->resolveKnownRole($user) : null,
                 'auth_method' => 'google',
                 'success' => $success,
