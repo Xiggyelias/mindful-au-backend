@@ -19,7 +19,7 @@ COPY . .
 RUN composer dump-autoload --optimize --no-scripts
 
 # ----------- App Stage -----------
-FROM php:8.2-apache
+FROM php:8.2-apache-bookworm
 
 WORKDIR /app
 
@@ -31,7 +31,9 @@ RUN echo "upload_max_filesize = 20M" >> /usr/local/etc/php/conf.d/uploads.ini &&
     echo "post_max_size = 40M" >> /usr/local/etc/php/conf.d/uploads.ini
 
 # System dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get install -y --no-install-recommends \
     zip \
     unzip \
     curl \
@@ -55,7 +57,7 @@ RUN chown -R www-data:www-data storage bootstrap/cache \
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
 
 # Apache config for Laravel public/
-ENV APACHE_DOCUMENT_ROOT /app/public
+ENV APACHE_DOCUMENT_ROOT=/app/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 COPY docker/apache/laravel.conf /etc/apache2/conf-available/laravel.conf
