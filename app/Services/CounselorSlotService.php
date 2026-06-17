@@ -20,7 +20,9 @@ class CounselorSlotService
 
     private const DEFAULT_BREAK_END = '14:00:00';
 
-    private const DEFAULT_SLOT_DURATION_MINUTES = 30;
+    private const DEFAULT_SLOT_DURATION_MINUTES = 60;
+
+    private const APPOINTMENT_DURATION_MINUTES = 60;
 
     private const DEFAULT_MAX_SLOTS_PER_DAY = 6;
 
@@ -256,12 +258,15 @@ class CounselorSlotService
      */
     private function slotWindowsForDate(CounselorSchedule $schedule, Carbon $date): array
     {
-        $duration = max(30, min(360, (int) $schedule->slot_duration_minutes));
+        $interval = max(30, min(360, (int) $schedule->slot_duration_minutes));
+        $duration = self::APPOINTMENT_DURATION_MINUTES;
         $dayStart = $this->dateTimeFor($date, (string) $schedule->start_time);
         $dayEnd = $this->dateTimeFor($date, (string) $schedule->end_time);
         $breakStart = $schedule->break_start ? $this->dateTimeFor($date, (string) $schedule->break_start) : null;
         $breakEnd = $schedule->break_end ? $this->dateTimeFor($date, (string) $schedule->break_end) : null;
-        $windows = [];
+
+        // First, collect ALL possible slot windows across the full working day
+        $allWindows = [];
         $cursor = $dayStart->copy();
 
         while ($cursor->copy()->addMinutes($duration)->lte($dayEnd)) {
@@ -269,12 +274,23 @@ class CounselorSlotService
             $slotEnd = $cursor->copy()->addMinutes($duration);
             $overlapsBreak = $breakStart && $breakEnd && $slotStart->lt($breakEnd) && $slotEnd->gt($breakStart);
             if (! $overlapsBreak) {
-                $windows[] = [$slotStart, $slotEnd];
-                if (count($windows) >= self::DEFAULT_MAX_SLOTS_PER_DAY) {
-                    break;
-                }
+                $allWindows[] = [$slotStart, $slotEnd];
             }
-            $cursor->addMinutes($duration);
+            $cursor->addMinutes($interval);
+        }
+
+        // If within the limit, return all windows
+        if (count($allWindows) <= self::DEFAULT_MAX_SLOTS_PER_DAY) {
+            return $allWindows;
+        }
+
+        // Evenly distribute the allowed number of slots across the full day
+        $total = count($allWindows);
+        $max = self::DEFAULT_MAX_SLOTS_PER_DAY;
+        $windows = [];
+        for ($i = 0; $i < $max; $i++) {
+            $index = (int) round($i * ($total - 1) / ($max - 1));
+            $windows[] = $allWindows[$index];
         }
 
         return $windows;

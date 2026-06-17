@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Events\NotificationCreated;
 use App\Models\CounselingSession;
-use App\Models\CounselorSchedule;
 use App\Models\CounselorSlot;
 use App\Models\EmergencyRequest;
 use App\Models\Notification;
@@ -132,16 +131,7 @@ class EmergencyRequestController extends Controller
             }
             $slotStart->second(0);
 
-            $dayOfWeek = (int) $slotStart->isoWeekday();
-            $schedule = CounselorSchedule::query()
-                ->where('counselor_id', $counselorId)
-                ->where('day_of_week', $dayOfWeek)
-                ->first();
-
-            $duration = 60; // Default to 60 minutes
-            if ($schedule) {
-                $duration = max(30, (int) $schedule->slot_duration_minutes);
-            }
+            $duration = 60;
 
             $slot = null;
             $endTime = null;

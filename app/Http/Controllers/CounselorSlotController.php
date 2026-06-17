@@ -61,7 +61,8 @@ class CounselorSlotController extends Controller
             'meta' => [
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
-                'slot_duration_minutes' => 30,
+                'slot_duration_minutes' => 60,
+                'appointment_duration_minutes' => 60,
                 'max_slots_per_day' => 6,
                 'working_hours' => [
                     'start' => '08:00',

@@ -40,12 +40,14 @@ class CounselorSlotManagementTest extends TestCase
 
         $slot = $slots->first(fn (array $slot) => $slot['status'] === 'available');
         $this->assertNotNull($slot);
+        $slotDuration = (int) Carbon::parse($slot['start_time'])->diffInMinutes(Carbon::parse($slot['end_time']));
+        $this->assertSame(60, $slotDuration);
 
         $booking = $this->actingAs($student)->postJson('/api/appointments', [
             'counselor_id' => $counselor->id,
             'counselor_slot_id' => $slot['id'],
             'scheduled_at' => $slot['start_time'],
-            'duration_minutes' => 30,
+            'duration_minutes' => $slotDuration,
             'notes' => 'Online',
         ]);
 
@@ -58,7 +60,7 @@ class CounselorSlotManagementTest extends TestCase
             'counselor_id' => $counselor->id,
             'counselor_slot_id' => $slot['id'],
             'scheduled_at' => $slot['start_time'],
-            'duration_minutes' => 30,
+            'duration_minutes' => $slotDuration,
             'notes' => 'Online',
         ]);
 
@@ -90,9 +92,34 @@ class CounselorSlotManagementTest extends TestCase
         $slotsResponse->assertOk();
         $slots = collect($slotsResponse->json('data'));
 
-        $this->assertSame(
-            ['10:00', '10:30', '11:00', '11:30', '12:00', '12:30'],
-            $slots->map(fn (array $slot) => Carbon::parse($slot['start_time'])->format('H:i'))->values()->all()
+        $this->assertCount(6, $slots);
+        $this->assertTrue(
+            $slots->contains(
+                fn (array $slot) => Carbon::parse($slot['start_time'])->format('H:i') === '11:30'
+                    && Carbon::parse($slot['end_time'])->format('H:i') === '12:30'
+            ),
+            'A 30-minute interval should allow half-hour starts for 60-minute appointments.'
+        );
+        $this->assertTrue(
+            $slots->every(
+                fn (array $slot) => (int) Carbon::parse($slot['start_time'])->diffInMinutes(Carbon::parse($slot['end_time'])) === 60
+            ),
+            'Normal bookable slots should be 60 minutes long.'
+        );
+        $this->assertFalse(
+            $slots->contains(function (array $slot) {
+                $slotStart = Carbon::parse($slot['start_time']);
+                $slotEnd = Carbon::parse($slot['end_time']);
+                $breakStart = $slotStart->copy()->setTime(13, 0);
+                $breakEnd = $slotStart->copy()->setTime(14, 0);
+
+                return $slotStart->lt($breakEnd) && $slotEnd->gt($breakStart);
+            }),
+            'Generated slots must not overlap lunch.'
+        );
+        $this->assertFalse(
+            $slots->contains(fn (array $slot) => Carbon::parse($slot['end_time'])->format('H:i') > '16:00'),
+            'Slots must end by the 16:00 school close.'
         );
         $this->assertSame('16:00:00', (string) CounselorSchedule::query()->where('counselor_id', $counselor->id)->where('day_of_week', Carbon::MONDAY)->value('end_time'));
     }
