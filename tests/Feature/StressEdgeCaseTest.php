@@ -11,12 +11,15 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Carbon;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class StressEdgeCaseTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const SCHEDULE_TIMEZONE = 'Africa/Harare';
 
     #[Test]
     public function rapid_overlapping_booking_attempts_do_not_create_duplicates(): void
@@ -28,7 +31,7 @@ class StressEdgeCaseTest extends TestCase
 
         $counselor = $this->createPortalUser('counselor', 'counselor-stress@test.com', 'Counselor Stress');
         $student = $this->createPortalUser('student', 'student-stress@test.com', 'Student Stress');
-        $slot = now()->addDays(2)->setHour(11)->setMinute(0)->toIso8601String();
+        $slot = $this->nextWorkingDayAt(11)->toIso8601String();
 
         $first = $this->actingAs($student)->postJson('/api/appointments', [
             'counselor_id' => $counselor->id,
@@ -59,7 +62,7 @@ class StressEdgeCaseTest extends TestCase
         $studentA = $this->createPortalUser('student', 'student-window-a@test.com', 'Student Window A');
         $studentB = $this->createPortalUser('student', 'student-window-b@test.com', 'Student Window B');
 
-        $baseSlot = now()->addDays(3)->setHour(10)->setMinute(0)->setSecond(0);
+        $baseSlot = $this->nextWorkingDayAt(10);
 
         $this->actingAs($studentA)->postJson('/api/appointments', [
             'counselor_id' => $counselor->id,
@@ -90,7 +93,7 @@ class StressEdgeCaseTest extends TestCase
 
         $counselor = $this->createPortalUser('counselor', 'counselor-lock@test.com', 'Counselor Lock');
         $student = $this->createPortalUser('student', 'student-lock@test.com', 'Student Lock');
-        $slot = now()->addDays(3)->setHour(13)->setMinute(0)->toIso8601String();
+        $slot = $this->nextWorkingDayAt(11)->toIso8601String();
 
         $lock = Cache::lock("appointments:counselor:{$counselor->id}", 15);
         $this->assertTrue($lock->get());
@@ -194,5 +197,13 @@ class StressEdgeCaseTest extends TestCase
         ]);
 
         return $user;
+    }
+
+    private function nextWorkingDayAt(int $hour, int $minute = 0): Carbon
+    {
+        return Carbon::now(self::SCHEDULE_TIMEZONE)
+            ->next(Carbon::MONDAY)
+            ->setTime($hour, $minute)
+            ->utc();
     }
 }

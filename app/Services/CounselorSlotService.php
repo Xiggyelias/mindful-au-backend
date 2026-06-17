@@ -93,8 +93,8 @@ class CounselorSlotService
     {
         $schedules = $this->schedulesFor($counselorId)->keyBy('day_of_week');
         $createdOrUpdated = collect();
-        $cursor = $from->copy()->startOfDay();
-        $end = $to->copy()->endOfDay();
+        $cursor = $this->localScheduleDate($from)->startOfDay();
+        $end = $this->localScheduleDate($to)->endOfDay();
 
         while ($cursor->lte($end)) {
             $dayOfWeek = (int) $cursor->isoWeekday();
@@ -141,11 +141,14 @@ class CounselorSlotService
             $this->generateSlotsForRange($counselorId, $from, $to);
         }
 
+        $rangeStart = $this->localScheduleDate($from)->startOfDay()->utc();
+        $rangeEnd = $this->localScheduleDate($to)->endOfDay()->utc();
+
         $slots = CounselorSlot::query()
             ->with(['appointment:id,status'])
             ->where('counselor_id', $counselorId)
-            ->where('start_time', '>=', $from->copy()->startOfDay()->toDateTimeString())
-            ->where('start_time', '<=', $to->copy()->endOfDay()->toDateTimeString())
+            ->where('start_time', '>=', $rangeStart->toDateTimeString())
+            ->where('start_time', '<=', $rangeEnd->toDateTimeString())
             ->orderBy('start_time')
             ->get();
 
@@ -194,21 +197,23 @@ class CounselorSlotService
             return true;
         }
 
-        $minute = $this->minutesSinceMidnight($start->format('H:i:s'));
+        $localStart = $this->localScheduleDate($start);
+        $minute = $this->minutesSinceMidnight($localStart->format('H:i:s'));
         $startMinute = $this->minutesSinceMidnight((string) $schedule->start_time);
         $endMinute = $this->minutesSinceMidnight((string) $schedule->end_time);
         if ($durationMinutes > 0) {
             $end = $start->copy()->addMinutes(max(30, min(360, $durationMinutes)));
-            if ($end->toDateString() !== $start->toDateString()) {
+            $localEnd = $this->localScheduleDate($end);
+            if ($localEnd->toDateString() !== $localStart->toDateString()) {
                 return true;
             }
 
             return $minute < $startMinute
-                || $this->minutesSinceMidnight($end->format('H:i:s')) > $endMinute;
+                || $this->minutesSinceMidnight($localEnd->format('H:i:s')) > $endMinute;
         }
 
-        return $minute < $this->minutesSinceMidnight((string) $schedule->start_time)
-            || $minute >= $this->minutesSinceMidnight((string) $schedule->end_time);
+        return $minute < $startMinute
+            || $minute >= $endMinute;
     }
 
     public function overlapsBreak(int $counselorId, Carbon $start, int $durationMinutes): bool
@@ -250,7 +255,7 @@ class CounselorSlotService
 
     private function scheduleForDate(int $counselorId, Carbon $date): ?CounselorSchedule
     {
-        return $this->schedulesFor($counselorId)->firstWhere('day_of_week', (int) $date->isoWeekday());
+        return $this->schedulesFor($counselorId)->firstWhere('day_of_week', (int) $this->localScheduleDate($date)->isoWeekday());
     }
 
     /**
@@ -396,7 +401,20 @@ class CounselorSlotService
 
     private function dateTimeFor(Carbon $date, string $time): Carbon
     {
-        return Carbon::parse($date->toDateString().' '.$this->normalizeTime($time, '00:00:00'));
+        return Carbon::parse(
+            $this->localScheduleDate($date)->toDateString().' '.$this->normalizeTime($time, '00:00:00'),
+            $this->scheduleTimezone()
+        )->utc();
+    }
+
+    private function localScheduleDate(Carbon $date): Carbon
+    {
+        return $date->copy()->timezone($this->scheduleTimezone());
+    }
+
+    private function scheduleTimezone(): string
+    {
+        return (string) config('app.schedule_timezone', 'Africa/Harare');
     }
 
     private function normalizeTime(?string $value, string $fallback): string

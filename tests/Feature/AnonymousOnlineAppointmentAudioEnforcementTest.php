@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Appointment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -12,6 +13,8 @@ use Tests\TestCase;
 class AnonymousOnlineAppointmentAudioEnforcementTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const SCHEDULE_TIMEZONE = 'Africa/Harare';
 
     #[Test]
     public function student_cannot_request_video_call_type_for_anonymous_online_booking(): void
@@ -21,7 +24,11 @@ class AnonymousOnlineAppointmentAudioEnforcementTest extends TestCase
 
         $this->actingAs($student)->postJson('/api/appointments', [
             'counselor_id' => $counselor->id,
-            'scheduled_at' => now()->addDay()->setHour(15)->setMinute(0)->toIso8601String(),
+            'scheduled_at' => Carbon::now(self::SCHEDULE_TIMEZONE)
+                ->next(Carbon::MONDAY)
+                ->setTime(15, 0)
+                ->utc()
+                ->toIso8601String(),
             'duration_minutes' => 60,
             'notes' => 'Online',
             'is_anonymous' => true,

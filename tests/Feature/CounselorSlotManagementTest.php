@@ -15,6 +15,8 @@ class CounselorSlotManagementTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const SCHEDULE_TIMEZONE = 'Africa/Harare';
+
     public function test_student_books_generated_slot_and_double_booking_is_blocked(): void
     {
         $student = $this->createUserWithRole('student');
@@ -30,11 +32,11 @@ class CounselorSlotManagementTest extends TestCase
         $slots = collect($slotsResponse->json('data'));
         $this->assertCount(6, $slots);
         $this->assertFalse(
-            $slots->contains(fn (array $slot) => Carbon::parse($slot['start_time'])->format('H:i') >= '16:00'),
+            $slots->contains(fn (array $slot) => $this->localSlotTime($slot['start_time']) >= '16:00'),
             'Slots must not start at or after the 16:00 school close.'
         );
         $this->assertFalse(
-            $slots->contains(fn (array $slot) => Carbon::parse($slot['start_time'])->format('H:i') === '13:00'),
+            $slots->contains(fn (array $slot) => $this->localSlotTime($slot['start_time']) === '13:00'),
             'Lunch break slots must not be generated.'
         );
 
@@ -95,8 +97,8 @@ class CounselorSlotManagementTest extends TestCase
         $this->assertCount(6, $slots);
         $this->assertTrue(
             $slots->contains(
-                fn (array $slot) => Carbon::parse($slot['start_time'])->format('H:i') === '11:30'
-                    && Carbon::parse($slot['end_time'])->format('H:i') === '12:30'
+                fn (array $slot) => $this->localSlotTime($slot['start_time']) === '11:30'
+                    && $this->localSlotTime($slot['end_time']) === '12:30'
             ),
             'A 30-minute interval should allow half-hour starts for 60-minute appointments.'
         );
@@ -108,8 +110,8 @@ class CounselorSlotManagementTest extends TestCase
         );
         $this->assertFalse(
             $slots->contains(function (array $slot) {
-                $slotStart = Carbon::parse($slot['start_time']);
-                $slotEnd = Carbon::parse($slot['end_time']);
+                $slotStart = Carbon::parse($slot['start_time'])->timezone(self::SCHEDULE_TIMEZONE);
+                $slotEnd = Carbon::parse($slot['end_time'])->timezone(self::SCHEDULE_TIMEZONE);
                 $breakStart = $slotStart->copy()->setTime(13, 0);
                 $breakEnd = $slotStart->copy()->setTime(14, 0);
 
@@ -118,7 +120,7 @@ class CounselorSlotManagementTest extends TestCase
             'Generated slots must not overlap lunch.'
         );
         $this->assertFalse(
-            $slots->contains(fn (array $slot) => Carbon::parse($slot['end_time'])->format('H:i') > '16:00'),
+            $slots->contains(fn (array $slot) => $this->localSlotTime($slot['end_time']) > '16:00'),
             'Slots must end by the 16:00 school close.'
         );
         $this->assertSame('16:00:00', (string) CounselorSchedule::query()->where('counselor_id', $counselor->id)->where('day_of_week', Carbon::MONDAY)->value('end_time'));
@@ -257,5 +259,10 @@ class CounselorSlotManagementTest extends TestCase
         ]);
 
         return $user;
+    }
+
+    private function localSlotTime(string $value): string
+    {
+        return Carbon::parse($value)->timezone(self::SCHEDULE_TIMEZONE)->format('H:i');
     }
 }

@@ -33,12 +33,13 @@ class CounselorSlotController extends Controller
             return response()->json(['message' => 'Selected counselor is not available'], 422);
         }
 
+        $scheduleTimezone = (string) config('app.schedule_timezone', 'Africa/Harare');
         $from = ! empty($validated['from'])
-            ? Carbon::parse($validated['from'])->startOfDay()
-            : now()->startOfDay();
+            ? Carbon::parse($validated['from'], $scheduleTimezone)->startOfDay()
+            : now($scheduleTimezone)->startOfDay();
         $to = ! empty($validated['to'])
-            ? Carbon::parse($validated['to'])->endOfDay()
-            : now()->addDays(7)->endOfDay();
+            ? Carbon::parse($validated['to'], $scheduleTimezone)->endOfDay()
+            : now($scheduleTimezone)->addDays(7)->endOfDay();
 
         if ($to->lt($from)) {
             return response()->json(['message' => 'The to date must be after from date.'], 422);
@@ -139,9 +140,10 @@ class CounselorSlotController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        $scheduleTimezone = (string) config('app.schedule_timezone', 'Africa/Harare');
         $weekStart = ! empty($validated['week_start'])
-            ? Carbon::parse($validated['week_start'])->startOfWeek()
-            : now()->startOfWeek();
+            ? Carbon::parse($validated['week_start'], $scheduleTimezone)->startOfWeek()
+            : now($scheduleTimezone)->startOfWeek();
         $weeks = (int) ($validated['weeks'] ?? 1);
         $to = $weekStart->copy()->addWeeks($weeks)->subDay()->endOfDay();
         $slots = $this->slotService->generateSlotsForRange($counselorId, $weekStart, $to);

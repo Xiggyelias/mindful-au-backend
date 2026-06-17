@@ -68,6 +68,7 @@ return [
     'url' => env('APP_URL', 'http://localhost'),
     'frontend_url' => env('FRONTEND_URL', env('APP_FRONTEND_URL', '')),
     'timezone' => env('APP_TIMEZONE', 'UTC'),
+    'schedule_timezone' => env('APP_SCHEDULE_TIMEZONE', 'Africa/Harare'),
     'locale' => env('APP_LOCALE', 'en'),
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
     'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
