@@ -12,6 +12,7 @@ class DatabaseSeeder extends Seeder
             TestUserSeeder::class,
             DiagnosticQuestionnaireSeeder::class,
             TipSeeder::class,
+            ProjectSeeder::class,
         ]);
     }
 }

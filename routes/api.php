@@ -30,6 +30,7 @@ use App\Http\Controllers\OpenRouterChatController;
 use App\Http\Controllers\PanicLogController;
 use App\Http\Controllers\PeerSupportController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ReferralController;
 use App\Http\Controllers\ReportExportController;
@@ -80,6 +81,9 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/wellness/tips/favorites', [TipController::class, 'favorites']);
     Route::post('/wellness/tips/{tip}/favorite', [TipController::class, 'favorite']);
     Route::delete('/wellness/tips/{tip}/favorite', [TipController::class, 'unfavorite']);
+
+    // Projects
+    Route::apiResource('projects', ProjectController::class);
 
     // Sessions
     Route::get('/sessions/chat-list', [SessionController::class, 'chatList'])->middleware('throttle:messages-read');
