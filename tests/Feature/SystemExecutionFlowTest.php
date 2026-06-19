@@ -18,6 +18,8 @@ class SystemExecutionFlowTest extends TestCase
     #[Test]
     public function core_role_based_workflows_execute_successfully(): void
     {
+        \Illuminate\Support\Carbon::setTestNow('2026-06-15 09:00:00');
+
         SystemSetting::query()->updateOrCreate(
             ['key' => 'two_factor_auth'],
             ['value' => false]
