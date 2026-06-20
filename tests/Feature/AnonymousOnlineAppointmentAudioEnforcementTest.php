@@ -39,6 +39,39 @@ class AnonymousOnlineAppointmentAudioEnforcementTest extends TestCase
     }
 
     #[Test]
+    public function appointment_booking_does_not_inherit_profile_anonymous_mode_without_explicit_opt_in(): void
+    {
+        $counselor = $this->createPortalUser('counselor', 'counselor-profile-anon@test.com', 'Counselor Profile Anon');
+        $student = $this->createPortalUser('student', 'student-profile-anon@test.com', 'Student Profile Anon', true);
+
+        $response = $this->actingAs($student)->postJson('/api/appointments', [
+            'counselor_id' => $counselor->id,
+            'scheduled_at' => Carbon::now(self::SCHEDULE_TIMEZONE)
+                ->next(Carbon::MONDAY)
+                ->setTime(15, 0)
+                ->utc()
+                ->toIso8601String(),
+            'duration_minutes' => 60,
+            'notes' => 'Online',
+            'call_type' => 'video',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('is_anonymous', false)
+            ->assertJsonPath('call_type', 'video')
+            ->assertJsonPath('identity_visible_to_viewer', true);
+
+        $this->assertDatabaseHas('appointments', [
+            'student_id' => $student->id,
+            'counselor_id' => $counselor->id,
+            'is_anonymous' => false,
+            'anonymous_id' => null,
+            'notes' => 'Online',
+            'call_type' => 'video',
+        ]);
+    }
+
+    #[Test]
     public function appointment_model_coerces_call_type_to_audio_for_anonymous_non_physical_rows(): void
     {
         $counselor = $this->createPortalUser('counselor', 'counselor-model-anon@test.com', 'Counselor Model');
@@ -80,7 +113,7 @@ class AnonymousOnlineAppointmentAudioEnforcementTest extends TestCase
         $this->assertSame('video', $appointment->fresh()->call_type);
     }
 
-    private function createPortalUser(string $role, string $email, string $fullName): User
+    private function createPortalUser(string $role, string $email, string $fullName, bool $anonymousMode = false): User
     {
         $user = User::factory()->create([
             'email' => $email,
@@ -90,7 +123,7 @@ class AnonymousOnlineAppointmentAudioEnforcementTest extends TestCase
         $user->profile()->create([
             'full_name' => $fullName,
             'id_number' => null,
-            'anonymous_mode' => false,
+            'anonymous_mode' => $anonymousMode,
             'peer_available' => true,
         ]);
 

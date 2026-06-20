@@ -197,9 +197,11 @@ class AppointmentController extends Controller
                 $slotId = (int) $slotResolution['slot']->id;
             }
         }
+        // Appointment privacy is an explicit per-booking choice. Profile anonymous mode
+        // stays a chat/profile default and must not silently mask normal video bookings.
         $isAnonymous = array_key_exists('is_anonymous', $validated)
             ? (bool) $validated['is_anonymous']
-            : (bool) ($request->user()->profile?->anonymous_mode ?? false);
+            : false;
 
         $notesRaw = trim((string) ($validated['notes'] ?? ''));
         $isPhysical = str_starts_with(strtolower($notesRaw), 'physical');
