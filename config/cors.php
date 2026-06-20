@@ -12,6 +12,26 @@ $allowedOrigins = array_values(
     )
 );
 
+$defaultProductionOrigins = array_values(
+    array_filter(
+        array_map(
+            static fn (string $origin): string => trim($origin),
+            explode(
+                ',',
+                (string) env(
+                    'CORS_DEFAULT_PRODUCTION_ORIGINS',
+                    'https://counseling.africau.edu,https://www.counseling.africau.edu'
+                )
+            )
+        ),
+        static fn (string $origin): bool => $origin !== ''
+    )
+);
+
+if (! in_array('*', $allowedOrigins, true)) {
+    $allowedOrigins = array_values(array_unique(array_merge($allowedOrigins, $defaultProductionOrigins)));
+}
+
 // Local DX: accept localhost and 127.0.0.1 variants when either is configured.
 if (! in_array('*', $allowedOrigins, true)) {
     $expandedOrigins = [];
