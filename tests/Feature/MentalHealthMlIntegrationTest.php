@@ -56,6 +56,9 @@ class MentalHealthMlIntegrationTest extends TestCase
                 ],
             ]);
 
+        $this->assertSame('mindful-lightweight-ml-v2', $response->json('ml_insights.model_version'));
+        $this->assertSame(0, $response->json('ml_insights.feature_snapshot.latest_diagnostic_days_ago'));
+        $this->assertIsInt($response->json('ml_insights.feature_snapshot.recent_distress_messages_7d'));
         $this->assertNotEmpty($response->json('ml_insights.recommended_actions'));
     }
 

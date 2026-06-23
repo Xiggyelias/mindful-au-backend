@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 
 class MentalHealthMlService
 {
-    public const MODEL_VERSION = 'mindful-lightweight-ml-v1';
+    public const MODEL_VERSION = 'mindful-lightweight-ml-v2';
 
     private const DEFAULT_ADMIN_ML_STUDENT_LIMIT = 2000;
 
@@ -476,10 +476,12 @@ class MentalHealthMlService
             'anonymous_mode' => false,
             'latest_diagnostic_score' => null,
             'latest_diagnostic_risk_level' => null,
+            'latest_diagnostic_days_ago' => null,
             'previous_diagnostic_score' => null,
             'diagnostic_trend_delta' => 0,
             'latest_ai_score' => null,
             'latest_ai_risk_level' => null,
+            'latest_ai_days_ago' => null,
             'appointments_60d' => 0,
             'cancelled_appointments_60d' => 0,
             'cancel_rate_60d' => 0.0,
@@ -487,6 +489,7 @@ class MentalHealthMlService
             'sessions_60d' => 0,
             'completed_sessions_60d' => 0,
             'session_minutes_60d' => 0,
+            'last_completed_session_days_ago' => null,
             'mood_logs_14d' => 0,
             'low_mood_logs_14d' => 0,
             'ai_chat_messages_30d' => 0,
@@ -494,6 +497,8 @@ class MentalHealthMlService
             'ai_chat_word_count_30d' => 0,
             'distress_messages_30d' => 0,
             'crisis_messages_30d' => 0,
+            'recent_distress_messages_7d' => 0,
+            'recent_crisis_messages_7d' => 0,
             'topic_counts' => [],
             'distress_words' => [],
             'crisis_words' => [],
@@ -539,6 +544,7 @@ class MentalHealthMlService
             if ($snapshots[$studentId]['latest_diagnostic_score'] === null) {
                 $snapshots[$studentId]['latest_diagnostic_score'] = (int) $diagnostic->total_score;
                 $snapshots[$studentId]['latest_diagnostic_risk_level'] = (string) $diagnostic->risk_level;
+                $snapshots[$studentId]['latest_diagnostic_days_ago'] = $this->daysAgo($diagnostic->created_at);
 
                 continue;
             }
@@ -571,6 +577,7 @@ class MentalHealthMlService
 
             $snapshots[$studentId]['latest_ai_score'] = $this->resolveAiRiskScore($diagnostic);
             $snapshots[$studentId]['latest_ai_risk_level'] = (string) ($diagnostic->risk_level ?? 'low');
+            $snapshots[$studentId]['latest_ai_days_ago'] = $this->daysAgo($diagnostic->created_at);
         }
 
         $appointments = Appointment::query()
@@ -609,6 +616,14 @@ class MentalHealthMlService
 
             if ((string) $session->status === 'completed') {
                 $snapshots[$studentId]['completed_sessions_60d']++;
+                $endedAt = $session->ended_at ?? $session->started_at;
+                $daysAgo = $endedAt ? $this->daysAgo($endedAt) : null;
+                if ($daysAgo !== null) {
+                    $current = $snapshots[$studentId]['last_completed_session_days_ago'];
+                    $snapshots[$studentId]['last_completed_session_days_ago'] = $current === null
+                        ? $daysAgo
+                        : min((int) $current, $daysAgo);
+                }
             }
 
             if ($session->started_at && $session->ended_at) {
@@ -640,6 +655,7 @@ class MentalHealthMlService
             ->get([
                 'chat_conversations.user_id as student_id',
                 'chat_messages.content',
+                'chat_messages.created_at',
             ]);
 
         foreach ($chatMessages as $row) {
@@ -657,6 +673,9 @@ class MentalHealthMlService
 
             if (! empty($distressWords)) {
                 $snapshots[$studentId]['distress_messages_30d']++;
+                if ($this->isWithinDays($row->created_at ?? null, 7)) {
+                    $snapshots[$studentId]['recent_distress_messages_7d']++;
+                }
                 $snapshots[$studentId]['distress_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['distress_words'],
                     $distressWords
@@ -664,6 +683,9 @@ class MentalHealthMlService
             }
             if (! empty($crisisWords)) {
                 $snapshots[$studentId]['crisis_messages_30d']++;
+                if ($this->isWithinDays($row->created_at ?? null, 7)) {
+                    $snapshots[$studentId]['recent_crisis_messages_7d']++;
+                }
                 $snapshots[$studentId]['crisis_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['crisis_words'],
                     $crisisWords
@@ -688,6 +710,7 @@ class MentalHealthMlService
             ->get([
                 'counseling_sessions.student_id',
                 'messages.content',
+                'messages.created_at',
             ]);
 
         foreach ($sessionMessages as $row) {
@@ -704,6 +727,9 @@ class MentalHealthMlService
 
             if (! empty($distressWords)) {
                 $snapshots[$studentId]['distress_messages_30d']++;
+                if ($this->isWithinDays($row->created_at ?? null, 7)) {
+                    $snapshots[$studentId]['recent_distress_messages_7d']++;
+                }
                 $snapshots[$studentId]['distress_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['distress_words'],
                     $distressWords
@@ -711,6 +737,9 @@ class MentalHealthMlService
             }
             if (! empty($crisisWords)) {
                 $snapshots[$studentId]['crisis_messages_30d']++;
+                if ($this->isWithinDays($row->created_at ?? null, 7)) {
+                    $snapshots[$studentId]['recent_crisis_messages_7d']++;
+                }
                 $snapshots[$studentId]['crisis_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['crisis_words'],
                     $crisisWords
@@ -867,13 +896,18 @@ class MentalHealthMlService
             'feature_snapshot' => [
                 'anonymous_mode' => (bool) ($snapshot['anonymous_mode'] ?? false),
                 'latest_diagnostic_risk_level' => $snapshot['latest_diagnostic_risk_level'] ?? null,
+                'latest_diagnostic_days_ago' => $snapshot['latest_diagnostic_days_ago'] ?? null,
                 'latest_ai_risk_level' => $snapshot['latest_ai_risk_level'] ?? null,
+                'latest_ai_days_ago' => $snapshot['latest_ai_days_ago'] ?? null,
                 'upcoming_appointments' => (int) ($snapshot['upcoming_appointments'] ?? 0),
                 'ai_chat_messages_30d' => (int) ($snapshot['ai_chat_messages_30d'] ?? 0),
                 'distress_messages_30d' => (int) ($snapshot['distress_messages_30d'] ?? 0),
+                'recent_distress_messages_7d' => (int) ($snapshot['recent_distress_messages_7d'] ?? 0),
+                'recent_crisis_messages_7d' => (int) ($snapshot['recent_crisis_messages_7d'] ?? 0),
                 'cancel_rate_60d' => round((float) ($snapshot['cancel_rate_60d'] ?? 0), 2),
                 'mood_logs_14d' => (int) ($snapshot['mood_logs_14d'] ?? 0),
                 'completed_sessions_60d' => (int) ($snapshot['completed_sessions_60d'] ?? 0),
+                'last_completed_session_days_ago' => $snapshot['last_completed_session_days_ago'] ?? null,
                 'academic_risk_events_count' => (int) ($snapshot['academic_risk_events_count'] ?? 0),
                 'academic_risk_highest_score' => round((float) ($snapshot['academic_risk_highest_score'] ?? 0.0), 2),
                 'academic_risk_types' => $snapshot['academic_risk_types'] ?? [],
@@ -896,12 +930,14 @@ class MentalHealthMlService
         $weightTotal = 0.0;
 
         if (is_int($diagnosticScore)) {
-            $weightedSum += $diagnosticScore * 0.40;
-            $weightTotal += 0.40;
+            $weight = 0.42 * $this->recencyWeight($snapshot['latest_diagnostic_days_ago'] ?? null, 14, 120, 0.45);
+            $weightedSum += $diagnosticScore * $weight;
+            $weightTotal += $weight;
         }
         if (is_int($aiScore)) {
-            $weightedSum += $aiScore * 0.34;
-            $weightTotal += 0.34;
+            $weight = 0.36 * $this->recencyWeight($snapshot['latest_ai_days_ago'] ?? null, 7, 60, 0.50);
+            $weightedSum += $aiScore * $weight;
+            $weightTotal += $weight;
         }
 
         if ($weightTotal > 0) {
@@ -912,6 +948,7 @@ class MentalHealthMlService
 
         // Add context-based bonuses/penalties to the base
         $base += min(18, $distressRatio * 100 * 0.18);
+        $base += min(16, (int) ($snapshot['recent_distress_messages_7d'] ?? 0) * 4.0);
         $base += min(12, $cancelRate * 100 * 0.12);
         $base += min(12, (int) ($snapshot['low_mood_logs_14d'] ?? 0) * 2.5);
 
@@ -928,12 +965,17 @@ class MentalHealthMlService
             $base -= min(10, abs($trendDelta) * 0.30);
         }
 
-        if ((int) ($snapshot['crisis_messages_30d'] ?? 0) > 0) {
+        if ((int) ($snapshot['recent_crisis_messages_7d'] ?? 0) > 0) {
+            $base = max($base, 95);
+        } elseif ((int) ($snapshot['crisis_messages_30d'] ?? 0) > 0) {
             $base = max($base, 90);
         }
 
         $base -= min(10, (int) ($snapshot['upcoming_appointments'] ?? 0) * 4);
         $base -= min(8, (int) ($snapshot['completed_sessions_60d'] ?? 0) * 1.5);
+        if (($snapshot['last_completed_session_days_ago'] ?? null) !== null && (int) $snapshot['last_completed_session_days_ago'] <= 14) {
+            $base -= 4;
+        }
 
         return $this->clampInt($base);
     }
@@ -961,7 +1003,11 @@ class MentalHealthMlService
         // Crisis messages or a meaningful score increase → risk is worsening.
         // Use 'worsening' to align with DiagnosticController::buildStudentObservations()
         // which validates against ['improving', 'stable', 'worsening', 'insufficient_data'].
-        if ((int) ($snapshot['crisis_messages_30d'] ?? 0) > 0 || $delta >= 12) {
+        if ((int) ($snapshot['recent_crisis_messages_7d'] ?? 0) > 0 || $delta >= 12) {
+            return 'worsening';
+        }
+
+        if ((int) ($snapshot['recent_distress_messages_7d'] ?? 0) >= 2 && $delta >= 5) {
             return 'worsening';
         }
 
@@ -1038,6 +1084,9 @@ class MentalHealthMlService
         if ((int) ($snapshot['crisis_messages_30d'] ?? 0) > 0) {
             $words = implode(', ', array_slice($snapshot['crisis_words'] ?? [], 0, 3));
             $indicators[] = "Critical keywords detected: {$words}.";
+        }
+        if ((int) ($snapshot['recent_distress_messages_7d'] ?? 0) >= 2) {
+            $indicators[] = 'Multiple recent distress signals in the last 7 days.';
         }
         if ((int) ($snapshot['distress_messages_30d'] ?? 0) >= 3) {
             $words = implode(', ', array_slice($snapshot['distress_words'] ?? [], 0, 3));
@@ -1314,6 +1363,60 @@ class MentalHealthMlService
             'depression_level' => $diagnostic->depression_level,
             'risk_level' => $diagnostic->risk_level,
         ]);
+    }
+
+    private function recencyWeight(mixed $daysAgo, int $freshDays, int $staleDays, float $staleFloor): float
+    {
+        if (! is_numeric($daysAgo)) {
+            return 1.0;
+        }
+
+        $days = max(0, (int) $daysAgo);
+        if ($days <= $freshDays) {
+            return 1.0;
+        }
+        if ($days >= $staleDays) {
+            return $staleFloor;
+        }
+
+        $range = max(1, $staleDays - $freshDays);
+        $decay = ($days - $freshDays) / $range;
+
+        return max($staleFloor, 1.0 - ((1.0 - $staleFloor) * $decay));
+    }
+
+    private function daysAgo(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            $date = $value instanceof \DateTimeInterface
+                ? \Illuminate\Support\Carbon::instance($value)
+                : \Illuminate\Support\Carbon::parse((string) $value);
+
+            return max(0, (int) floor($date->diffInDays(now())));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function isWithinDays(mixed $value, int $days): bool
+    {
+        if ($value === null || $value === '') {
+            return false;
+        }
+
+        try {
+            $date = $value instanceof \DateTimeInterface
+                ? \Illuminate\Support\Carbon::instance($value)
+                : \Illuminate\Support\Carbon::parse((string) $value);
+
+            return $date->greaterThanOrEqualTo(now()->subDays(max(1, $days)));
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function riskLabel(int $score): string

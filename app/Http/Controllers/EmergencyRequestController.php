@@ -92,11 +92,14 @@ class EmergencyRequestController extends Controller
         $validated = $request->validate([
             'status' => 'sometimes|in:queued,assigned,resolved,cancelled',
             'assigned_to' => 'sometimes|nullable|integer|exists:users,id',
+            'prepare_slot' => 'sometimes|boolean',
         ]);
 
         $oldStatus = $emergencyRequest->status;
         $hasResolvedBy = $this->hasEmergencyRequestColumn('resolved_by');
         $hasResolvedAt = $this->hasEmergencyRequestColumn('resolved_at');
+        $prepareSlotRequested = (bool) ($validated['prepare_slot'] ?? false);
+        unset($validated['prepare_slot']);
 
         if (($validated['status'] ?? null) === 'resolved' && $emergencyRequest->status !== 'resolved') {
             if ($hasResolvedBy) {
@@ -111,36 +114,49 @@ class EmergencyRequestController extends Controller
             $validated['assigned_to'] = $user->id;
         }
 
+        if ($prepareSlotRequested && ($validated['status'] ?? $emergencyRequest->status) !== 'assigned') {
+            $validated['status'] = 'assigned';
+        }
+
+        if ($prepareSlotRequested && empty($validated['assigned_to']) && empty($emergencyRequest->assigned_to)) {
+            $validated['assigned_to'] = $user->id;
+        }
+
         $slot = null;
         $slotStart = null;
         $canPreparePrioritySlot = $this->hasEmergencyRequestColumn('counselor_slot_id')
             && Schema::hasTable('counselor_slots');
         $shouldPreparePrioritySlot =
-            ($validated['status'] ?? null) === 'assigned'
+            (($validated['status'] ?? null) === 'assigned' || $prepareSlotRequested)
             && $canPreparePrioritySlot
             && ($oldStatus !== 'assigned' || empty($emergencyRequest->counselor_slot_id));
 
         if ($shouldPreparePrioritySlot) {
             $counselorId = (int) ($validated['assigned_to'] ?? $emergencyRequest->assigned_to ?? 0);
-            $studentId = $emergencyRequest->student_id;
-            $requestedAt = $emergencyRequest->requested_at ?? now();
+            if ($counselorId <= 0) {
+                return response()->json(['message' => 'Assign the emergency request before preparing a slot.'], 422);
+            }
+
+            $requestedAt = $this->toScheduleTimezone($emergencyRequest->requested_at ?? now());
             $slotStart = $requestedAt->copy();
-            $minimumStart = now()->addMinutes(10);
+            $minimumStart = $this->toScheduleTimezone(now())->addMinutes(10);
             if ($slotStart->lessThan($minimumStart)) {
                 $slotStart = $minimumStart;
             }
-            $slotStart->second(0);
+            $slotStart = $this->roundUpToQuarterHour($slotStart);
 
             $duration = 60;
 
             $slot = null;
             $endTime = null;
-            for ($attempt = 0; $attempt < 6; $attempt++) {
+            for ($attempt = 0; $attempt < 24; $attempt++) {
                 $endTime = $slotStart->copy()->addMinutes($duration);
+                $storageStart = $slotStart->copy()->utc();
+                $storageEnd = $endTime->copy()->utc();
                 $existingSlot = CounselorSlot::query()
                     ->where('counselor_id', $counselorId)
-                    ->where('start_time', $slotStart->toDateTimeString())
-                    ->where('end_time', $endTime->toDateTimeString())
+                    ->where('start_time', $storageStart->toDateTimeString())
+                    ->where('end_time', $storageEnd->toDateTimeString())
                     ->first();
 
                 if ($existingSlot) {
@@ -158,8 +174,8 @@ class EmergencyRequestController extends Controller
                     'counselor_schedule_id' => null,
                     'slot_date' => $slotStart->toDateString(),
                     'day_of_week' => (int) $slotStart->isoWeekday(),
-                    'start_time' => $slotStart,
-                    'end_time' => $endTime,
+                    'start_time' => $storageStart,
+                    'end_time' => $storageEnd,
                     'status' => 'available',
                 ]);
                 break;
@@ -313,5 +329,25 @@ class EmergencyRequestController extends Controller
         $minutes = ((int) $date->format('H') * 60) + (int) $date->format('i');
 
         return $minutes < (8 * 60) || $minutes >= ((16 * 60) + 30);
+    }
+
+    private function toScheduleTimezone(Carbon $date): Carbon
+    {
+        return $date->copy()->timezone($this->scheduleTimezone());
+    }
+
+    private function roundUpToQuarterHour(Carbon $date): Carbon
+    {
+        $rounded = $date->copy()->second(0);
+        if ($rounded->minute % 15 === 0) {
+            return $rounded;
+        }
+
+        return $rounded->addMinutes(15 - ($rounded->minute % 15));
+    }
+
+    private function scheduleTimezone(): string
+    {
+        return (string) config('app.schedule_timezone', 'Africa/Harare');
     }
 }

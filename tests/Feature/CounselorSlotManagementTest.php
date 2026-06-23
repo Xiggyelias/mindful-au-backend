@@ -222,6 +222,47 @@ class CounselorSlotManagementTest extends TestCase
         }
     }
 
+    public function test_prepare_slot_for_already_assigned_emergency_request(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-23 22:05:00', 'UTC'));
+
+        try {
+            $student = $this->createUserWithRole('student');
+            $counselor = $this->createUserWithRole('counselor');
+            $requestedAt = Carbon::parse('2026-06-24 00:07:48', self::SCHEDULE_TIMEZONE)->utc();
+            $emergencyRequest = EmergencyRequest::query()->create([
+                'student_id' => $student->id,
+                'assigned_to' => $counselor->id,
+                'requested_at' => $requestedAt,
+                'is_after_hours' => true,
+                'priority' => 1,
+                'status' => 'assigned',
+                'reason' => 'Need urgent support',
+            ]);
+
+            $prepareResponse = $this->actingAs($counselor)->patchJson("/api/emergency-requests/{$emergencyRequest->id}", [
+                'prepare_slot' => true,
+            ]);
+
+            $prepareResponse->assertOk()
+                ->assertJsonPath('status', 'assigned')
+                ->assertJsonPath('assigned_to', $counselor->id);
+
+            $slotId = (int) $prepareResponse->json('counselor_slot_id');
+            $this->assertGreaterThan(0, $slotId);
+
+            $slot = CounselorSlot::query()->findOrFail($slotId);
+            $localStart = Carbon::parse($slot->start_time)->timezone(self::SCHEDULE_TIMEZONE);
+            $this->assertSame('2026-06-24', $slot->slot_date->toDateString());
+            $this->assertSame('2026-06-24', $localStart->toDateString());
+            $this->assertSame(0, $localStart->minute % 15);
+            $this->assertNull($slot->counselor_schedule_id);
+            $this->assertSame('available', $slot->status);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_counselor_can_get_and_update_schedules_and_generate_slots(): void
     {
         $counselor = $this->createUserWithRole('counselor');
