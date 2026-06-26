@@ -24,7 +24,7 @@ class CounselorSlotService
 
     private const APPOINTMENT_DURATION_MINUTES = 60;
 
-    private const DEFAULT_MAX_SLOTS_PER_DAY = 6;
+    private const DEFAULT_MAX_SLOTS_PER_DAY = 12;
 
     public function schedulesFor(int $counselorId): Collection
     {
@@ -270,7 +270,14 @@ class CounselorSlotService
         $breakStart = $schedule->break_start ? $this->dateTimeFor($date, (string) $schedule->break_start) : null;
         $breakEnd = $schedule->break_end ? $this->dateTimeFor($date, (string) $schedule->break_end) : null;
 
-        // First, collect ALL possible slot windows across the full working day
+        // Advance the cursor by at least the appointment duration so consecutive
+        // slots never overlap.  Using a step smaller than $duration would create
+        // windows that share the same time block, which makes no sense for
+        // sequential counseling bookings and triggers the uneven distribution
+        // that previously produced irregular gaps (e.g. 10:00 AM then 11:30 AM).
+        $step = max($interval, $duration);
+
+        // Collect all non-overlapping slot windows across the full working day
         $allWindows = [];
         $cursor = $dayStart->copy();
 
@@ -281,7 +288,7 @@ class CounselorSlotService
             if (! $overlapsBreak) {
                 $allWindows[] = [$slotStart, $slotEnd];
             }
-            $cursor->addMinutes($interval);
+            $cursor->addMinutes($step);
         }
 
         // If within the limit, return all windows

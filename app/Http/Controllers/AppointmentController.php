@@ -136,6 +136,9 @@ class AppointmentController extends Controller
             'notes' => 'sometimes|nullable|string|max:2000',
             'is_anonymous' => 'sometimes|boolean',
             'call_type' => 'sometimes|in:audio,video',
+            // When the student books via the emergency "pick a slot" flow, pass the
+            // emergency request ID so we can resolve it once the appointment is created.
+            'emergency_request_id' => 'sometimes|nullable|integer|exists:emergency_requests,id',
         ]);
 
         if (! $this->isApprovedCounselor((int) $validated['counselor_id'])) {
@@ -341,6 +344,31 @@ class AppointmentController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+
+        // Resolve the linked emergency request when the student books via the
+        // emergency "pick a slot" flow.  Only resolve if it belongs to this
+        // student and is still open (queued / assigned).
+        if (! empty($validated['emergency_request_id'])) {
+            try {
+                $emergencyRequest = \App\Models\EmergencyRequest::query()
+                    ->where('id', (int) $validated['emergency_request_id'])
+                    ->where('student_id', $studentId)
+                    ->whereIn('status', ['queued', 'assigned'])
+                    ->first();
+
+                if ($emergencyRequest) {
+                    $resolvePayload = ['status' => 'resolved'];
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('emergency_requests', 'resolved_at')) {
+                        $resolvePayload['resolved_at'] = now();
+                    }
+                    $emergencyRequest->update($resolvePayload);
+                }
+            } catch (\Throwable $e) {
+                // Non-fatal: the appointment was created; just log and continue.
+                report($e);
+            }
+        }
+
         try {
             $this->flushDashboardCaches();
         } catch (\Throwable $e) {
