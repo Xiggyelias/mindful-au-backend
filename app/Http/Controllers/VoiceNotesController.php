@@ -229,22 +229,66 @@ class VoiceNotesController extends Controller
         }
 
         $mimeType = $mimeType ?: ($disk->mimeType($path) ?: 'audio/webm');
-        $size = $disk->size($path);
+        // Chrome MediaRecorder produces video/webm or video/x-matroska containers for audio-only
+        // recordings. Browsers reject these MIME types on <audio> elements — normalise to audio/webm.
+        if (in_array($mimeType, ['video/webm', 'video/x-matroska', 'audio/x-matroska', 'application/x-matroska'], true)) {
+            $mimeType = 'audio/webm';
+        }
 
-        return response()->stream(function () use ($disk, $path) {
-            $stream = $disk->readStream($path);
-            if ($stream) {
-                fpassthru($stream);
-                fclose($stream);
-            }
-        }, 200, [
-            'Content-Type' => $mimeType,
-            'Content-Length' => $size,
+        $totalSize = $disk->size($path);
+
+        // Handle HTTP Range requests — required by all browsers for audio seeking/playback.
+        $rangeHeader = $request->header('Range', '');
+        $start = 0;
+        $end = $totalSize - 1;
+        $statusCode = 200;
+        $rangeResponseHeader = null;
+
+        if ($rangeHeader !== '' && preg_match('/bytes=(\d+)-(\d*)/', $rangeHeader, $m)) {
+            $start = (int) $m[1];
+            $end = ($m[2] !== '') ? (int) $m[2] : $totalSize - 1;
+            $end = min($end, $totalSize - 1);
+            $start = max(0, min($start, $end));
+            $statusCode = 206;
+            $rangeResponseHeader = "bytes {$start}-{$end}/{$totalSize}";
+        }
+
+        $length = $end - $start + 1;
+
+        $headers = [
+            'Content-Type'        => $mimeType,
+            'Content-Length'      => $length,
             'Content-Disposition' => 'inline',
-            'Cache-Control' => 'private, no-cache, no-store, must-revalidate',
+            'Accept-Ranges'       => 'bytes',
+            'Cache-Control'       => 'private, no-cache, no-store, must-revalidate',
             'X-Content-Type-Options' => 'nosniff',
-            'Accept-Ranges' => 'none',
-        ]);
+        ];
+
+        if ($rangeResponseHeader !== null) {
+            $headers['Content-Range'] = $rangeResponseHeader;
+        }
+
+        return response()->stream(function () use ($disk, $path, $start, $length) {
+            $stream = $disk->readStream($path);
+            if (! $stream) {
+                return;
+            }
+            if ($start > 0) {
+                fseek($stream, $start);
+            }
+            $remaining = $length;
+            while ($remaining > 0 && ! feof($stream)) {
+                $chunk = fread($stream, min(65536, $remaining));
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+                echo $chunk;
+                $remaining -= strlen($chunk);
+                ob_flush();
+                flush();
+            }
+            fclose($stream);
+        }, $statusCode, $headers);
     }
 
     private function resolveRecipientId(CounselingSession $session, int $senderId): ?int
