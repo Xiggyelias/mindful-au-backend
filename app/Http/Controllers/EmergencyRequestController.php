@@ -182,55 +182,86 @@ class EmergencyRequestController extends Controller
             }
 
             if (! $slot || ! $endTime) {
-                return response()->json(['message' => 'No emergency slot is currently available for this counselor.'], 422);
+                // If the counselor explicitly requested slot preparation, surface the
+                // failure so they know to free up their schedule first.
+                if ($prepareSlotRequested) {
+                    return response()->json(['message' => 'No emergency slot is currently available for this counselor.'], 422);
+                }
+                // Auto-triggered by "Take Case" — proceed without a priority slot.
+                // The student will be told to pick any available time themselves.
+                $slot = null;
+            } else {
+                $validated['counselor_slot_id'] = $slot->id;
             }
-            $validated['counselor_slot_id'] = $slot->id;
         }
 
         $emergencyRequest->update($validated);
         AnalyticsCache::clear();
 
-        if ($shouldPreparePrioritySlot && $slot && $slotStart) {
+        if ($shouldPreparePrioritySlot) {
             $counselorId = (int) ($validated['assigned_to'] ?? $emergencyRequest->assigned_to);
             $studentId = $emergencyRequest->student_id;
-            $session = CounselingSession::query()
-                ->where('student_id', $studentId)
-                ->where('counselor_id', $counselorId)
-                ->where('session_type', 'chat')
-                ->whereNotIn('status', ['completed', 'cancelled'])
-                ->latest('id')
-                ->first();
 
-            if (! $session) {
-                $session = CounselingSession::query()->create([
-                    'student_id' => $studentId,
-                    'counselor_id' => $counselorId,
-                    'session_type' => 'chat',
-                    'status' => 'active',
-                    'assigned_role' => 'counselor',
-                    'is_anonymous' => false,
-                ]);
-            } elseif ($session->status === 'pending') {
-                $session->update(['status' => 'active', 'started_at' => now()]);
-            }
+            if ($slot && $slotStart) {
+                // Priority slot was prepared — create/resume the chat session and
+                // send the student a direct booking link for the prepared slot.
+                $session = CounselingSession::query()
+                    ->where('student_id', $studentId)
+                    ->where('counselor_id', $counselorId)
+                    ->where('session_type', 'chat')
+                    ->whereNotIn('status', ['completed', 'cancelled'])
+                    ->latest('id')
+                    ->first();
 
-            $formattedTime = $slotStart->format('M j, Y g:i A');
+                if (! $session) {
+                    $session = CounselingSession::query()->create([
+                        'student_id' => $studentId,
+                        'counselor_id' => $counselorId,
+                        'session_type' => 'chat',
+                        'status' => 'active',
+                        'assigned_role' => 'counselor',
+                        'is_anonymous' => false,
+                    ]);
+                } elseif ($session->status === 'pending') {
+                    $session->update(['status' => 'active', 'started_at' => now()]);
+                }
 
-            try {
-                $notification = Notification::query()->create([
-                    'user_id' => $studentId,
-                    'title' => 'Emergency Request Accepted',
-                    'message' => "Counselor accepted your emergency request. Please book your slot at {$formattedTime}.",
-                    'meta' => [
-                        'counselor_id' => (int) $counselorId,
-                        'slot_id' => (int) $slot->id,
-                        'path' => "/student/appointments?book=1&counselor_id={$counselorId}&slot_id={$slot->id}",
-                    ],
-                    'type' => 'info',
-                ]);
-                event(new NotificationCreated($notification));
-            } catch (\Throwable $_) {
-                // no-op
+                $formattedTime = $slotStart->format('M j, Y g:i A');
+
+                try {
+                    $notification = Notification::query()->create([
+                        'user_id' => $studentId,
+                        'title' => 'Emergency Request Accepted',
+                        'message' => "Counselor accepted your emergency request. Please book your slot at {$formattedTime}.",
+                        'meta' => [
+                            'counselor_id' => (int) $counselorId,
+                            'slot_id' => (int) $slot->id,
+                            'path' => "/student/appointments?book=1&counselor_id={$counselorId}&slot_id={$slot->id}",
+                        ],
+                        'type' => 'info',
+                    ]);
+                    event(new NotificationCreated($notification));
+                } catch (\Throwable $_) {
+                    // no-op
+                }
+            } else {
+                // No priority slot could be prepared — notify the student to pick
+                // any time themselves via the emergency custom time picker.
+                try {
+                    $notification = Notification::query()->create([
+                        'user_id' => $studentId,
+                        'title' => 'Emergency Request Accepted',
+                        'message' => 'A counselor has accepted your emergency request. Please go to Appointments to choose your preferred session time.',
+                        'meta' => [
+                            'counselor_id' => (int) $counselorId,
+                            'path' => '/student/appointments',
+                        ],
+                        'type' => 'info',
+                    ]);
+                    event(new NotificationCreated($notification));
+                } catch (\Throwable $_) {
+                    // no-op
+                }
             }
         }
 

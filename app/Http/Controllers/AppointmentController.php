@@ -180,8 +180,19 @@ class AppointmentController extends Controller
             }
         }
 
+        // When the student books via an accepted emergency request the counselor
+        // has already agreed to help, so skip the after-hours slot gate entirely.
+        $isEmergencyBooking = false;
+        if (! empty($validated['emergency_request_id'])) {
+            $isEmergencyBooking = EmergencyRequest::query()
+                ->where('id', (int) $validated['emergency_request_id'])
+                ->where('student_id', $studentId)
+                ->whereIn('status', ['queued', 'assigned'])
+                ->exists();
+        }
+
         $isExplicitEmergencySlot = $explicitSlot instanceof CounselorSlot && $explicitSlot->counselor_schedule_id === null;
-        if (! $isExplicitEmergencySlot) {
+        if (! $isExplicitEmergencySlot && ! $isEmergencyBooking) {
             $slotResolution = $this->slotService->resolveSlotForBooking($counselorId, $proposedStart, $durationMinutes);
             if (($slotResolution['reason'] ?? null) === 'outside_hours') {
                 return $this->queueEmergencyFromAppointmentRequest(
