@@ -54,6 +54,24 @@ class EmergencyRequestController extends Controller
             'location' => 'nullable|string|max:500',
         ]);
 
+        $studentId = $request->user()->id;
+
+        // Return the existing active request instead of creating a duplicate.
+        $existing = EmergencyRequest::query()
+            ->where('student_id', $studentId)
+            ->whereIn('status', ['queued', 'assigned'])
+            ->with(['student.profile', 'counselor.profile'])
+            ->latest('id')
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'message' => 'You already have an active emergency request.',
+                'emergency_request' => $existing,
+                'recipients_notified' => 0,
+            ]);
+        }
+
         $requestedAt = ! empty($validated['requested_at']) ? Carbon::parse($validated['requested_at']) : now();
         $counselorId = ! empty($validated['counselor_id']) ? (int) $validated['counselor_id'] : null;
         $isAfterHours = $counselorId
@@ -61,7 +79,7 @@ class EmergencyRequestController extends Controller
             : $this->isDefaultAfterHours($requestedAt);
 
         $emergencyRequest = EmergencyRequest::query()->create([
-            'student_id' => $request->user()->id,
+            'student_id' => $studentId,
             'counselor_id' => $counselorId,
             'requested_at' => $requestedAt,
             'is_after_hours' => $isAfterHours,
@@ -320,20 +338,19 @@ class EmergencyRequestController extends Controller
             $recipientQuery->orWhere('id', $emergencyRequest->counselor_id);
         }
 
-        $recipientIds = $recipientQuery->pluck('id')->unique()->values();
+        $recipients = $recipientQuery->with('roles')->get()->unique('id')->values();
         $notified = 0;
-        foreach ($recipientIds as $recipientId) {
+        foreach ($recipients as $recipient) {
             try {
-                $recipient = User::query()->find((int) $recipientId);
                 $notification = Notification::query()->create([
-                    'user_id' => (int) $recipientId,
+                    'user_id' => (int) $recipient->id,
                     'title' => 'Emergency Support Request',
                     'message' => $message,
                     'type' => 'panic',
                     'read' => false,
                     'meta' => [
                         'emergency_request_id' => (int) $emergencyRequest->id,
-                        'path' => $recipient?->hasRole('admin') ? '/admin/alerts' : '/counselor/alerts',
+                        'path' => $recipient->hasRole('admin') ? '/admin/alerts' : '/counselor/alerts',
                     ],
                 ]);
                 event(new NotificationCreated($notification));
@@ -341,7 +358,7 @@ class EmergencyRequestController extends Controller
             } catch (\Throwable $exception) {
                 Log::warning('Emergency request notification failed', [
                     'emergency_request_id' => $emergencyRequest->id,
-                    'recipient_id' => (int) $recipientId,
+                    'recipient_id' => (int) $recipient->id,
                     'error' => $exception->getMessage(),
                 ]);
             }

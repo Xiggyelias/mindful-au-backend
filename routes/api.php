@@ -143,6 +143,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::post('/notifications', [NotificationController::class, 'store'])->middleware('admin');
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
     Route::patch('/notifications/preferences', [NotificationController::class, 'preferences'])->middleware('throttle:messages-write');
 

@@ -7,6 +7,7 @@ use App\Models\CounselorSchedule;
 use App\Models\CounselorSlot;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class CounselorSlotService
 {
@@ -62,29 +63,31 @@ class CounselorSlotService
 
     public function updateSchedules(int $counselorId, array $scheduleRows): Collection
     {
-        $this->ensureDefaultSchedules($counselorId);
+        DB::transaction(function () use ($counselorId, $scheduleRows): void {
+            $this->ensureDefaultSchedules($counselorId);
 
-        foreach ($scheduleRows as $row) {
-            $day = max(1, min(7, (int) ($row['day_of_week'] ?? 0)));
-            if ($day < 1 || $day > 7) {
-                continue;
+            foreach ($scheduleRows as $row) {
+                $day = max(1, min(7, (int) ($row['day_of_week'] ?? 0)));
+                if ($day < 1 || $day > 7) {
+                    continue;
+                }
+
+                CounselorSchedule::query()->updateOrCreate(
+                    [
+                        'counselor_id' => $counselorId,
+                        'day_of_week' => $day,
+                    ],
+                    [
+                        'is_working_day' => (bool) ($row['is_working_day'] ?? true),
+                        'start_time' => $this->normalizeTime($row['start_time'] ?? null, self::DEFAULT_START_TIME),
+                        'end_time' => $this->capEndTime($this->normalizeTime($row['end_time'] ?? null, self::DEFAULT_END_TIME)),
+                        'break_start' => $this->normalizeNullableTime($row['break_start'] ?? null),
+                        'break_end' => $this->normalizeNullableTime($row['break_end'] ?? null),
+                        'slot_duration_minutes' => max(30, min(360, (int) ($row['slot_duration_minutes'] ?? self::DEFAULT_SLOT_DURATION_MINUTES))),
+                    ]
+                );
             }
-
-            CounselorSchedule::query()->updateOrCreate(
-                [
-                    'counselor_id' => $counselorId,
-                    'day_of_week' => $day,
-                ],
-                [
-                    'is_working_day' => (bool) ($row['is_working_day'] ?? true),
-                    'start_time' => $this->normalizeTime($row['start_time'] ?? null, self::DEFAULT_START_TIME),
-                    'end_time' => $this->capEndTime($this->normalizeTime($row['end_time'] ?? null, self::DEFAULT_END_TIME)),
-                    'break_start' => $this->normalizeNullableTime($row['break_start'] ?? null),
-                    'break_end' => $this->normalizeNullableTime($row['break_end'] ?? null),
-                    'slot_duration_minutes' => max(30, min(360, (int) ($row['slot_duration_minutes'] ?? self::DEFAULT_SLOT_DURATION_MINUTES))),
-                ]
-            );
-        }
+        });
 
         return $this->schedulesFor($counselorId);
     }

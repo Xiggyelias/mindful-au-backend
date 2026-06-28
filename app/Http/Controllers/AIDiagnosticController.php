@@ -152,17 +152,21 @@ class AIDiagnosticController extends Controller
             ],
         ];
 
-        // Create a lightweight CounselingSession wrapper for the job if necessary,
-        // or update ProcessAIDiagnostic to handle Appointments directly.
-        // For now, we simulate a session for the AI engine.
-        $session = new CounselingSession;
-        $session->fill([
-            'student_id' => $appointment->student_id,
-            'counselor_id' => $appointment->counselor_id,
-            'session_type' => 'physical',
-            'status' => 'completed',
-        ]);
-        $session->id = "apt_{$appointment->id}"; // Virtual ID prefix
+        // SerializesModels requires a persisted model — an unsaved virtual session
+        // with a fake string ID causes findOrFail to fail in the queue worker.
+        // Use firstOrCreate so the job always dispatches with a real DB record.
+        $session = CounselingSession::query()->firstOrCreate(
+            [
+                'student_id' => $appointment->student_id,
+                'counselor_id' => $appointment->counselor_id,
+                'session_type' => 'physical',
+            ],
+            [
+                'status' => 'completed',
+                'assigned_role' => 'counselor',
+                'is_anonymous' => false,
+            ]
+        );
 
         ProcessAIDiagnostic::dispatch($session, $messages);
 

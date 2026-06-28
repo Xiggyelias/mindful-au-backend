@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\MessageDeleted;
 use App\Events\MessageSent;
 use App\Models\AiDiagnostic;
 use App\Models\CounselingSession;
@@ -680,6 +681,12 @@ class MessageController extends Controller
         $this->tombstoneMessageForEveryone($message);
         $this->deleteMessageNotifications($deletedMessageId);
         $message->refresh()->loadMissing('chatFile');
+
+        try {
+            event(new MessageDeleted($message));
+        } catch (\Throwable $_) {
+            // no-op: broadcast failure must not block the HTTP response
+        }
 
         $legacyBroadcastEnabled = filter_var(
             (string) env('CHAT_LEGACY_BROADCAST', false),

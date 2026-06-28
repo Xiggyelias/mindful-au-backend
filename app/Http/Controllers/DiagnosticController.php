@@ -332,7 +332,11 @@ class DiagnosticController extends Controller
 
         $recipients = User::query()
             ->whereHas('roles', function (Builder $query) {
-                $query->whereIn('role', ['admin', 'counselor'])->where('approved', true);
+                $query->where(function ($inner) {
+                    $inner->where(function ($scoped) {
+                        $scoped->where('role', 'counselor')->where('approved', true);
+                    })->orWhere('role', 'admin');
+                });
             })
             ->pluck('id')
             ->unique()

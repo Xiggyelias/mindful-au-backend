@@ -141,19 +141,22 @@ class VideoCallController extends Controller
 
             $callerRole = $isStudent ? CounselingCall::CALLER_STUDENT : CounselingCall::CALLER_COUNSELOR;
 
-            CounselingCall::query()
-                ->where('appointment_id', $appointment->id)
-                ->where('status', CounselingCall::STATUS_PENDING)
-                ->delete();
+            DB::transaction(function () use ($appointment, $callTypeResult, $callerRole) {
+                CounselingCall::query()
+                    ->where('appointment_id', $appointment->id)
+                    ->where('status', CounselingCall::STATUS_PENDING)
+                    ->lockForUpdate()
+                    ->delete();
 
-            CounselingCall::create([
-                'appointment_id' => $appointment->id,
-                'student_id' => $appointment->student_id,
-                'counselor_id' => $appointment->counselor_id,
-                'status' => CounselingCall::STATUS_PENDING,
-                'call_type' => $callTypeResult,
-                'caller_role' => $callerRole,
-            ]);
+                CounselingCall::create([
+                    'appointment_id' => $appointment->id,
+                    'student_id' => $appointment->student_id,
+                    'counselor_id' => $appointment->counselor_id,
+                    'status' => CounselingCall::STATUS_PENDING,
+                    'call_type' => $callTypeResult,
+                    'caller_role' => $callerRole,
+                ]);
+            });
 
             $isAudio = $callTypeResult === 'audio';
             $notifyUserId = $isStudent ? (int) $appointment->counselor_id : (int) $appointment->student_id;

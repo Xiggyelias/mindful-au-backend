@@ -34,7 +34,7 @@ class NotificationEmailService
         }
 
         try {
-            Mail::to($email)->send(new InAppNotificationMail(
+            Mail::to($email)->queue(new InAppNotificationMail(
                 $this->subjectFor($notification),
                 $this->bodyFor($notification),
                 $this->actionUrlFor($notification, $user),

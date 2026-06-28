@@ -116,7 +116,7 @@ class PanicLogController extends Controller
             // Professional staff only — peer counselors are intentionally excluded so
             // first-line peers are not alerted for crisis / panic workflows.
             // Admins remain included even if misconfigured approval flags mute counselors.
-            $recipientIds = User::query()
+            $recipients = User::query()
                 ->whereHas('roles', function ($query) {
                     $query->where(function ($inner) {
                         $inner->where(function ($scoped) {
@@ -125,19 +125,19 @@ class PanicLogController extends Controller
                         })->orWhere('role', 'admin');
                     });
                 })
-                ->pluck('id')
-                ->unique()
+                ->with('roles')
+                ->get()
+                ->unique('id')
                 ->values();
 
-            foreach ($recipientIds as $recipientId) {
+            foreach ($recipients as $recipient) {
                 try {
-                    $recipient = User::find((int) $recipientId);
-                    $recipientPath = $recipient && $recipient->hasRole('admin')
+                    $recipientPath = $recipient->hasRole('admin')
                         ? '/admin/alerts'
                         : '/counselor/alerts';
 
                     $notification = Notification::create([
-                        'user_id' => (int) $recipientId,
+                        'user_id' => (int) $recipient->id,
                         'title' => 'Panic Button Triggered!',
                         'message' => $alertMessage,
                         'type' => 'panic',
@@ -157,7 +157,7 @@ class PanicLogController extends Controller
                         // already persisted, so polling will still surface it.
                         Log::warning('Panic notification broadcast failed', [
                             'panic_log_id' => $panicLog->id,
-                            'recipient_id' => (int) $recipientId,
+                            'recipient_id' => (int) $recipient->id,
                             'error' => $broadcastException->getMessage(),
                         ]);
                     }
@@ -167,7 +167,7 @@ class PanicLogController extends Controller
                     $recipientsFailed++;
                     Log::error('Failed to create panic notification', [
                         'panic_log_id' => $panicLog->id,
-                        'recipient_id' => (int) $recipientId,
+                        'recipient_id' => (int) $recipient->id,
                         'error' => $createException->getMessage(),
                     ]);
                 }

@@ -582,7 +582,12 @@ class AIDiagnosticService
     {
         $hits = 0;
         foreach ($terms as $term) {
-            if ($term !== '' && str_contains($text, strtolower((string) $term))) {
+            $needle = strtolower((string) $term);
+            if ($needle === '') {
+                continue;
+            }
+            $pattern = '/(?<![a-z0-9])'.preg_quote($needle, '/').'(?![a-z0-9])/';
+            if (preg_match($pattern, $text) === 1) {
                 $hits++;
             }
         }

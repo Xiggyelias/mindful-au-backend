@@ -87,7 +87,7 @@ class DiagnosticScoringService
     ];
 
     private const RISK_THRESHOLDS = [
-        'low' => 30,
+        'low' => 35,   // aligned with MentalHealthMlService::riskLabel (score < 36 = low)
         'medium' => 60,
         'high' => 80,
         'critical' => 100,
