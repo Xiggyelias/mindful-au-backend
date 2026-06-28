@@ -1159,6 +1159,12 @@ class SessionController extends Controller
         }
         $peerCounselor = User::query()->with('profile')->find($peerCounselorId);
 
+        // Respect the peer counselor's own availability toggle. peer_available = null
+        // is treated as available (the toggle defaults to on for new accounts).
+        if ($peerCounselor && $peerCounselor->profile && $peerCounselor->profile->peer_available === false) {
+            return response()->json(['message' => 'This peer counselor has marked themselves as unavailable for new assignments.'], 422);
+        }
+
         $riskLevel = $this->latestRiskLevel($session);
         if ($riskLevel !== null && $riskLevel !== 'low') {
             return response()->json([
