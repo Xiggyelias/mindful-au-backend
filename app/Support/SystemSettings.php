@@ -30,7 +30,7 @@ class SystemSettings
             'auto_backup' => false,
             'admin_email' => '',
             'support_email' => '',
-            'crisis_hotline' => '+263 77 406 8265',
+            'crisis_hotline' => (string) env('CRISIS_HOTLINE', ''),
         ];
     }
 

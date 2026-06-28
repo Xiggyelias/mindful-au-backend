@@ -363,7 +363,7 @@ class OAuthController extends Controller
      */
     private function allowedDomains(): array
     {
-        $raw = (string) env('INSTITUTION_EMAIL_DOMAINS', 'africau.edu');
+        $raw = (string) env('INSTITUTION_EMAIL_DOMAINS', '');
 
         return collect(explode(',', $raw))
             ->map(fn (string $domain) => Str::lower(trim($domain)))
@@ -376,7 +376,7 @@ class OAuthController extends Controller
     {
         $domains = $this->allowedDomains();
 
-        return $domains[0] ?? 'africau.edu';
+        return $domains[0] ?? '';
     }
 
     private function frontendBaseUrl(): string

@@ -14,7 +14,7 @@ class HealthController extends Controller
     public function root(): JsonResponse
     {
         return response()->json([
-            'message' => 'Africa University Counseling API',
+            'message' => config('app.name', 'Counseling API'),
             'service' => config('app.name', 'backend'),
             'time' => now()->toIso8601String(),
         ]);
