@@ -3,7 +3,6 @@
 namespace App\Http;
 
 use App\Http\Middleware\AdminMiddleware;
-use App\Http\Middleware\AnonymousModeMiddleware;
 use App\Http\Middleware\AuditAdminActions;
 use App\Http\Middleware\AuditDataAccess;
 use App\Http\Middleware\Authenticate;
@@ -85,7 +84,6 @@ class Kernel extends HttpKernel
         'admin' => AdminMiddleware::class,
         'counselor' => CounselorMiddleware::class,
         'student' => StudentMiddleware::class,
-        'anonymous' => AnonymousModeMiddleware::class,
         'track.device_session' => TrackDeviceSession::class,
         'session.timeout' => EnforceSessionTimeout::class,
         'audit.admin' => AuditAdminActions::class,

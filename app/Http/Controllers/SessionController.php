@@ -1798,29 +1798,17 @@ class SessionController extends Controller
         ]);
         $reason = trim((string) $validated['reason']);
 
+        // Pass the counselor's stated reason directly so revealAnonymousIdentity
+        // logs it in its ActivityLog entry — avoids the duplicate log that existed
+        // when 'manual_authorized_reveal' was hardcoded here and a second log was
+        // created below to capture the actual reason.
         $this->revealAnonymousIdentity(
             $request,
             $session,
             $user,
-            'manual_authorized_reveal',
+            $reason,
             null
         );
-
-        ActivityLog::query()->create([
-            'user_id' => $user->id,
-            'action' => 'anonymous_identity_manual_reveal',
-            'description' => "Authorized identity reveal for session {$session->id}.",
-            'type' => 'alert',
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'metadata' => [
-                'session_id' => $session->id,
-                'reason' => $reason,
-                'student_id' => $session->student_id,
-                'revealed_by' => $user->id,
-                'anonymous_id' => $session->anonymous_id,
-            ],
-        ]);
 
         $session->refresh()->load([
             'student.profile',
