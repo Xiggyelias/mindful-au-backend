@@ -263,11 +263,11 @@ class VoiceNotesController extends Controller
         $length = $end - $start + 1;
 
         $headers = [
-            'Content-Type'        => $mimeType,
-            'Content-Length'      => $length,
+            'Content-Type' => $mimeType,
+            'Content-Length' => $length,
             'Content-Disposition' => 'inline',
-            'Accept-Ranges'       => 'bytes',
-            'Cache-Control'       => 'private, no-cache, no-store, must-revalidate',
+            'Accept-Ranges' => 'bytes',
+            'Cache-Control' => 'private, no-cache, no-store, must-revalidate',
             'X-Content-Type-Options' => 'nosniff',
         ];
 
@@ -280,22 +280,33 @@ class VoiceNotesController extends Controller
             if (! $stream) {
                 return;
             }
-            if ($start > 0) {
-                fseek($stream, $start);
-            }
-            $remaining = $length;
-            while ($remaining > 0 && ! feof($stream)) {
-                $chunk = fread($stream, min(65536, $remaining));
-                if ($chunk === false || $chunk === '') {
-                    break;
+            try {
+                if ($start > 0) {
+                    fseek($stream, $start);
                 }
-                echo $chunk;
-                $remaining -= strlen($chunk);
-                ob_flush();
-                flush();
+                $remaining = $length;
+                while ($remaining > 0 && ! feof($stream)) {
+                    $chunk = fread($stream, min(65536, $remaining));
+                    if ($chunk === false || $chunk === '') {
+                        break;
+                    }
+                    echo $chunk;
+                    $remaining -= strlen($chunk);
+                    $this->flushStreamOutput();
+                }
+            } finally {
+                fclose($stream);
             }
-            fclose($stream);
         }, $statusCode, $headers);
+    }
+
+    private function flushStreamOutput(): void
+    {
+        if (ob_get_level() > 0) {
+            @ob_flush();
+        }
+
+        flush();
     }
 
     private function resolveRecipientId(CounselingSession $session, int $senderId): ?int

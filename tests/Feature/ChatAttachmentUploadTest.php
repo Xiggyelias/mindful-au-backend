@@ -248,6 +248,57 @@ class ChatAttachmentUploadTest extends TestCase
     }
 
     #[Test]
+    public function private_voice_note_stream_returns_exact_stored_bytes(): void
+    {
+        $bytes = 'voice-bytes-without-buffer-noise';
+        Storage::disk('local')->put('voice-notes/exact.webm', $bytes);
+
+        $message = Message::create([
+            'session_id' => $this->session->id,
+            'sender_id' => $this->student->id,
+            'recipient_id' => $this->counselor->id,
+            'content' => 'Voice note',
+            'message_type' => 'voice',
+            'file_url' => 'private://voice-notes/exact.webm',
+            'has_file' => true,
+            'is_encrypted' => false,
+        ]);
+
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$message->id}/voice-note/stream");
+
+        $streamResponse->assertStatus(200);
+        $this->assertSame((string) strlen($bytes), (string) $streamResponse->headers->get('Content-Length'));
+        $this->assertSame($bytes, $streamResponse->streamedContent());
+    }
+
+    #[Test]
+    public function private_voice_note_stream_supports_byte_ranges_for_audio_playback(): void
+    {
+        $bytes = '0123456789abcdef';
+        Storage::disk('local')->put('voice-notes/ranged.webm', $bytes);
+
+        $message = Message::create([
+            'session_id' => $this->session->id,
+            'sender_id' => $this->student->id,
+            'recipient_id' => $this->counselor->id,
+            'content' => 'Voice note',
+            'message_type' => 'voice',
+            'file_url' => 'private://voice-notes/ranged.webm',
+            'has_file' => true,
+            'is_encrypted' => false,
+        ]);
+
+        $streamResponse = $this->actingAs($this->counselor)
+            ->withHeaders(['Range' => 'bytes=4-9'])
+            ->get("/api/messages/{$message->id}/voice-note/stream");
+
+        $streamResponse->assertStatus(206);
+        $this->assertSame('bytes 4-9/16', (string) $streamResponse->headers->get('Content-Range'));
+        $this->assertSame('6', (string) $streamResponse->headers->get('Content-Length'));
+        $this->assertSame('456789', $streamResponse->streamedContent());
+    }
+
+    #[Test]
     public function legacy_public_chat_attachment_voice_url_can_be_streamed(): void
     {
         Storage::fake('public');
