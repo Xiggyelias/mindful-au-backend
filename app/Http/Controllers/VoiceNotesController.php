@@ -3,15 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Models\AiDiagnostic;
+use App\Models\ChatFile;
 use App\Models\CounselingSession;
 use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\ChatMessageData;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -81,26 +84,61 @@ class VoiceNotesController extends Controller
         ]);
 
         $file = $request->file('audio');
-        $path = $file->storeAs(
-            'voice-notes',
-            Str::uuid()->toString().'.'.$file->guessExtension(),
-            'local'
-        );
-        // Store the private path prefixed with a sentinel so the stream() method
-        // can distinguish it from legacy public-disk paths (which start with /storage/).
-        $url = 'private://'.$path;
+        $disk = (string) config('chat.attachments.disk', 'local');
+        $directory = trim((string) config('chat.attachments.directory', 'uploads/chat_files'), '/');
+        $extension = strtolower((string) (
+            $file->getClientOriginalExtension()
+            ?: $file->extension()
+            ?: $file->guessExtension()
+            ?: 'webm'
+        ));
+        $storedFileName = Str::uuid()->toString().'.'.$extension;
+        $datedDirectory = trim($directory.'/voice-notes/'.now()->format('Y/m'), '/');
+        /** @var FilesystemAdapter $storage */
+        $storage = Storage::disk($disk);
+        $storedPath = $storage->putFileAs($datedDirectory, $file, $storedFileName);
 
-        $message = Message::create([
-            'session_id' => $sessionId,
-            'sender_id' => $user->id,
-            'recipient_id' => $this->resolveRecipientId($session, (int) $user->id),
-            'content' => 'Voice note',
-            'message_type' => 'voice',
-            'file_url' => $url,
-            'has_file' => true,
-            'is_encrypted' => false,
-            'sent_as_anonymous' => (bool) $session->is_anonymous,
-        ]);
+        if (! $storedPath) {
+            return response()->json([
+                'message' => 'Unable to store voice note.',
+            ], 500);
+        }
+
+        $message = null;
+        $chatFile = null;
+
+        try {
+            DB::beginTransaction();
+
+            $message = Message::create([
+                'session_id' => $sessionId,
+                'sender_id' => $user->id,
+                'recipient_id' => $this->resolveRecipientId($session, (int) $user->id),
+                'content' => 'Voice note',
+                'message_type' => 'voice',
+                'file_url' => null,
+                'has_file' => true,
+                'is_encrypted' => false,
+                'sent_as_anonymous' => (bool) $session->is_anonymous,
+            ]);
+
+            $chatFile = ChatFile::create([
+                'message_id' => $message->id,
+                'file_name' => $this->voiceFileName((string) $file->getClientOriginalName(), $extension),
+                'file_path' => $storedPath,
+                'file_type' => strtolower((string) ($file->getMimeType() ?: 'audio/webm')),
+                'file_size' => (int) $file->getSize(),
+                'uploaded_at' => now(),
+            ]);
+
+            DB::commit();
+        } catch (\Throwable $exception) {
+            DB::rollBack();
+            Storage::disk($disk)->delete($storedPath);
+            throw $exception;
+        }
+
+        $message->setRelation('chatFile', $chatFile);
 
         $this->notifyRecipients($session, (int) $user->id, $message);
 
@@ -324,6 +362,16 @@ class VoiceNotesController extends Controller
         }
 
         return null;
+    }
+
+    private function voiceFileName(string $originalName, string $extension): string
+    {
+        $extension = trim(strtolower($extension), '.');
+        $baseName = trim(pathinfo($originalName, PATHINFO_FILENAME));
+        $baseName = preg_replace('/[^A-Za-z0-9._-]+/', '-', $baseName) ?: 'voice-note';
+        $baseName = trim($baseName, '.-_') ?: 'voice-note';
+
+        return Str::limit($baseName, 120, '').'.'.($extension !== '' ? $extension : 'webm');
     }
 
     private function legacyPublicVoicePath(string $fileUrl): ?string

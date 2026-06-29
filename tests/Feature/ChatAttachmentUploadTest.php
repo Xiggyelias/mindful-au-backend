@@ -241,7 +241,49 @@ class ChatAttachmentUploadTest extends TestCase
             ->assertJsonPath('has_file', true);
 
         $messageId = (int) $uploadResponse->json('id');
+        $storedPath = (string) $uploadResponse->json('attachment.file_path');
 
+        $this->assertStringContainsString('voice-notes/', $storedPath);
+        Storage::disk('local')->assertExists($storedPath);
+        $this->assertDatabaseHas('messages', [
+            'id' => $messageId,
+            'file_url' => null,
+            'message_type' => 'voice',
+        ]);
+        $this->assertDatabaseHas('chat_files', [
+            'message_id' => $messageId,
+            'file_path' => $storedPath,
+            'file_type' => 'audio/webm',
+        ]);
+
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$messageId}/voice-note/stream");
+
+        $streamResponse->assertStatus(200);
+    }
+
+    #[Test]
+    public function dedicated_voice_note_endpoint_uses_configured_attachment_disk(): void
+    {
+        config(['chat.attachments.disk' => 'public']);
+        Storage::fake('public');
+
+        $voice = UploadedFile::fake()->create('configured-disk.webm', 128, 'audio/webm');
+
+        $uploadResponse = $this->actingAs($this->student)->post("/api/sessions/{$this->session->id}/voice-notes", [
+            'audio' => $voice,
+        ]);
+
+        $uploadResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice')
+            ->assertJsonPath('attachment.file_type', 'audio/webm');
+
+        $storedPath = (string) $uploadResponse->json('attachment.file_path');
+        $this->assertStringContainsString('voice-notes/', $storedPath);
+        Storage::disk('public')->assertExists($storedPath);
+        Storage::disk('local')->assertMissing($storedPath);
+
+        $messageId = (int) $uploadResponse->json('id');
         $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$messageId}/voice-note/stream");
 
         $streamResponse->assertStatus(200);
