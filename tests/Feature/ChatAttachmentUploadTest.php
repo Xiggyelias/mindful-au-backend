@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AiDiagnostic;
 use App\Models\CounselingSession;
+use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
@@ -218,6 +219,56 @@ class ChatAttachmentUploadTest extends TestCase
             'audio/webm',
             (string) $streamResponse->headers->get('Content-Type')
         );
+        $this->assertSame('inline', (string) $streamResponse->headers->get('Content-Disposition'));
+    }
+
+    #[Test]
+    public function dedicated_voice_note_endpoint_accepts_recordings_larger_than_generic_attachment_limit(): void
+    {
+        $voice = UploadedFile::fake()->create('long-check-in.webm', 6000, 'audio/webm');
+
+        $uploadResponse = $this->actingAs($this->student)->post("/api/sessions/{$this->session->id}/voice-notes", [
+            'audio' => $voice,
+        ]);
+
+        $uploadResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice')
+            ->assertJsonPath('has_file', true);
+
+        $messageId = (int) $uploadResponse->json('id');
+
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$messageId}/voice-note/stream");
+
+        $streamResponse->assertStatus(200);
+    }
+
+    #[Test]
+    public function legacy_public_chat_attachment_voice_url_can_be_streamed(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('chat-attachments/legacy-voice.webm', 'legacy voice bytes');
+
+        $message = Message::create([
+            'session_id' => $this->session->id,
+            'sender_id' => $this->student->id,
+            'recipient_id' => $this->counselor->id,
+            'content' => 'Voice note',
+            'message_type' => 'voice',
+            'file_url' => url('/storage/chat-attachments/legacy-voice.webm'),
+            'has_file' => true,
+            'is_encrypted' => false,
+        ]);
+
+        $downloadResponse = $this->actingAs($this->counselor)->getJson("/api/messages/{$message->id}/voice-note");
+
+        $downloadResponse
+            ->assertStatus(200)
+            ->assertJsonStructure(['stream_url', 'download_url', 'message']);
+
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$message->id}/voice-note/stream");
+
+        $streamResponse->assertStatus(200);
         $this->assertSame('inline', (string) $streamResponse->headers->get('Content-Disposition'));
     }
 

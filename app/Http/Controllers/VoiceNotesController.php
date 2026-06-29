@@ -148,14 +148,10 @@ class VoiceNotesController extends Controller
             ]);
         }
 
-        // Legacy path: file was stored on the public disk.
-        $urlPath = parse_url($fileUrl, PHP_URL_PATH);
-        if (! is_string($urlPath) || ! str_starts_with($urlPath, '/storage/voice-notes/')) {
-            return response()->json(['message' => 'Invalid voice note path'], 400);
-        }
-
-        $path = ltrim(Str::after($urlPath, '/storage/'), '/');
-        if (str_contains($path, '..')) {
+        // Legacy path: older voice rows stored a public storage URL instead of
+        // a chat_files row or private:// pointer.
+        $path = $this->legacyPublicVoicePath($fileUrl);
+        if ($path === null) {
             return response()->json(['message' => 'Invalid voice note path'], 400);
         }
 
@@ -212,12 +208,8 @@ class VoiceNotesController extends Controller
                 }
                 $disk = Storage::disk('local');
             } else {
-                $urlPath = parse_url($fileUrl, PHP_URL_PATH);
-                if (! is_string($urlPath) || ! str_starts_with($urlPath, '/storage/voice-notes/')) {
-                    return response()->json(['message' => 'Invalid voice note path'], 400);
-                }
-                $path = ltrim(Str::after($urlPath, '/storage/'), '/');
-                if (str_contains($path, '..')) {
+                $path = $this->legacyPublicVoicePath($fileUrl);
+                if ($path === null) {
                     return response()->json(['message' => 'Invalid voice note path'], 400);
                 }
                 $disk = Storage::disk('public');
@@ -303,6 +295,27 @@ class VoiceNotesController extends Controller
 
         if ($this->activeCasePeerCounselorId($session) === $senderId || (int) $session->counselor_id === $senderId) {
             return (int) $session->student_id;
+        }
+
+        return null;
+    }
+
+    private function legacyPublicVoicePath(string $fileUrl): ?string
+    {
+        $urlPath = parse_url($fileUrl, PHP_URL_PATH);
+        if (! is_string($urlPath) || ! str_starts_with($urlPath, '/storage/')) {
+            return null;
+        }
+
+        $path = ltrim(Str::after($urlPath, '/storage/'), '/');
+        if ($path === '' || str_contains($path, '..')) {
+            return null;
+        }
+
+        foreach (['voice-notes/', 'chat-attachments/', 'uploads/chat_files/'] as $allowedPrefix) {
+            if (str_starts_with($path, $allowedPrefix)) {
+                return $path;
+            }
         }
 
         return null;
