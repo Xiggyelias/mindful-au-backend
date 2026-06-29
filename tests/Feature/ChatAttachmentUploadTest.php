@@ -36,6 +36,10 @@ class ChatAttachmentUploadTest extends TestCase
         $this->counselor = User::factory()->create(['email' => 'counselor-attachment@test.com']);
         $this->peerCounselor = User::factory()->create(['email' => 'peer-attachment@test.com']);
 
+        $this->student->profile()->create(['full_name' => 'Attachment Student']);
+        $this->counselor->profile()->create(['full_name' => 'Attachment Counselor']);
+        $this->peerCounselor->profile()->create(['full_name' => 'Attachment Peer']);
+
         $this->assignRole($this->student, 'student');
         $this->assignRole($this->counselor, 'counselor');
         $this->assignRole($this->peerCounselor, 'peer_counselor');
@@ -270,6 +274,110 @@ class ChatAttachmentUploadTest extends TestCase
 
         $streamResponse->assertStatus(200);
         $this->assertSame('inline', (string) $streamResponse->headers->get('Content-Disposition'));
+    }
+
+    #[Test]
+    public function anonymous_attachment_download_masks_student_identity_for_counselor(): void
+    {
+        $this->session->update([
+            'is_anonymous' => true,
+            'anonymous_id' => CounselingSession::generateUniqueAnonymousId(),
+        ]);
+
+        $file = UploadedFile::fake()->create('anonymous-note.png', 128, 'image/png');
+
+        $uploadResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'file' => $file,
+        ]);
+
+        $uploadResponse->assertStatus(201);
+        $messageId = (int) $uploadResponse->json('id');
+
+        $downloadResponse = $this->actingAs($this->counselor)->getJson("/api/messages/{$messageId}/attachment");
+
+        $downloadResponse
+            ->assertStatus(200)
+            ->assertJsonPath('message.sender_id', 0)
+            ->assertJsonPath('message.sender_name_snapshot', 'Anonymous User')
+            ->assertJsonPath('message.sender_display_name', 'Anonymous User')
+            ->assertJsonPath('message.sender', null);
+
+        $payload = json_encode($downloadResponse->json());
+        $this->assertStringNotContainsString('Attachment Student', $payload);
+        $this->assertStringNotContainsString('student-attachment@test.com', $payload);
+    }
+
+    #[Test]
+    public function anonymous_voice_attachment_download_masks_student_identity_for_counselor(): void
+    {
+        $this->session->update([
+            'is_anonymous' => true,
+            'anonymous_id' => CounselingSession::generateUniqueAnonymousId(),
+        ]);
+
+        $voice = UploadedFile::fake()->create('anonymous-voice.webm', 128, 'audio/webm');
+
+        $uploadResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'message_type' => 'voice',
+            'file' => $voice,
+        ]);
+
+        $uploadResponse->assertStatus(201);
+        $messageId = (int) $uploadResponse->json('id');
+
+        $downloadResponse = $this->actingAs($this->counselor)->getJson("/api/messages/{$messageId}/voice-note");
+
+        $downloadResponse
+            ->assertStatus(200)
+            ->assertJsonPath('message.sender_id', 0)
+            ->assertJsonPath('message.sender_name_snapshot', 'Anonymous User')
+            ->assertJsonPath('message.sender_display_name', 'Anonymous User')
+            ->assertJsonPath('message.sender', null);
+
+        $payload = json_encode($downloadResponse->json());
+        $this->assertStringNotContainsString('Attachment Student', $payload);
+        $this->assertStringNotContainsString('student-attachment@test.com', $payload);
+    }
+
+    #[Test]
+    public function anonymous_voice_note_endpoint_masks_download_payload_and_notification(): void
+    {
+        $this->session->update([
+            'is_anonymous' => true,
+            'anonymous_id' => CounselingSession::generateUniqueAnonymousId(),
+        ]);
+
+        $voice = UploadedFile::fake()->create('endpoint-anonymous-voice.webm', 128, 'audio/webm');
+
+        $uploadResponse = $this->actingAs($this->student)->post("/api/sessions/{$this->session->id}/voice-notes", [
+            'audio' => $voice,
+        ]);
+
+        $uploadResponse->assertStatus(201);
+        $messageId = (int) $uploadResponse->json('id');
+
+        $notification = Notification::query()
+            ->where('user_id', $this->counselor->id)
+            ->where('meta->chat_message_id', $messageId)
+            ->first();
+
+        $this->assertNotNull($notification);
+        $this->assertSame('Anonymous User: sent a voice note', $notification->message);
+
+        $downloadResponse = $this->actingAs($this->counselor)->getJson("/api/messages/{$messageId}/voice-note");
+
+        $downloadResponse
+            ->assertStatus(200)
+            ->assertJsonPath('message.sender_id', 0)
+            ->assertJsonPath('message.sender_name_snapshot', 'Anonymous User')
+            ->assertJsonPath('message.sender_display_name', 'Anonymous User')
+            ->assertJsonPath('message.sender', null);
+
+        $payload = json_encode($downloadResponse->json());
+        $this->assertStringNotContainsString('Attachment Student', $payload);
+        $this->assertStringNotContainsString('student-attachment@test.com', $payload);
     }
 
     #[Test]

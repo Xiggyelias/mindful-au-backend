@@ -177,28 +177,41 @@ class TipOfDayService
 
     private function ensureNotification(TipDelivery $delivery, User $user): void
     {
+        // Fast-path: in-memory object already has a notification_id.
         if ($delivery->notification_id) {
             return;
         }
 
-        $tip = $delivery->relationLoaded('tip')
-            ? $delivery->tip
-            : $delivery->tip()->first();
+        // Re-fetch with a row-level lock so concurrent requests don't both see
+        // notification_id = null and create duplicate notifications.
+        \DB::transaction(function () use ($delivery, $user): void {
+            /** @var TipDelivery|null $fresh */
+            $fresh = TipDelivery::query()->lockForUpdate()->find($delivery->id);
 
-        if (! $tip instanceof Tip) {
-            return;
-        }
+            if (! $fresh instanceof TipDelivery || $fresh->notification_id) {
+                return;
+            }
 
-        $notification = Notification::query()->create([
-            'user_id' => $user->id,
-            'title' => 'Daily Wellness Tip',
-            'message' => trim($tip->title.'. '.$tip->content),
-            'type' => 'info',
-            'read' => false,
-        ]);
+            $tip = $fresh->relationLoaded('tip')
+                ? $fresh->tip
+                : $fresh->tip()->first();
 
-        $delivery->forceFill([
-            'notification_id' => $notification->id,
-        ])->save();
+            if (! $tip instanceof Tip) {
+                return;
+            }
+
+            $notification = Notification::query()->create([
+                'user_id' => $user->id,
+                'title'   => 'Daily Wellness Tip',
+                'message' => trim($tip->title.'. '.$tip->content),
+                'type'    => 'info',
+                'read'    => false,
+            ]);
+
+            $fresh->forceFill(['notification_id' => $notification->id])->save();
+
+            // Keep the caller's in-memory object in sync.
+            $delivery->forceFill(['notification_id' => $notification->id]);
+        });
     }
 }

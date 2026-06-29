@@ -210,7 +210,7 @@ class ChatAttachmentController extends Controller
 
             return response()->json([
                 'download_url' => $message->chatFile->signedUrl(true),
-                'message' => ChatMessageData::make($message, true),
+                'message' => $this->messagePayloadForViewer($message, $session, $user, true),
             ]);
         }
 
@@ -237,7 +237,7 @@ class ChatAttachmentController extends Controller
 
         return response()->json([
             'download_url' => $publicStorage->url($path),
-            'message' => ChatMessageData::make($message, true),
+            'message' => $this->messagePayloadForViewer($message, $session, $user, true),
         ]);
     }
 
@@ -476,6 +476,29 @@ class ChatAttachmentController extends Controller
     private function resolveAnonymousLabel(CounselingSession $_session): string
     {
         return 'Anonymous User';
+    }
+
+    private function messagePayloadForViewer(
+        Message $message,
+        CounselingSession $session,
+        User $viewer,
+        bool $includeSender = false,
+    ): array {
+        $payloadMessage = clone $message;
+
+        if ($this->shouldMaskStudentIdentityForRecipient($session, (int) $viewer->id, $payloadMessage->sent_as_anonymous)) {
+            if ((int) $payloadMessage->sender_id === (int) $session->student_id) {
+                $payloadMessage->sender_id = 0;
+                $payloadMessage->sender_name_snapshot = $this->resolveAnonymousLabel($session);
+                $payloadMessage->unsetRelation('sender');
+            }
+
+            if ((int) $payloadMessage->recipient_id === (int) $session->student_id) {
+                $payloadMessage->recipient_id = 0;
+            }
+        }
+
+        return ChatMessageData::make($payloadMessage, $includeSender);
     }
 
     private function activeCasePeerCounselorId(CounselingSession $session): int

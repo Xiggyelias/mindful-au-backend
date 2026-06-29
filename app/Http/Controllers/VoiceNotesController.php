@@ -11,12 +11,15 @@ use App\Models\User;
 use App\Support\ChatMessageData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class VoiceNotesController extends Controller
 {
+    private const ANONYMOUS_SESSION_TTL_HOURS = 24;
+
     private function viewerCanAccessVoiceThread(User $user, CounselingSession $session): bool
     {
         if ($user->hasRole('admin')) {
@@ -37,6 +40,10 @@ class VoiceNotesController extends Controller
 
         if (! $this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
         }
 
         if (! $user->hasRole('admin') && in_array((string) $session->status, ['completed', 'cancelled'], true)) {
@@ -110,6 +117,10 @@ class VoiceNotesController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
+        }
+
         $message->loadMissing('chatFile');
 
         if ($message->message_type !== 'voice' || (! $message->file_url && ! $message->chatFile)) {
@@ -124,7 +135,7 @@ class VoiceNotesController extends Controller
             return response()->json([
                 'stream_url' => url("/api/messages/{$messageId}/voice-note/stream"),
                 'download_url' => $message->chatFile->signedUrl(true),
-                'message' => ChatMessageData::make($message, true),
+                'message' => $this->messagePayloadForViewer($message, $session, $user, true),
             ]);
         }
 
@@ -144,7 +155,7 @@ class VoiceNotesController extends Controller
             // For private files, return a stream URL (requires auth); never expose a direct URL.
             return response()->json([
                 'stream_url' => url("/api/messages/{$messageId}/voice-note/stream"),
-                'message' => $message,
+                'message' => $this->messagePayloadForViewer($message, $session, $user, true),
             ]);
         }
 
@@ -164,7 +175,7 @@ class VoiceNotesController extends Controller
             'stream_url' => url("/api/messages/{$messageId}/voice-note/stream"),
             // Kept for backwards compatibility with older client builds.
             'download_url' => asset('storage/'.$path),
-            'message' => $message,
+            'message' => $this->messagePayloadForViewer($message, $session, $user, true),
         ]);
     }
 
@@ -181,6 +192,10 @@ class VoiceNotesController extends Controller
         $session = $message->session;
         if (! $this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($this->isAnonymousSessionExpired($session)) {
+            return response()->json(['message' => 'This anonymous session has expired.'], 410);
         }
 
         $message->loadMissing('chatFile');
@@ -373,6 +388,13 @@ class VoiceNotesController extends Controller
         $senderName = optional(optional($sender)->profile)->full_name
             ?: ($sender?->email ? Str::before((string) $sender->email, '@') : 'Someone');
 
+        if (
+            (int) $session->student_id === $senderId
+            && $this->shouldMaskStudentIdentityForRecipient($session, $recipientId, $message->sent_as_anonymous)
+        ) {
+            $senderName = $this->resolveAnonymousLabel($session);
+        }
+
         Notification::create([
             'user_id' => $recipientId,
             'title' => 'New voice note',
@@ -385,6 +407,92 @@ class VoiceNotesController extends Controller
             ],
             'type' => 'info',
         ]);
+    }
+
+    private function isAnonymousSessionExpired(CounselingSession $session): bool
+    {
+        if (! $session->is_anonymous) {
+            return false;
+        }
+
+        $ttlHours = max(1, (int) env('ANONYMOUS_SESSION_TTL_HOURS', self::ANONYMOUS_SESSION_TTL_HOURS));
+        $updatedAt = $session->updated_at instanceof \DateTimeInterface
+            ? Carbon::instance($session->updated_at)
+            : now();
+
+        if ($updatedAt->greaterThanOrEqualTo(now()->subHours($ttlHours))) {
+            return false;
+        }
+
+        if (in_array((string) $session->status, ['pending', 'active'], true)) {
+            $session->forceFill([
+                'status' => 'cancelled',
+                'ended_at' => now(),
+            ])->saveQuietly();
+        }
+
+        return true;
+    }
+
+    private function shouldMaskStudentIdentityForRecipient(
+        CounselingSession $session,
+        int $recipientId,
+        ?bool $sentAsAnonymousSnapshot = null,
+    ): bool {
+        $effectiveAnonymous = $sentAsAnonymousSnapshot ?? (bool) $session->is_anonymous;
+
+        if (! $effectiveAnonymous) {
+            return false;
+        }
+
+        if ($recipientId === (int) $session->student_id) {
+            return false;
+        }
+
+        $recipient = User::with('roles')->find($recipientId);
+        if (! $recipient) {
+            return true;
+        }
+
+        if (
+            $session->identity_revealed_at !== null
+            && (
+                $recipient->hasRole('admin')
+                || ($recipient->hasRole('counselor') && $recipientId === (int) $session->counselor_id)
+            )
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function resolveAnonymousLabel(CounselingSession $_session): string
+    {
+        return 'Anonymous User';
+    }
+
+    private function messagePayloadForViewer(
+        Message $message,
+        CounselingSession $session,
+        User $viewer,
+        bool $includeSender = false,
+    ): array {
+        $payloadMessage = clone $message;
+
+        if ($this->shouldMaskStudentIdentityForRecipient($session, (int) $viewer->id, $payloadMessage->sent_as_anonymous)) {
+            if ((int) $payloadMessage->sender_id === (int) $session->student_id) {
+                $payloadMessage->sender_id = 0;
+                $payloadMessage->sender_name_snapshot = $this->resolveAnonymousLabel($session);
+                $payloadMessage->unsetRelation('sender');
+            }
+
+            if ((int) $payloadMessage->recipient_id === (int) $session->student_id) {
+                $payloadMessage->recipient_id = 0;
+            }
+        }
+
+        return ChatMessageData::make($payloadMessage, $includeSender);
     }
 
     private function activeCasePeerCounselorId(CounselingSession $session): int
