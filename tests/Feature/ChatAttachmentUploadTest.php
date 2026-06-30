@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AiDiagnostic;
+use App\Models\ChatFile;
 use App\Models\CounselingSession;
 use App\Models\Message;
 use App\Models\Notification;
@@ -105,6 +106,33 @@ class ChatAttachmentUploadTest extends TestCase
 
         $this->assertStringContainsString('/api/chat/files/'.$attachmentId.'/content', $attachmentUrl);
         $this->assertStringContainsString('/api/chat/files/'.$attachmentId.'/content', $downloadUrl);
+    }
+
+    #[Test]
+    public function signed_voice_attachment_content_is_served_with_audio_mime_type(): void
+    {
+        $voice = UploadedFile::fake()->create('browser-voice.webm', 128, 'audio/webm');
+
+        $uploadResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'message_type' => 'voice',
+            'file' => $voice,
+        ]);
+
+        $uploadResponse->assertStatus(201);
+
+        $attachmentId = (int) $uploadResponse->json('attachment.id');
+        $chatFile = ChatFile::findOrFail($attachmentId);
+        $chatFile->forceFill(['file_type' => 'video/webm'])->save();
+
+        $signedUrl = $chatFile->fresh()->signedUrl();
+        $parts = parse_url($signedUrl);
+        $uri = ($parts['path'] ?? '').(isset($parts['query']) ? '?'.$parts['query'] : '');
+
+        $response = $this->get($uri);
+
+        $response->assertStatus(200);
+        $this->assertStringStartsWith('audio/webm', (string) $response->headers->get('Content-Type'));
     }
 
     #[Test]

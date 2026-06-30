@@ -273,13 +273,7 @@ class VoiceNotesController extends Controller
             return response()->json(['message' => 'File not found'], 404);
         }
 
-        $mimeType = $mimeType ?: ($disk->mimeType($path) ?: 'audio/webm');
-        // Chrome MediaRecorder produces video/webm or video/x-matroska containers for audio-only
-        // recordings. Browsers reject these MIME types on <audio> elements — normalise to audio/webm.
-        if (in_array($mimeType, ['video/webm', 'video/x-matroska', 'audio/x-matroska', 'application/x-matroska'], true)) {
-            $mimeType = 'audio/webm';
-        }
-
+        $mimeType = $this->voiceResponseContentType($mimeType ?: ($disk->mimeType($path) ?: 'audio/webm'));
         $totalSize = $disk->size($path);
 
         // Handle HTTP Range requests — required by all browsers for audio seeking/playback.
@@ -345,6 +339,20 @@ class VoiceNotesController extends Controller
         }
 
         flush();
+    }
+
+    private function voiceResponseContentType(string $mimeType): string
+    {
+        $baseMimeType = strtolower(trim(explode(';', $mimeType)[0] ?? ''));
+        if ($baseMimeType === '') {
+            return 'audio/webm';
+        }
+
+        if ($baseMimeType === 'video/webm' || str_contains($baseMimeType, 'matroska')) {
+            return 'audio/webm';
+        }
+
+        return str_starts_with($baseMimeType, 'audio/') ? $baseMimeType : 'audio/webm';
     }
 
     private function resolveRecipientId(CounselingSession $session, int $senderId): ?int

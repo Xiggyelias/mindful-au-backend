@@ -263,7 +263,7 @@ class ChatAttachmentController extends Controller
         $safeName = str_replace(['\\', '"'], ['_', ''], (string) $chatFile->file_name);
 
         return response()->file($absolutePath, [
-            'Content-Type' => $chatFile->file_type,
+            'Content-Type' => $this->attachmentResponseContentType((string) $chatFile->file_type),
             'Content-Disposition' => sprintf('%s; filename="%s"', $disposition, $safeName),
             'Cache-Control' => 'private, max-age=300',
         ]);
@@ -386,6 +386,20 @@ class ChatAttachmentController extends Controller
         }
 
         return in_array($mimeType, (array) config('chat.attachments.allowed_mime_types', []), true);
+    }
+
+    private function attachmentResponseContentType(string $mimeType): string
+    {
+        $baseMimeType = strtolower(trim(explode(';', $mimeType)[0] ?? ''));
+        if ($baseMimeType === '') {
+            return 'application/octet-stream';
+        }
+
+        if ($baseMimeType === 'video/webm' || str_contains($baseMimeType, 'matroska')) {
+            return 'audio/webm';
+        }
+
+        return $baseMimeType;
     }
 
     private function isVoiceUploadMimeType(string $mimeType): bool
