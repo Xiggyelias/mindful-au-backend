@@ -188,6 +188,9 @@ class ChatAttachmentController extends Controller
         $message = Message::findOrFail($messageId);
         $user = $request->user();
         $session = $message->session()->with(['student', 'counselor'])->first() ?? $message->session;
+        if (! $session) {
+            return response()->json(['message' => 'Conversation no longer exists.'], 404);
+        }
         $isAssignedPeerCounselor = $this->isAssignedPeerCounselor($user, $session);
         $uid = (int) $user->id;
 

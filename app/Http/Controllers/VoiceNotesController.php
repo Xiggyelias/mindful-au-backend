@@ -149,6 +149,9 @@ class VoiceNotesController extends Controller
         $user = $request->user();
 
         $session = $message->session;
+        if (! $session) {
+            return response()->json(['message' => 'Conversation no longer exists.'], 404);
+        }
         if (! $this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -226,6 +229,9 @@ class VoiceNotesController extends Controller
         $user = $request->user();
 
         $session = $message->session;
+        if (! $session) {
+            return response()->json(['message' => 'Conversation no longer exists.'], 404);
+        }
         if (! $this->viewerCanAccessVoiceThread($user, $session)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
