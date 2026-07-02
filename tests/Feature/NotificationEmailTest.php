@@ -42,7 +42,7 @@ class NotificationEmailTest extends TestCase
             ],
         ]);
 
-        Mail::assertSent(InAppNotificationMail::class, function (InAppNotificationMail $mail) {
+        Mail::assertQueued(InAppNotificationMail::class, function (InAppNotificationMail $mail) {
             return $mail->hasTo('student-email@test.com')
                 && $mail->subjectLine === 'Appointment confirmed'
                 && $mail->bodyText === 'There is an appointment update in Mindful AU. Sign in to view the details.'
@@ -68,7 +68,7 @@ class NotificationEmailTest extends TestCase
             ],
         ]);
 
-        Mail::assertSent(InAppNotificationMail::class, function (InAppNotificationMail $mail) {
+        Mail::assertQueued(InAppNotificationMail::class, function (InAppNotificationMail $mail) {
             return $mail->hasTo('counselor-email@test.com')
                 && $mail->subjectLine === 'New Mindful AU message'
                 && $mail->bodyText === 'You have a new secure message in Mindful AU. Sign in to view and respond.'
@@ -91,7 +91,8 @@ class NotificationEmailTest extends TestCase
             'type' => 'success',
         ]);
 
-        Mail::assertNothingSent();
+        // Covers both sent and queued mail — the service queues its mailables.
+        Mail::assertNothingOutgoing();
     }
 
     #[Test]

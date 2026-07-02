@@ -18,6 +18,7 @@ class ChatFile extends Model
         'message_id',
         'file_name',
         'file_path',
+        'disk',
         'file_type',
         'file_size',
         'uploaded_at',
@@ -51,10 +52,21 @@ class ChatFile extends Model
         ];
     }
 
+    /**
+     * Disk this file was actually stored on. Legacy rows (null disk) fall
+     * back to the globally configured attachments disk.
+     */
+    public function resolveDisk(): string
+    {
+        $disk = trim((string) ($this->disk ?? ''));
+
+        return $disk !== '' ? $disk : (string) config('chat.attachments.disk', 'local');
+    }
+
     public function signedUrl(bool $download = false): string
     {
         $minutes = (int) config('chat.attachments.signed_url_minutes', 1440);
-        $disk = (string) config('chat.attachments.disk', 'local');
+        $disk = $this->resolveDisk();
         $expiry = now()->addMinutes(max(30, $minutes));
 
         if ($disk === 's3') {
@@ -83,9 +95,13 @@ class ChatFile extends Model
 
     public function deleteStoredFile(): void
     {
-        $disk = (string) config('chat.attachments.disk', 'local');
-        if ($this->file_path && Storage::disk($disk)->exists($this->file_path)) {
-            Storage::disk($disk)->delete($this->file_path);
+        try {
+            $disk = $this->resolveDisk();
+            if ($this->file_path && Storage::disk($disk)->exists($this->file_path)) {
+                Storage::disk($disk)->delete($this->file_path);
+            }
+        } catch (\Throwable) {
+            // Disk unreachable — leave the orphaned object for a cleanup job.
         }
     }
 
@@ -96,9 +112,7 @@ class ChatFile extends Model
         }
 
         try {
-            $disk = (string) config('chat.attachments.disk', 'local');
-
-            return Storage::disk($disk)->exists($this->file_path);
+            return Storage::disk($this->resolveDisk())->exists($this->file_path);
         } catch (\Throwable) {
             return false;
         }

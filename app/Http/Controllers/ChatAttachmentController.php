@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
+use App\Support\ChatAttachmentStorage;
 use App\Support\ChatMessageData;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\JsonResponse;
@@ -111,16 +112,13 @@ class ChatAttachmentController extends Controller
             }
         }
 
-        $disk = (string) config('chat.attachments.disk', 'local');
         $directory = trim((string) config('chat.attachments.directory', 'uploads/chat_files'), '/');
         $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin'));
         $storedFileName = Str::uuid()->toString().'.'.$extension;
         $datedDirectory = trim($directory.'/'.now()->format('Y/m'), '/');
-        /** @var FilesystemAdapter $storage */
-        $storage = Storage::disk($disk);
-        $storedPath = $storage->putFileAs($datedDirectory, $file, $storedFileName);
+        $stored = ChatAttachmentStorage::store($file, $datedDirectory, $storedFileName);
 
-        if (! $storedPath) {
+        if ($stored === null) {
             return response()->json([
                 'message' => 'Unable to store attachment.',
             ], 500);
@@ -148,7 +146,8 @@ class ChatAttachmentController extends Controller
             $chatFile = ChatFile::create([
                 'message_id' => $message->id,
                 'file_name' => $this->sanitizeFileName((string) $file->getClientOriginalName(), $extension),
-                'file_path' => $storedPath,
+                'file_path' => $stored['path'],
+                'disk' => $stored['disk'],
                 'file_type' => $mimeType,
                 'file_size' => (int) $file->getSize(),
                 'uploaded_at' => now(),
@@ -157,7 +156,7 @@ class ChatAttachmentController extends Controller
             DB::commit();
         } catch (\Throwable $exception) {
             DB::rollBack();
-            Storage::disk($disk)->delete($storedPath);
+            Storage::disk($stored['disk'])->delete($stored['path']);
             throw $exception;
         }
 
@@ -243,7 +242,7 @@ class ChatAttachmentController extends Controller
 
     public function show(Request $request, ChatFile $chatFile): Response
     {
-        $disk = (string) config('chat.attachments.disk', 'local');
+        $disk = $chatFile->resolveDisk();
         $download = filter_var((string) $request->query('download', '0'), FILTER_VALIDATE_BOOL);
 
         // For S3 (or any remote driver), redirect to a fresh pre-signed URL so the

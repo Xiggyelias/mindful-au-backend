@@ -9,8 +9,8 @@ use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
+use App\Support\ChatAttachmentStorage;
 use App\Support\ChatMessageData;
-use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -84,7 +84,6 @@ class VoiceNotesController extends Controller
         ]);
 
         $file = $request->file('audio');
-        $disk = (string) config('chat.attachments.disk', 'local');
         $directory = trim((string) config('chat.attachments.directory', 'uploads/chat_files'), '/');
         $extension = strtolower((string) (
             $file->getClientOriginalExtension()
@@ -94,11 +93,9 @@ class VoiceNotesController extends Controller
         ));
         $storedFileName = Str::uuid()->toString().'.'.$extension;
         $datedDirectory = trim($directory.'/voice-notes/'.now()->format('Y/m'), '/');
-        /** @var FilesystemAdapter $storage */
-        $storage = Storage::disk($disk);
-        $storedPath = $storage->putFileAs($datedDirectory, $file, $storedFileName);
+        $stored = ChatAttachmentStorage::store($file, $datedDirectory, $storedFileName);
 
-        if (! $storedPath) {
+        if ($stored === null) {
             return response()->json([
                 'message' => 'Unable to store voice note.',
             ], 500);
@@ -125,7 +122,8 @@ class VoiceNotesController extends Controller
             $chatFile = ChatFile::create([
                 'message_id' => $message->id,
                 'file_name' => $this->voiceFileName((string) $file->getClientOriginalName(), $extension),
-                'file_path' => $storedPath,
+                'file_path' => $stored['path'],
+                'disk' => $stored['disk'],
                 'file_type' => strtolower((string) ($file->getMimeType() ?: 'audio/webm')),
                 'file_size' => (int) $file->getSize(),
                 'uploaded_at' => now(),
@@ -134,7 +132,7 @@ class VoiceNotesController extends Controller
             DB::commit();
         } catch (\Throwable $exception) {
             DB::rollBack();
-            Storage::disk($disk)->delete($storedPath);
+            Storage::disk($stored['disk'])->delete($stored['path']);
             throw $exception;
         }
 
@@ -248,7 +246,7 @@ class VoiceNotesController extends Controller
             if (! $message->chatFile->storedFileExists()) {
                 return response()->json(['message' => 'File not found'], 404);
             }
-            $disk = Storage::disk((string) config('chat.attachments.disk', 'local'));
+            $disk = Storage::disk($message->chatFile->resolveDisk());
             $path = (string) $message->chatFile->file_path;
             $mimeType = (string) $message->chatFile->file_type;
         } else {
@@ -314,7 +312,22 @@ class VoiceNotesController extends Controller
             }
             try {
                 if ($start > 0) {
-                    fseek($stream, $start);
+                    // Remote streams (S3) are not seekable — fseek would fail
+                    // silently and we'd serve bytes from offset 0 under a 206
+                    // Content-Range, corrupting playback. Read and discard.
+                    $meta = stream_get_meta_data($stream);
+                    if (! empty($meta['seekable'])) {
+                        fseek($stream, $start);
+                    } else {
+                        $toSkip = $start;
+                        while ($toSkip > 0 && ! feof($stream)) {
+                            $skipped = fread($stream, min(65536, $toSkip));
+                            if ($skipped === false || $skipped === '') {
+                                break;
+                            }
+                            $toSkip -= strlen($skipped);
+                        }
+                    }
                 }
                 $remaining = $length;
                 while ($remaining > 0 && ! feof($stream)) {

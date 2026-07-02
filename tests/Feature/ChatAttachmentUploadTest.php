@@ -318,6 +318,76 @@ class ChatAttachmentUploadTest extends TestCase
     }
 
     #[Test]
+    public function voice_note_upload_falls_back_to_local_disk_when_s3_credentials_are_missing(): void
+    {
+        // Reproduces the production outage: CHAT_UPLOAD_DISK=s3 with empty
+        // AWS credentials made every voice note upload return 500.
+        config([
+            'chat.attachments.disk' => 's3',
+            'filesystems.disks.s3.key' => '',
+            'filesystems.disks.s3.secret' => '',
+        ]);
+
+        $voice = UploadedFile::fake()->create('fallback-voice.webm', 128, 'audio/webm');
+
+        $uploadResponse = $this->actingAs($this->student)->post("/api/sessions/{$this->session->id}/voice-notes", [
+            'audio' => $voice,
+        ]);
+
+        $uploadResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice')
+            ->assertJsonPath('has_file', true)
+            ->assertJsonPath('attachment.available', true);
+
+        $messageId = (int) $uploadResponse->json('id');
+        $storedPath = (string) $uploadResponse->json('attachment.file_path');
+
+        Storage::disk('local')->assertExists($storedPath);
+        $this->assertDatabaseHas('chat_files', [
+            'message_id' => $messageId,
+            'file_path' => $storedPath,
+            'disk' => 'local',
+        ]);
+
+        // Signed URL must route through the app (local disk), not S3.
+        $attachmentUrl = (string) $uploadResponse->json('attachment.url');
+        $this->assertStringContainsString('/api/chat/files/', $attachmentUrl);
+
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$messageId}/voice-note/stream");
+        $streamResponse->assertStatus(200);
+    }
+
+    #[Test]
+    public function file_attachment_upload_falls_back_to_local_disk_when_s3_credentials_are_missing(): void
+    {
+        config([
+            'chat.attachments.disk' => 's3',
+            'filesystems.disks.s3.key' => '',
+            'filesystems.disks.s3.secret' => '',
+        ]);
+
+        $file = UploadedFile::fake()->create('fallback-note.png', 128, 'image/png');
+
+        $uploadResponse = $this->actingAs($this->student)->post('/api/chat/upload-file', [
+            'session_id' => $this->session->id,
+            'file' => $file,
+        ]);
+
+        $uploadResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'file')
+            ->assertJsonPath('attachment.available', true);
+
+        $storedPath = (string) $uploadResponse->json('attachment.file_path');
+        Storage::disk('local')->assertExists($storedPath);
+        $this->assertDatabaseHas('chat_files', [
+            'message_id' => (int) $uploadResponse->json('id'),
+            'disk' => 'local',
+        ]);
+    }
+
+    #[Test]
     public function private_voice_note_stream_returns_exact_stored_bytes(): void
     {
         $bytes = 'voice-bytes-without-buffer-noise';

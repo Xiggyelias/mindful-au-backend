@@ -30,7 +30,9 @@ class CounselorSlotManagementTest extends TestCase
 
         $slotsResponse->assertOk();
         $slots = collect($slotsResponse->json('data'));
-        $this->assertCount(6, $slots);
+        // Default schedule 08:00-16:00 with a 13:00-14:00 lunch break yields
+        // seven non-overlapping 60-minute slots: 08,09,10,11,12,14,15.
+        $this->assertCount(7, $slots);
         $this->assertFalse(
             $slots->contains(fn (array $slot) => $this->localSlotTime($slot['start_time']) >= '16:00'),
             'Slots must not start at or after the 16:00 school close.'
@@ -70,7 +72,7 @@ class CounselorSlotManagementTest extends TestCase
             ->assertJsonValidationErrors(['scheduled_at']);
     }
 
-    public function test_existing_late_schedule_is_capped_to_six_slots_before_school_close(): void
+    public function test_existing_late_schedule_is_capped_to_school_close(): void
     {
         $student = $this->createUserWithRole('student');
         $counselor = $this->createUserWithRole('counselor');
@@ -94,13 +96,17 @@ class CounselorSlotManagementTest extends TestCase
         $slotsResponse->assertOk();
         $slots = collect($slotsResponse->json('data'));
 
-        $this->assertCount(6, $slots);
+        // Slots never overlap: the generator steps by at least the 60-minute
+        // appointment duration even when the configured interval is 30
+        // minutes. With the 18:00 end capped to the 16:00 school close and a
+        // 13:00-14:00 lunch break, that yields 10,11,12,14,15 — five slots.
+        $this->assertCount(5, $slots);
         $this->assertTrue(
             $slots->contains(
-                fn (array $slot) => $this->localSlotTime($slot['start_time']) === '11:30'
-                    && $this->localSlotTime($slot['end_time']) === '12:30'
+                fn (array $slot) => $this->localSlotTime($slot['start_time']) === '10:00'
+                    && $this->localSlotTime($slot['end_time']) === '11:00'
             ),
-            'A 30-minute interval should allow half-hour starts for 60-minute appointments.'
+            'Slots should start at the configured 10:00 schedule start.'
         );
         $this->assertTrue(
             $slots->every(
