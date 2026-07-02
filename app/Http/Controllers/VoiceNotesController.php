@@ -119,15 +119,20 @@ class VoiceNotesController extends Controller
                 'sent_as_anonymous' => (bool) $session->is_anonymous,
             ]);
 
-            $chatFile = ChatFile::create([
+            $chatFileData = [
                 'message_id' => $message->id,
                 'file_name' => $this->voiceFileName((string) $file->getClientOriginalName(), $extension),
                 'file_path' => $stored['path'],
-                'disk' => $stored['disk'],
                 'file_type' => strtolower((string) ($file->getMimeType() ?: 'audio/webm')),
                 'file_size' => (int) $file->getSize(),
                 'uploaded_at' => now(),
-            ]);
+            ];
+
+            if (ChatFile::hasDiskColumn()) {
+                $chatFileData['disk'] = $stored['disk'];
+            }
+
+            $chatFile = ChatFile::create($chatFileData);
 
             DB::commit();
         } catch (\Throwable $exception) {

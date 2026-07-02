@@ -143,15 +143,20 @@ class ChatAttachmentController extends Controller
                 'seen_at' => null,
             ]);
 
-            $chatFile = ChatFile::create([
+            $chatFileData = [
                 'message_id' => $message->id,
                 'file_name' => $this->sanitizeFileName((string) $file->getClientOriginalName(), $extension),
                 'file_path' => $stored['path'],
-                'disk' => $stored['disk'],
                 'file_type' => $mimeType,
                 'file_size' => (int) $file->getSize(),
                 'uploaded_at' => now(),
-            ]);
+            ];
+
+            if (ChatFile::hasDiskColumn()) {
+                $chatFileData['disk'] = $stored['disk'];
+            }
+
+            $chatFile = ChatFile::create($chatFileData);
 
             DB::commit();
         } catch (\Throwable $exception) {

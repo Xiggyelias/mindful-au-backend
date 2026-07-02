@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Filesystem\FilesystemAdapter;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
@@ -34,6 +35,15 @@ class ChatFile extends Model
         return $this->belongsTo(Message::class, 'message_id');
     }
 
+    public static function hasDiskColumn(): bool
+    {
+        try {
+            return Schema::hasColumn((new self)->getTable(), 'disk');
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     public function toAttachmentPayload(): array
     {
         $available = $this->storedFileExists();
@@ -58,7 +68,9 @@ class ChatFile extends Model
      */
     public function resolveDisk(): string
     {
-        $disk = trim((string) ($this->disk ?? ''));
+        $disk = self::hasDiskColumn()
+            ? trim((string) ($this->attributes['disk'] ?? ''))
+            : '';
 
         return $disk !== '' ? $disk : (string) config('chat.attachments.disk', 'local');
     }
@@ -86,8 +98,12 @@ class ChatFile extends Model
             return null;
         }
 
+        $recordedDisk = self::hasDiskColumn()
+            ? trim((string) ($this->attributes['disk'] ?? ''))
+            : '';
+
         $candidates = array_values(array_unique(array_filter([
-            $this->resolveDisk(),
+            $recordedDisk !== '' ? $recordedDisk : $this->resolveDisk(),
             (string) config('chat.attachments.disk', 'local'),
             'local',
             'public',
@@ -102,7 +118,7 @@ class ChatFile extends Model
                 continue;
             }
 
-            if ($this->exists && $disk !== trim((string) ($this->disk ?? ''))) {
+            if ($this->exists && self::hasDiskColumn() && $disk !== $recordedDisk) {
                 $this->forceFill(['disk' => $disk])->saveQuietly();
             }
 

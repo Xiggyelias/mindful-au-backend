@@ -9,8 +9,10 @@ use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PeerAssignment;
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -351,6 +353,49 @@ class ChatAttachmentUploadTest extends TestCase
         ]);
 
         // Signed URL must route through the app (local disk), not S3.
+        $attachmentUrl = (string) $uploadResponse->json('attachment.url');
+        $this->assertStringContainsString('/api/chat/files/', $attachmentUrl);
+
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$messageId}/voice-note/stream");
+        $streamResponse->assertStatus(200);
+    }
+
+    #[Test]
+    public function voice_note_upload_still_works_before_chat_file_disk_migration_runs(): void
+    {
+        if (Schema::hasColumn('chat_files', 'disk')) {
+            Schema::table('chat_files', function (Blueprint $table): void {
+                $table->dropColumn('disk');
+            });
+        }
+
+        config([
+            'chat.attachments.disk' => 's3',
+            'filesystems.disks.s3.key' => '',
+            'filesystems.disks.s3.secret' => '',
+        ]);
+
+        $voice = UploadedFile::fake()->create('pre-migration-voice.webm', 128, 'audio/webm');
+
+        $uploadResponse = $this->actingAs($this->student)->post("/api/sessions/{$this->session->id}/voice-notes", [
+            'audio' => $voice,
+        ]);
+
+        $uploadResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice')
+            ->assertJsonPath('has_file', true)
+            ->assertJsonPath('attachment.available', true);
+
+        $messageId = (int) $uploadResponse->json('id');
+        $storedPath = (string) $uploadResponse->json('attachment.file_path');
+
+        Storage::disk('local')->assertExists($storedPath);
+        $this->assertDatabaseHas('chat_files', [
+            'message_id' => $messageId,
+            'file_path' => $storedPath,
+        ]);
+
         $attachmentUrl = (string) $uploadResponse->json('attachment.url');
         $this->assertStringContainsString('/api/chat/files/', $attachmentUrl);
 
