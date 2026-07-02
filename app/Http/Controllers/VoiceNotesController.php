@@ -249,10 +249,11 @@ class VoiceNotesController extends Controller
         $mimeType = null;
 
         if ($message->chatFile) {
-            if (! $message->chatFile->storedFileExists()) {
+            $locatedDisk = $message->chatFile->locateDisk();
+            if ($locatedDisk === null) {
                 return response()->json(['message' => 'File not found'], 404);
             }
-            $disk = Storage::disk($message->chatFile->resolveDisk());
+            $disk = Storage::disk($locatedDisk);
             $path = (string) $message->chatFile->file_path;
             $mimeType = (string) $message->chatFile->file_type;
         } else {

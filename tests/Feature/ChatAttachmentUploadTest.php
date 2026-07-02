@@ -388,6 +388,45 @@ class ChatAttachmentUploadTest extends TestCase
     }
 
     #[Test]
+    public function legacy_chat_file_rows_self_heal_when_configured_disk_changes(): void
+    {
+        // Voice note uploaded while CHAT_UPLOAD_DISK was 'local' (row predates
+        // the disk column, so disk is null)…
+        $voice = UploadedFile::fake()->create('era-local.webm', 128, 'audio/webm');
+        $uploadResponse = $this->actingAs($this->student)->post("/api/sessions/{$this->session->id}/voice-notes", [
+            'audio' => $voice,
+        ]);
+        $uploadResponse->assertStatus(201);
+
+        $messageId = (int) $uploadResponse->json('id');
+        $chatFile = ChatFile::findOrFail((int) $uploadResponse->json('attachment.id'));
+        $chatFile->forceFill(['disk' => null])->save();
+
+        // …then production switches CHAT_UPLOAD_DISK to a (broken here) s3 disk.
+        config([
+            'chat.attachments.disk' => 's3',
+            'filesystems.disks.s3.key' => '',
+            'filesystems.disks.s3.secret' => '',
+        ]);
+
+        // The message list must still expose the attachment as available…
+        $messagesResponse = $this->actingAs($this->counselor)->getJson(
+            '/api/chat/messages?session_id='.$this->session->id
+        );
+        $messagesResponse
+            ->assertStatus(200)
+            ->assertJsonPath('0.attachment.available', true);
+        $this->assertNotEmpty($messagesResponse->json('0.attachment.url'));
+
+        // …streaming must find the bytes on the local disk…
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$messageId}/voice-note/stream");
+        $streamResponse->assertStatus(200);
+
+        // …and the row self-heals so future reads skip the probe.
+        $this->assertSame('local', ChatFile::findOrFail($chatFile->id)->disk);
+    }
+
+    #[Test]
     public function private_voice_note_stream_returns_exact_stored_bytes(): void
     {
         $bytes = 'voice-bytes-without-buffer-noise';

@@ -28,5 +28,8 @@
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="CHAT_UPLOAD_DISK" value="local"/>
+        <!-- Tests must not depend on developer .env values for OAuth. -->
+        <env name="GOOGLE_CLIENT_ID" value=""/>
+        <env name="GOOGLE_CLIENT_SECRET" value=""/>
     </php>
 </phpunit>

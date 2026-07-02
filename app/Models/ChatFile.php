@@ -63,10 +63,63 @@ class ChatFile extends Model
         return $disk !== '' ? $disk : (string) config('chat.attachments.disk', 'local');
     }
 
+    /** Memoized result of locateDisk() for this request. */
+    private string|false|null $locatedDisk = null;
+
+    /**
+     * Find the disk the file actually exists on, probing the recorded disk
+     * first and then the other known chat-upload disks. Legacy rows predate
+     * the disk column, so after CHAT_UPLOAD_DISK changes (local -> s3) the
+     * recorded/configured disk no longer matches where their bytes live.
+     * When the file turns up on a different disk, persist it so future
+     * reads skip the probe. Returns null when the file is gone everywhere.
+     */
+    public function locateDisk(): ?string
+    {
+        if ($this->locatedDisk !== null) {
+            return $this->locatedDisk === false ? null : $this->locatedDisk;
+        }
+
+        if (! $this->file_path) {
+            $this->locatedDisk = false;
+
+            return null;
+        }
+
+        $candidates = array_values(array_unique(array_filter([
+            $this->resolveDisk(),
+            (string) config('chat.attachments.disk', 'local'),
+            'local',
+            'public',
+        ], fn (string $disk): bool => config("filesystems.disks.{$disk}") !== null)));
+
+        foreach ($candidates as $disk) {
+            try {
+                if (! Storage::disk($disk)->exists($this->file_path)) {
+                    continue;
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if ($this->exists && $disk !== trim((string) ($this->disk ?? ''))) {
+                $this->forceFill(['disk' => $disk])->saveQuietly();
+            }
+
+            $this->locatedDisk = $disk;
+
+            return $disk;
+        }
+
+        $this->locatedDisk = false;
+
+        return null;
+    }
+
     public function signedUrl(bool $download = false): string
     {
         $minutes = (int) config('chat.attachments.signed_url_minutes', 1440);
-        $disk = $this->resolveDisk();
+        $disk = $this->locateDisk() ?? $this->resolveDisk();
         $expiry = now()->addMinutes(max(30, $minutes));
 
         if ($disk === 's3') {
@@ -96,8 +149,8 @@ class ChatFile extends Model
     public function deleteStoredFile(): void
     {
         try {
-            $disk = $this->resolveDisk();
-            if ($this->file_path && Storage::disk($disk)->exists($this->file_path)) {
+            $disk = $this->locateDisk();
+            if ($disk !== null && $this->file_path) {
                 Storage::disk($disk)->delete($this->file_path);
             }
         } catch (\Throwable) {
@@ -107,14 +160,6 @@ class ChatFile extends Model
 
     public function storedFileExists(): bool
     {
-        if (! $this->file_path) {
-            return false;
-        }
-
-        try {
-            return Storage::disk($this->resolveDisk())->exists($this->file_path);
-        } catch (\Throwable) {
-            return false;
-        }
+        return $this->locateDisk() !== null;
     }
 }

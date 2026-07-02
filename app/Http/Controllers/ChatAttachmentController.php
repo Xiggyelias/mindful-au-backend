@@ -245,7 +245,8 @@ class ChatAttachmentController extends Controller
 
     public function show(Request $request, ChatFile $chatFile): Response
     {
-        $disk = $chatFile->resolveDisk();
+        $disk = $chatFile->locateDisk();
+        abort_if($disk === null, 404);
         $download = filter_var((string) $request->query('download', '0'), FILTER_VALIDATE_BOOL);
 
         // For S3 (or any remote driver), redirect to a fresh pre-signed URL so the
@@ -255,8 +256,6 @@ class ChatAttachmentController extends Controller
 
             return redirect()->away($url, 302);
         }
-
-        abort_unless(Storage::disk($disk)->exists($chatFile->file_path), 404);
 
         /** @var FilesystemAdapter $storage */
         $storage = Storage::disk($disk);
