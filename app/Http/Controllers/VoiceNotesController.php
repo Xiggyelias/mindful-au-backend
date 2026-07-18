@@ -76,10 +76,10 @@ class VoiceNotesController extends Controller
                 'required',
                 'file',
                 'max:10240',
-                'mimes:mp3,wav,m4a,ogg,webm,weba',
+                'mimes:mp3,wav,m4a,aac,ogg,webm,weba,mp4',
                 // audio/x-matroska and video/x-matroska: older libmagic detects
                 // Chrome MediaRecorder WebM blobs as Matroska instead of WebM.
-                'mimetypes:audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm,video/webm,audio/x-matroska,video/x-matroska,application/x-matroska',
+                'mimetypes:audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/m4a,audio/aac,audio/x-aac,audio/ogg,audio/webm,video/webm,video/mp4,video/quicktime,audio/quicktime,audio/x-matroska,video/x-matroska,application/x-matroska',
             ],
         ]);
 
@@ -377,7 +377,15 @@ class VoiceNotesController extends Controller
             return 'audio/webm';
         }
 
-        return str_starts_with($baseMimeType, 'audio/') ? $baseMimeType : 'audio/webm';
+        if (str_starts_with($baseMimeType, 'audio/')) {
+            return $baseMimeType;
+        }
+
+        if ($baseMimeType === 'video/mp4' || $baseMimeType === 'video/quicktime' || str_contains($baseMimeType, 'mp4') || str_contains($baseMimeType, 'm4a') || str_contains($baseMimeType, 'quicktime') || str_contains($baseMimeType, 'aac')) {
+            return 'audio/mp4';
+        }
+
+        return 'audio/webm';
     }
 
     private function resolveRecipientId(CounselingSession $session, int $senderId): ?int

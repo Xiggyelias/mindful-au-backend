@@ -788,6 +788,44 @@ class ChatAttachmentUploadTest extends TestCase
             ->assertJsonPath('message', 'Peer counselors can send voice notes, but cannot upload file attachments in supervised chat.');
     }
 
+    #[Test]
+    public function safari_voice_note_upload_and_stream_with_correct_mime(): void
+    {
+        // 1. Upload an m4a file with audio/x-m4a MIME type
+        $voice = UploadedFile::fake()->create('safari-voice.m4a', 128, 'audio/x-m4a');
+        $uploadResponse = $this->actingAs($this->student)->post("/api/sessions/{$this->session->id}/voice-notes", [
+            'audio' => $voice,
+        ]);
+
+        $uploadResponse
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice');
+
+        $messageId = (int) $uploadResponse->json('id');
+
+        // 2. Stream the voice note, verify content type is mapped to audio/x-m4a
+        $streamResponse = $this->actingAs($this->counselor)->get("/api/messages/{$messageId}/voice-note/stream");
+        $streamResponse->assertStatus(200);
+        $this->assertStringStartsWith('audio/x-m4a', (string) $streamResponse->headers->get('Content-Type'));
+
+        // 3. Upload a voice note detected as video/mp4 (common for Safari/iOS recording streams)
+        $iosVoice = UploadedFile::fake()->create('ios-voice.mp4', 128, 'video/mp4');
+        $uploadResponseIos = $this->actingAs($this->student)->post("/api/sessions/{$this->session->id}/voice-notes", [
+            'audio' => $iosVoice,
+        ]);
+
+        $uploadResponseIos
+            ->assertStatus(201)
+            ->assertJsonPath('message_type', 'voice');
+
+        $iosMessageId = (int) $uploadResponseIos->json('id');
+
+        // 4. Stream video/mp4 voice note, verify content type is mapped to audio/mp4 (not audio/webm)
+        $streamResponseIos = $this->actingAs($this->counselor)->get("/api/messages/{$iosMessageId}/voice-note/stream");
+        $streamResponseIos->assertStatus(200);
+        $this->assertStringStartsWith('audio/mp4', (string) $streamResponseIos->headers->get('Content-Type'));
+    }
+
     private function assignRole(User $user, string $role): void
     {
         $user->roles()->create([
