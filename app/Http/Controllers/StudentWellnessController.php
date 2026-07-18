@@ -111,8 +111,16 @@ class StudentWellnessController extends Controller
             (int) round(($stressLevel * 0.55) + ($burnoutSeed * 0.25) + ($cancelRate * 100 * 0.20))
         );
 
+        // Positive boost: positive mood check-ins and positive chat messages
+        // directly lift the wellness score so it can go UP over time.
+        $positiveMoods = (int) ($snapshot['positive_mood_logs_14d'] ?? 0);
+        $positiveMessages = (int) ($snapshot['positive_messages_30d'] ?? 0);
+        $positiveBoost = min(20,
+            ($positiveMoods * 3) + ($positiveMessages * 2)
+        );
+
         $wellnessScore = $this->clampInt(
-            100 - (int) round(($riskScore * 0.4) + ($stressLevel * 0.35) + ($burnoutRisk * 0.25))
+            100 - (int) round(($riskScore * 0.4) + ($stressLevel * 0.35) + ($burnoutRisk * 0.25)) + $positiveBoost
         );
 
         $scores = [

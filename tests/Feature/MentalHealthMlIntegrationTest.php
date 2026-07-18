@@ -218,4 +218,68 @@ class MentalHealthMlIntegrationTest extends TestCase
 
         return $user;
     }
+
+    #[Test]
+    public function it_improves_wellness_score_with_positive_signals(): void
+    {
+        $this->disableTwoFactor();
+
+        $student = $this->createPortalUser('student', 'wellness-boost@test.com', 'Wellness Boost Student');
+
+        // Create a diagnostic with high score (60)
+        Diagnostic::create([
+            'student_id' => $student->id,
+            'responses' => [],
+            'total_score' => 60,
+            'risk_level' => 'high',
+            'category_scores' => ['stress' => 18],
+            'ai_recommendations' => ['primary' => 'Regular follow-up.'],
+            'insights' => 'Stress remains elevated.',
+            'is_anonymous' => false,
+        ]);
+
+        // Get initial wellness summary when student has no positive logs
+        $initialResponse = $this->actingAs($student)->getJson('/api/student-wellness/summary');
+        $initialResponse->assertOk();
+        $initialWellness = (int) $initialResponse->json('scores.wellness_score');
+        $initialRisk = (int) $initialResponse->json('scores.risk_score');
+
+        // Verify initial wellness score is low (about 40)
+        $this->assertLessThan(50, $initialWellness);
+
+        // Add positive moods (great, okay)
+        StudentMoodLog::create([
+            'student_id' => $student->id,
+            'mood' => 'great',
+            'logged_on' => now()->subDays(1)->toDateString(),
+        ]);
+        StudentMoodLog::create([
+            'student_id' => $student->id,
+            'mood' => 'okay',
+            'logged_on' => now()->toDateString(),
+        ]);
+
+        // Add positive messages
+        $conv = \App\Models\ChatConversation::create(['user_id' => $student->id]);
+        \App\Models\ChatMessage::create([
+            'conversation_id' => $conv->id,
+            'role' => 'user',
+            'content' => 'I feel happy, motivated, better and very hopeful today. Doing well!',
+            'created_at' => now(),
+        ]);
+
+        // Get wellness summary again
+        $boostResponse = $this->actingAs($student)->getJson('/api/student-wellness/summary');
+        $boostResponse->assertOk();
+        $boostedWellness = (int) $boostResponse->json('scores.wellness_score');
+        $boostedRisk = (int) $boostResponse->json('scores.risk_score');
+
+        // Check that the risk score went DOWN and the wellness score went UP
+        $this->assertLessThan($initialRisk, $boostedRisk);
+        $this->assertGreaterThan($initialWellness, $boostedWellness);
+
+        // Expose snapshot values to confirm they are set
+        $this->assertEquals(2, $boostResponse->json('ml_insights.feature_snapshot.positive_mood_logs_14d'));
+        $this->assertEquals(1, $boostResponse->json('ml_insights.feature_snapshot.positive_messages_30d'));
+    }
 }

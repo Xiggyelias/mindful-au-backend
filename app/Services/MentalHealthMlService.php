@@ -59,6 +59,15 @@ class MentalHealthMlService
         'tired of being alive', 'can t keep living like this',
     ];
 
+    private const POSITIVE_TERMS = [
+        'great', 'good', 'happy', 'better', 'improved', 'glad', 'calm', 'peaceful',
+        'positive', 'hopeful', 'excited', 'smiling', 'relaxed', 'coping',
+        'doing well', 'thank you', 'thanks', 'feeling better', 'relieved',
+        'accomplished', 'proud', 'optimistic', 'healed', 'joyful', 'content',
+        'satisfied', 'refreshed', 'rested', 'motivated', 'hope', 'confidence',
+        'self-care', 'feeling good'
+    ];
+
     private const CHAT_TOPICS = [
         'anxiety' => [
             'anxiety', 'anxious', 'panic', 'overwhelmed', 'stressed',
@@ -102,6 +111,11 @@ class MentalHealthMlService
     public function detectDistressInText(string $text): array
     {
         return $this->getMatchedKeywords($this->normalizeText($text), self::DISTRESS_TERMS);
+    }
+
+    public function detectPositiveInText(string $text): array
+    {
+        return $this->getMatchedKeywords($this->normalizeText($text), self::POSITIVE_TERMS);
     }
 
     public function buildStudentMlInsights(User|int $student): array
@@ -492,16 +506,20 @@ class MentalHealthMlService
             'last_completed_session_days_ago' => null,
             'mood_logs_14d' => 0,
             'low_mood_logs_14d' => 0,
+            'positive_mood_logs_14d' => 0,
             'ai_chat_messages_30d' => 0,
             'session_messages_30d' => 0,
             'ai_chat_word_count_30d' => 0,
             'distress_messages_30d' => 0,
             'crisis_messages_30d' => 0,
+            'positive_messages_30d' => 0,
             'recent_distress_messages_7d' => 0,
             'recent_crisis_messages_7d' => 0,
+            'recent_positive_messages_7d' => 0,
             'topic_counts' => [],
             'distress_words' => [],
             'crisis_words' => [],
+            'positive_words' => [],
             'academic_risk_events_count' => 0,
             'academic_risk_highest_score' => 0.0,
             'academic_risk_types' => [],
@@ -643,6 +661,9 @@ class MentalHealthMlService
             if (in_array((string) $log->mood, ['low', 'stressed', 'tired'], true)) {
                 $snapshots[$studentId]['low_mood_logs_14d']++;
             }
+            if (in_array((string) $log->mood, ['great', 'okay'], true)) {
+                $snapshots[$studentId]['positive_mood_logs_14d']++;
+            }
         }
 
         $chatMessages = DB::table('chat_messages')
@@ -670,6 +691,7 @@ class MentalHealthMlService
 
             $distressWords = $this->getMatchedKeywords($normalized, self::DISTRESS_TERMS);
             $crisisWords = $this->getMatchedKeywords($normalized, self::CRISIS_TERMS);
+            $positiveWords = $this->getMatchedKeywords($normalized, self::POSITIVE_TERMS);
 
             if (! empty($distressWords)) {
                 $snapshots[$studentId]['distress_messages_30d']++;
@@ -689,6 +711,16 @@ class MentalHealthMlService
                 $snapshots[$studentId]['crisis_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['crisis_words'],
                     $crisisWords
+                ));
+            }
+            if (! empty($positiveWords)) {
+                $snapshots[$studentId]['positive_messages_30d']++;
+                if ($this->isWithinDays($row->created_at ?? null, 7)) {
+                    $snapshots[$studentId]['recent_positive_messages_7d']++;
+                }
+                $snapshots[$studentId]['positive_words'] = array_unique(array_merge(
+                    $snapshots[$studentId]['positive_words'],
+                    $positiveWords
                 ));
             }
 
@@ -725,6 +757,8 @@ class MentalHealthMlService
             $distressWords = $this->getMatchedKeywords($normalized, self::DISTRESS_TERMS);
             $crisisWords = $this->getMatchedKeywords($normalized, self::CRISIS_TERMS);
 
+            $positiveWords = $this->getMatchedKeywords($normalized, self::POSITIVE_TERMS);
+
             if (! empty($distressWords)) {
                 $snapshots[$studentId]['distress_messages_30d']++;
                 if ($this->isWithinDays($row->created_at ?? null, 7)) {
@@ -743,6 +777,16 @@ class MentalHealthMlService
                 $snapshots[$studentId]['crisis_words'] = array_unique(array_merge(
                     $snapshots[$studentId]['crisis_words'],
                     $crisisWords
+                ));
+            }
+            if (! empty($positiveWords)) {
+                $snapshots[$studentId]['positive_messages_30d']++;
+                if ($this->isWithinDays($row->created_at ?? null, 7)) {
+                    $snapshots[$studentId]['recent_positive_messages_7d']++;
+                }
+                $snapshots[$studentId]['positive_words'] = array_unique(array_merge(
+                    $snapshots[$studentId]['positive_words'],
+                    $positiveWords
                 ));
             }
 
@@ -904,8 +948,11 @@ class MentalHealthMlService
                 'distress_messages_30d' => (int) ($snapshot['distress_messages_30d'] ?? 0),
                 'recent_distress_messages_7d' => (int) ($snapshot['recent_distress_messages_7d'] ?? 0),
                 'recent_crisis_messages_7d' => (int) ($snapshot['recent_crisis_messages_7d'] ?? 0),
+                'positive_messages_30d' => (int) ($snapshot['positive_messages_30d'] ?? 0),
+                'recent_positive_messages_7d' => (int) ($snapshot['recent_positive_messages_7d'] ?? 0),
                 'cancel_rate_60d' => round((float) ($snapshot['cancel_rate_60d'] ?? 0), 2),
                 'mood_logs_14d' => (int) ($snapshot['mood_logs_14d'] ?? 0),
+                'positive_mood_logs_14d' => (int) ($snapshot['positive_mood_logs_14d'] ?? 0),
                 'completed_sessions_60d' => (int) ($snapshot['completed_sessions_60d'] ?? 0),
                 'last_completed_session_days_ago' => $snapshot['last_completed_session_days_ago'] ?? null,
                 'academic_risk_events_count' => (int) ($snapshot['academic_risk_events_count'] ?? 0),
@@ -976,6 +1023,14 @@ class MentalHealthMlService
         if (($snapshot['last_completed_session_days_ago'] ?? null) !== null && (int) $snapshot['last_completed_session_days_ago'] <= 14) {
             $base -= 4;
         }
+
+        // Positive signals: chat/session messages with positive sentiment push
+        // the risk score down, allowing the wellness score to rise.
+        $base -= min(15, (int) ($snapshot['positive_messages_30d'] ?? 0) * 3.0);
+        $base -= min(8, (int) ($snapshot['recent_positive_messages_7d'] ?? 0) * 4.0);
+
+        // Positive mood check-ins (great / okay) offset low-mood pressure.
+        $base -= min(10, (int) ($snapshot['positive_mood_logs_14d'] ?? 0) * 2.5);
 
         return $this->clampInt($base);
     }
