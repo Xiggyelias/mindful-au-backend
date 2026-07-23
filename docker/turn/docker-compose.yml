@@ -1,0 +1,48 @@
+# Standalone TURN relay for WebRTC audio/video calls (Mindful AU).
+#
+# Deploy this on the SAME host as the backend (it needs a public IP and a wide
+# UDP port range, so it runs with `network_mode: host` — do NOT put it behind
+# Dokploy/Traefik's HTTP proxy, TURN is not HTTP).
+#
+# Usage:
+#   cp .env.example .env   # fill in TURN_REALM, TURN_USERNAME, TURN_PASSWORD
+#   docker compose up -d
+#
+# Then point the frontend's VITE_WEBRTC_TURN_* build args at this server
+# (see ./README.md).
+
+name: aucms-turn
+
+services:
+  coturn:
+    image: coturn/coturn:4.15.0
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        turnserver
+        --listening-port=3478
+        --min-port=${TURN_MIN_PORT:-49160}
+        --max-port=${TURN_MAX_PORT:-49200}
+        --realm=${TURN_REALM}
+        --user=${TURN_USERNAME}:${TURN_PASSWORD}
+        --lt-cred-mech
+        --fingerprint
+        --no-cli
+        --no-tlsv1 --no-tlsv1_1
+        --total-quota=100
+        --user-quota=20
+        --denied-peer-ip=0.0.0.0-0.255.255.255
+        --denied-peer-ip=10.0.0.0-10.255.255.255
+        --denied-peer-ip=100.64.0.0-100.127.255.255
+        --denied-peer-ip=127.0.0.0-127.255.255.255
+        --denied-peer-ip=169.254.0.0-169.254.255.255
+        --denied-peer-ip=172.16.0.0-172.31.255.255
+        --denied-peer-ip=192.0.0.0-192.0.0.255
+        --denied-peer-ip=192.168.0.0-192.168.255.255
+        --denied-peer-ip=198.18.0.0-198.19.255.255
+        --log-file=stdout
+        --simple-log
