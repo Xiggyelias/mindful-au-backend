@@ -141,7 +141,21 @@ class VideoCallController extends Controller
 
             $callerRole = $isStudent ? CounselingCall::CALLER_STUDENT : CounselingCall::CALLER_COUNSELOR;
 
-            DB::transaction(function () use ($appointment, $callTypeResult, $callerRole) {
+            $conflict = DB::transaction(function () use ($appointment, $callTypeResult, $callerRole) {
+                $existingPending = CounselingCall::query()
+                    ->where('appointment_id', $appointment->id)
+                    ->where('status', CounselingCall::STATUS_PENDING)
+                    ->lockForUpdate()
+                    ->first();
+
+                // The other participant already rang this appointment and is waiting on an
+                // answer — don't let the callee place their own outgoing call on top of it
+                // (that would silently cancel the incoming ring and flip who's "calling" who).
+                // They should accept or decline the existing invite instead.
+                if ($existingPending && $existingPending->caller_role !== $callerRole) {
+                    return true;
+                }
+
                 CounselingCall::query()
                     ->where('appointment_id', $appointment->id)
                     ->where('status', CounselingCall::STATUS_PENDING)
@@ -156,7 +170,15 @@ class VideoCallController extends Controller
                     'call_type' => $callTypeResult,
                     'caller_role' => $callerRole,
                 ]);
+
+                return false;
             });
+
+            if ($conflict) {
+                return response()->json([
+                    'message' => 'The other participant is already calling you on this appointment. Accept or decline that call first.',
+                ], 409);
+            }
 
             $isAudio = $callTypeResult === 'audio';
             $notifyUserId = $isStudent ? (int) $appointment->counselor_id : (int) $appointment->student_id;
