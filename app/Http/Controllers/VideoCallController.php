@@ -9,6 +9,8 @@ use App\Models\CounselingSession;
 use App\Models\Notification;
 use App\Services\WebPushService;
 use App\Support\AnalyticsCache;
+use App\Support\CallCoordinator;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -30,6 +32,7 @@ class VideoCallController extends Controller
 
     public function __construct(
         private readonly WebPushService $webPush,
+        private readonly CallCoordinator $calls,
     ) {}
 
     public function authorizeCall(Request $request): JsonResponse
@@ -140,92 +143,121 @@ class VideoCallController extends Controller
             }
 
             $callerRole = $isStudent ? CounselingCall::CALLER_STUDENT : CounselingCall::CALLER_COUNSELOR;
+            $callerId = (int) $user->id;
+            $calleeId = $isStudent ? (int) $appointment->counselor_id : (int) $appointment->student_id;
 
-            $conflict = DB::transaction(function () use ($appointment, $callTypeResult, $callerRole) {
-                $existingPending = CounselingCall::query()
-                    ->where('appointment_id', $appointment->id)
-                    ->where('status', CounselingCall::STATUS_PENDING)
-                    ->lockForUpdate()
-                    ->first();
+            try {
+                $outcome = $this->calls->withUsersLocked([$callerId, $calleeId], function () use ($appointment, $callTypeResult, $callerRole, $callerId, $calleeId) {
+                    $missed = $this->calls->sweepExpired($callerId, $calleeId);
 
-                // The other participant already rang this appointment and is waiting on an
-                // answer — don't let the callee place their own outgoing call on top of it
-                // (that would silently cancel the incoming ring and flip who's "calling" who).
-                // They should accept or decline the existing invite instead.
-                if ($existingPending && $existingPending->caller_role !== $callerRole) {
-                    return true;
-                }
+                    $conflict = $this->calls->findActiveConflict($callerId, $calleeId);
 
-                CounselingCall::query()
-                    ->where('appointment_id', $appointment->id)
-                    ->where('status', CounselingCall::STATUS_PENDING)
-                    ->lockForUpdate()
-                    ->delete();
+                    if ($conflict) {
+                        $sameAppointment = (int) $conflict->appointment_id === (int) $appointment->id;
+                        $sameCaller = $conflict->caller_role === $callerRole;
 
-                CounselingCall::create([
-                    'appointment_id' => $appointment->id,
-                    'student_id' => $appointment->student_id,
-                    'counselor_id' => $appointment->counselor_id,
-                    'status' => CounselingCall::STATUS_PENDING,
-                    'call_type' => $callTypeResult,
-                    'caller_role' => $callerRole,
-                ]);
+                        if ($sameAppointment && $sameCaller) {
+                            // Idempotent: rapid double-click, retry, or a page refresh mid-call —
+                            // reuse the existing session instead of erroring or duplicating it.
+                            return ['type' => 'reused', 'call' => $conflict, 'missed' => $missed];
+                        }
 
-                return false;
-            });
+                        if ($sameAppointment && ! $sameCaller) {
+                            // The other participant already rang this appointment and is waiting
+                            // on an answer — don't let the callee place their own outgoing call
+                            // on top of it. They should accept or decline the existing invite.
+                            return ['type' => 'incoming', 'call' => $conflict, 'missed' => $missed];
+                        }
 
-            if ($conflict) {
+                        // Busy with a third party (either the caller or the callee has an active
+                        // call elsewhere).
+                        return ['type' => 'busy', 'call' => $conflict, 'missed' => $missed];
+                    }
+
+                    $call = CounselingCall::create([
+                        'appointment_id' => $appointment->id,
+                        'student_id' => $appointment->student_id,
+                        'counselor_id' => $appointment->counselor_id,
+                        'status' => CounselingCall::STATUS_PENDING,
+                        'call_type' => $callTypeResult,
+                        'caller_role' => $callerRole,
+                        'expires_at' => now()->addSeconds(CallCoordinator::RING_TTL_SECONDS),
+                    ]);
+
+                    return ['type' => 'created', 'call' => $call, 'missed' => $missed];
+                });
+            } catch (LockTimeoutException) {
                 return response()->json([
-                    'message' => 'The other participant is already calling you on this appointment. Accept or decline that call first.',
+                    'message' => 'The call system is busy. Please try again in a moment.',
+                ], 503);
+            }
+
+            foreach ($outcome['missed'] as $missedCall) {
+                $this->calls->notifyMissed($missedCall);
+            }
+
+            if ($outcome['type'] === 'incoming') {
+                return response()->json([
+                    'reason' => 'incoming_call',
+                    'message' => 'You have an incoming call. Accept or decline it first.',
                 ], 409);
             }
 
-            $isAudio = $callTypeResult === 'audio';
-            $notifyUserId = $isStudent ? (int) $appointment->counselor_id : (int) $appointment->student_id;
-            $notifyRoute = $isStudent ? '/counselor/video' : '/student/video-call';
-            $notifyBody = $isStudent
-                ? sprintf('A student is calling you for %s.', $isAudio ? 'an audio session' : 'a video session')
-                : sprintf('Your counselor is calling you for %s.', $isAudio ? 'an audio session' : 'a video session');
-
-            try {
-                $this->webPush->sendToUser(
-                    $notifyUserId,
-                    $isAudio ? 'Incoming audio call' : 'Incoming video call',
-                    $notifyBody,
-                    $notifyRoute,
-                    [
-                        'tag' => 'cms-call-apt-'.(int) $appointment->id,
-                        'urgency' => 'high',
-                        'requireInteraction' => true,
-                    ]
-                );
-            } catch (\Throwable $e) {
-                Log::warning('[VideoCall] web push failed', [
-                    'appointment_id' => $appointment->id,
-                    'caller_role' => $callerRole,
-                    'error' => $e->getMessage(),
-                ]);
+            if ($outcome['type'] === 'busy') {
+                return response()->json([
+                    'reason' => 'busy',
+                    'message' => 'User is currently busy.',
+                ], 409);
             }
 
-            try {
-                $notification = Notification::create([
-                    'user_id' => $notifyUserId,
-                    'title' => $isAudio ? 'Incoming audio call' : 'Incoming video call',
-                    'message' => $notifyBody,
-                    'type' => 'warning',
-                    'meta' => [
-                        'kind' => 'incoming_call',
-                        'appointment_id' => (int) $appointment->id,
-                        'call_type' => $callTypeResult,
+            if ($outcome['type'] === 'created') {
+                $isAudio = $callTypeResult === 'audio';
+                $notifyUserId = $calleeId;
+                $notifyRoute = $isStudent ? '/counselor/video' : '/student/video-call';
+                $notifyBody = $isStudent
+                    ? sprintf('A student is calling you for %s.', $isAudio ? 'an audio session' : 'a video session')
+                    : sprintf('Your counselor is calling you for %s.', $isAudio ? 'an audio session' : 'a video session');
+
+                try {
+                    $this->webPush->sendToUser(
+                        $notifyUserId,
+                        $isAudio ? 'Incoming audio call' : 'Incoming video call',
+                        $notifyBody,
+                        $notifyRoute,
+                        [
+                            'tag' => 'cms-call-apt-'.(int) $appointment->id,
+                            'urgency' => 'high',
+                            'requireInteraction' => true,
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    Log::warning('[VideoCall] web push failed', [
+                        'appointment_id' => $appointment->id,
                         'caller_role' => $callerRole,
-                    ],
-                ]);
-                event(new NotificationCreated($notification));
-            } catch (\Throwable $e) {
-                Log::warning('[VideoCall] in-app notification failed', [
-                    'appointment_id' => $appointment->id,
-                    'error' => $e->getMessage(),
-                ]);
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                try {
+                    $notification = Notification::create([
+                        'user_id' => $notifyUserId,
+                        'title' => $isAudio ? 'Incoming audio call' : 'Incoming video call',
+                        'message' => $notifyBody,
+                        'type' => 'warning',
+                        'meta' => [
+                            'kind' => 'incoming_call',
+                            'appointment_id' => (int) $appointment->id,
+                            'call_type' => $callTypeResult,
+                            'caller_role' => $callerRole,
+                        ],
+                    ]);
+                    event(new NotificationCreated($notification));
+                } catch (\Throwable $e) {
+                    Log::warning('[VideoCall] in-app notification failed', [
+                        'appointment_id' => $appointment->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
         }
 
@@ -235,6 +267,62 @@ class VideoCallController extends Controller
             'channel' => "video-call-{$appointment->id}",
             'max_duration_minutes' => $authorizedDurationMinutes,
             'window' => $window,
+        ]);
+    }
+
+    /**
+     * Cancels the caller's own unanswered outgoing call. Idempotent: if there's nothing
+     * pending to cancel (already answered, already gone, or never existed — e.g. a race
+     * with the callee accepting at the same instant, or a duplicate cancel click), this
+     * is a no-op success rather than an error.
+     */
+    public function cancelCall(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'appointment_id' => 'required|integer|exists:appointments,id',
+        ]);
+
+        $user = $request->user();
+        $appointment = Appointment::findOrFail($validated['appointment_id']);
+
+        if (! $this->isParticipant($appointment, (int) $user->id)) {
+            return response()->json(['message' => 'Unauthorized for this video call.'], 403);
+        }
+
+        $isStudent = (int) $appointment->student_id === (int) $user->id && $user->hasRole('student');
+        $callerRole = $isStudent ? CounselingCall::CALLER_STUDENT : CounselingCall::CALLER_COUNSELOR;
+        $callerId = (int) $user->id;
+        $calleeId = $isStudent ? (int) $appointment->counselor_id : (int) $appointment->student_id;
+
+        try {
+            $cancelled = $this->calls->withUsersLocked([$callerId, $calleeId], function () use ($appointment, $callerRole) {
+                $pending = CounselingCall::query()
+                    ->where('appointment_id', $appointment->id)
+                    ->where('status', CounselingCall::STATUS_PENDING)
+                    ->where('caller_role', $callerRole)
+                    ->first();
+
+                if (! $pending) {
+                    return null;
+                }
+
+                $pending->update(['status' => CounselingCall::STATUS_CANCELLED]);
+
+                return $pending;
+            });
+        } catch (LockTimeoutException) {
+            return response()->json([
+                'message' => 'The call system is busy. Please try again in a moment.',
+            ], 503);
+        }
+
+        if ($cancelled) {
+            $this->calls->notifyCancelled($cancelled);
+        }
+
+        return response()->json([
+            'appointment_id' => (int) $appointment->id,
+            'cancelled' => (bool) $cancelled,
         ]);
     }
 

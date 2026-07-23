@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CounselingCall;
+use App\Support\CallCoordinator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -10,6 +11,8 @@ use Illuminate\Support\Carbon;
 class StudentIncomingCallController extends Controller
 {
     private const POLL_MAX_AGE_MINUTES = 30;
+
+    public function __construct(private readonly CallCoordinator $calls) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -22,6 +25,9 @@ class StudentIncomingCallController extends Controller
             ->where('student_id', $user->id)
             ->where('caller_role', CounselingCall::CALLER_COUNSELOR)
             ->where('status', CounselingCall::STATUS_PENDING)
+            ->where(function ($query) {
+                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
             ->where('created_at', '>=', now()->subMinutes(self::POLL_MAX_AGE_MINUTES))
             ->with(['appointment', 'counselor.profile'])
             ->orderByDesc('id')
@@ -91,9 +97,21 @@ class StudentIncomingCallController extends Controller
             return response()->json(['message' => 'Call is no longer pending.'], 422);
         }
 
+        if ($counselingCall->isExpired()) {
+            $counselingCall->update(['status' => CounselingCall::STATUS_MISSED]);
+            $this->calls->notifyMissed($counselingCall);
+
+            return response()->json(['message' => 'This call has expired.'], 410);
+        }
+
         $counselingCall->update([
             'status' => $validated['status'],
+            'connected_at' => $validated['status'] === 'accepted' ? now() : null,
         ]);
+
+        if ($validated['status'] === 'declined') {
+            $this->calls->notifyDeclined($counselingCall);
+        }
 
         return response()->json([
             'id' => (int) $counselingCall->id,
