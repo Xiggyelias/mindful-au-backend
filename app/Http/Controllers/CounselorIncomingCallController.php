@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CounselingCall;
 use App\Support\CallCoordinator;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -95,24 +96,48 @@ class CounselorIncomingCallController extends Controller
             'status' => 'required|in:accepted,declined',
         ]);
 
-        if ($counselingCall->status !== CounselingCall::STATUS_PENDING) {
+        try {
+            $outcome = $this->calls->withUsersLocked(
+                [(int) $counselingCall->student_id, (int) $counselingCall->counselor_id],
+                function () use ($counselingCall, $validated) {
+                    $counselingCall->refresh();
+
+                    if ($counselingCall->status !== CounselingCall::STATUS_PENDING) {
+                        return ['type' => 'not_pending'];
+                    }
+
+                    if ($counselingCall->isExpired()) {
+                        $counselingCall->update(['status' => CounselingCall::STATUS_MISSED]);
+
+                        return ['type' => 'expired', 'call' => $counselingCall];
+                    }
+
+                    $counselingCall->update([
+                        'status' => $validated['status'],
+                        'connected_at' => $validated['status'] === 'accepted' ? now() : null,
+                    ]);
+
+                    return ['type' => 'updated', 'call' => $counselingCall];
+                }
+            );
+        } catch (LockTimeoutException) {
+            return response()->json([
+                'message' => 'The call system is busy. Please try again in a moment.',
+            ], 503);
+        }
+
+        if ($outcome['type'] === 'not_pending') {
             return response()->json(['message' => 'Call is no longer pending.'], 422);
         }
 
-        if ($counselingCall->isExpired()) {
-            $counselingCall->update(['status' => CounselingCall::STATUS_MISSED]);
-            $this->calls->notifyMissed($counselingCall);
+        if ($outcome['type'] === 'expired') {
+            $this->calls->notifyMissed($outcome['call']);
 
             return response()->json(['message' => 'This call has expired.'], 410);
         }
 
-        $counselingCall->update([
-            'status' => $validated['status'],
-            'connected_at' => $validated['status'] === 'accepted' ? now() : null,
-        ]);
-
         if ($validated['status'] === 'declined') {
-            $this->calls->notifyDeclined($counselingCall);
+            $this->calls->notifyDeclined($outcome['call']);
         }
 
         return response()->json([
