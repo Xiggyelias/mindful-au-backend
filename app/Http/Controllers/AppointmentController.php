@@ -217,6 +217,13 @@ class AppointmentController extends Controller
             ? (bool) $validated['is_anonymous']
             : false;
 
+        // Emergency bookings are never anonymous: a counselor responding to a crisis must be
+        // able to identify and reach the student. Force identified regardless of the client
+        // request or the student's profile anonymous-mode default.
+        if (! empty($validated['emergency_request_id'])) {
+            $isAnonymous = false;
+        }
+
         $notesRaw = trim((string) ($validated['notes'] ?? ''));
         $isPhysical = str_starts_with(strtolower($notesRaw), 'physical');
 
