@@ -52,6 +52,7 @@ class Appointment extends Model
         'counselor_id',
         'counselor_slot_id',
         'is_anonymous',
+        'is_emergency',
         'anonymous_id',
         'scheduled_at',
         'duration_minutes',
@@ -67,6 +68,7 @@ class Appointment extends Model
         'scheduled_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'is_anonymous' => 'boolean',
+        'is_emergency' => 'boolean',
         'reminder_sent' => 'boolean',
     ];
 

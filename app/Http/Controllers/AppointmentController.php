@@ -260,7 +260,8 @@ class AppointmentController extends Controller
                 $slotId,
                 $isAnonymous,
                 $finalNotes,
-                $callType
+                $callType,
+                $isEmergencyBooking
             ) {
                 return DB::transaction(function () use (
 
@@ -272,7 +273,8 @@ class AppointmentController extends Controller
                     $slotId,
                     $isAnonymous,
                     $finalNotes,
-                    $callType
+                    $callType,
+                    $isEmergencyBooking
                 ) {
                     $slot = null;
                     if ($slotId !== null) {
@@ -296,39 +298,46 @@ class AppointmentController extends Controller
                         }
                     }
 
-                    // Keep row locks to ensure overlap checks are consistent for rows already present.
-                    $candidateAppointments = Appointment::query()
-                        ->whereIn('status', ['scheduled', 'confirmed'])
-                        ->where(function ($query) use ($studentId, $counselorId) {
-                            $query->where('student_id', $studentId)
-                                ->orWhere('counselor_id', $counselorId);
-                        });
-                    $this->applyOverlapConstraint($candidateAppointments, $proposedStart, $proposedEnd);
-                    $candidateAppointments = $candidateAppointments
-                        ->lockForUpdate()
-                        ->get(['id', 'student_id', 'counselor_id', 'scheduled_at', 'duration_minutes']);
+                    // Emergency bookings skip the scheduling-overlap gate: the counselor has
+                    // explicitly accepted the crisis request, so the student in crisis must be
+                    // able to book any time even if it overlaps an existing appointment. Actual
+                    // simultaneous calls are still prevented at call time by CallCoordinator, so
+                    // this only relaxes the calendar constraint, not the one-call-at-a-time rule.
+                    if (! $isEmergencyBooking) {
+                        // Keep row locks to ensure overlap checks are consistent for rows already present.
+                        $candidateAppointments = Appointment::query()
+                            ->whereIn('status', ['scheduled', 'confirmed'])
+                            ->where(function ($query) use ($studentId, $counselorId) {
+                                $query->where('student_id', $studentId)
+                                    ->orWhere('counselor_id', $counselorId);
+                            });
+                        $this->applyOverlapConstraint($candidateAppointments, $proposedStart, $proposedEnd);
+                        $candidateAppointments = $candidateAppointments
+                            ->lockForUpdate()
+                            ->get(['id', 'student_id', 'counselor_id', 'scheduled_at', 'duration_minutes']);
 
-                    foreach ($candidateAppointments as $candidate) {
-                        $candidateStart = Carbon::parse($candidate->scheduled_at);
-                        $candidateEnd = (clone $candidateStart)->addMinutes((int) $candidate->duration_minutes);
+                        foreach ($candidateAppointments as $candidate) {
+                            $candidateStart = Carbon::parse($candidate->scheduled_at);
+                            $candidateEnd = (clone $candidateStart)->addMinutes((int) $candidate->duration_minutes);
 
-                        $overlaps = $candidateStart->lt($proposedEnd) && $candidateEnd->gt($proposedStart);
-                        if (! $overlaps) {
-                            continue;
-                        }
+                            $overlaps = $candidateStart->lt($proposedEnd) && $candidateEnd->gt($proposedStart);
+                            if (! $overlaps) {
+                                continue;
+                            }
 
-                        $isCounselorConflict = (int) $candidate->counselor_id === $counselorId;
-                        if ($isCounselorConflict) {
-                            throw ValidationException::withMessages([
-                                'scheduled_at' => ['Selected counselor is unavailable for that time slot.'],
-                            ]);
-                        }
+                            $isCounselorConflict = (int) $candidate->counselor_id === $counselorId;
+                            if ($isCounselorConflict) {
+                                throw ValidationException::withMessages([
+                                    'scheduled_at' => ['Selected counselor is unavailable for that time slot.'],
+                                ]);
+                            }
 
-                        $isStudentConflict = (int) $candidate->student_id === $studentId;
-                        if ($isStudentConflict) {
-                            throw ValidationException::withMessages([
-                                'scheduled_at' => ['You already have an overlapping appointment.'],
-                            ]);
+                            $isStudentConflict = (int) $candidate->student_id === $studentId;
+                            if ($isStudentConflict) {
+                                throw ValidationException::withMessages([
+                                    'scheduled_at' => ['You already have an overlapping appointment.'],
+                                ]);
+                            }
                         }
                     }
 
@@ -345,6 +354,9 @@ class AppointmentController extends Controller
                     ];
                     if ($this->supportsCallTypeColumn()) {
                         $payload['call_type'] = $callType;
+                    }
+                    if ($isEmergencyBooking && Schema::hasColumn('appointments', 'is_emergency')) {
+                        $payload['is_emergency'] = true;
                     }
                     $appointment = Appointment::query()->create($payload);
                     if ($slot) {
