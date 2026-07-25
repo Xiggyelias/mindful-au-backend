@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CounselingCall;
 use App\Support\CallCoordinator;
+use App\Support\CallSignalBroadcaster;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -59,11 +60,16 @@ class StudentIncomingCallController extends Controller
                 ? $scheduledAt->toIso8601String()
                 : ($scheduledAt ? (string) $scheduledAt : null);
 
+            // Counselors are never masked from the student — show their photo on the ring
+            // screen so the student can see who is calling before answering.
+            $avatarUrl = trim((string) (optional($profile)->avatar_url ?? ''));
+
             return [
                 'id' => (int) $call->id,
                 'appointment_id' => (int) $call->appointment_id,
                 'counselor_id' => (int) $call->counselor_id,
                 'counselor_name' => $counselorLabel,
+                'counselor_avatar_url' => $avatarUrl !== '' ? $avatarUrl : null,
                 'is_anonymous' => $isAnonymous,
                 'call_type' => (string) $call->call_type,
                 'status' => (string) $call->status,
@@ -136,12 +142,17 @@ class StudentIncomingCallController extends Controller
 
         if ($validated['status'] === 'declined') {
             $this->calls->notifyDeclined($outcome['call']);
+        } else {
+            $this->calls->signalAccepted($outcome['call']);
         }
 
         return response()->json([
             'id' => (int) $counselingCall->id,
             'appointment_id' => (int) $counselingCall->appointment_id,
             'status' => (string) $counselingCall->status,
+            'state' => $validated['status'] === 'accepted'
+                ? CallSignalBroadcaster::STATE_CONNECTED
+                : CallSignalBroadcaster::STATE_ENDED,
         ]);
     }
 }

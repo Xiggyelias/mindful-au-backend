@@ -33,7 +33,69 @@ class CallCoordinator
 
     private const LOCK_WAIT_SECONDS = 5;
 
-    public function __construct(private readonly WebPushService $webPush) {}
+    public function __construct(
+        private readonly WebPushService $webPush,
+        private readonly CallSignalBroadcaster $signals,
+    ) {}
+
+    /** The user id of whoever placed the call. */
+    public function callerId(CounselingCall $call): int
+    {
+        return $call->caller_role === CounselingCall::CALLER_STUDENT
+            ? (int) $call->student_id
+            : (int) $call->counselor_id;
+    }
+
+    /** The user id of whoever is being rung. */
+    public function calleeId(CounselingCall $call): int
+    {
+        return $call->caller_role === CounselingCall::CALLER_STUDENT
+            ? (int) $call->counselor_id
+            : (int) $call->student_id;
+    }
+
+    /**
+     * Ring the callee. The caller is already showing CALLING locally — this is what puts
+     * the callee into RINGING, and it must never be sent back to the caller.
+     */
+    public function signalRinging(CounselingCall $call): void
+    {
+        $calleeId = $this->calleeId($call);
+
+        Log::info('[Call] Recipient identified', [
+            'call_id' => (int) $call->id,
+            'appointment_id' => (int) $call->appointment_id,
+            'caller_role' => (string) $call->caller_role,
+            'caller_user_id' => $this->callerId($call),
+            'recipient_user_id' => $calleeId,
+            'caller_state' => 'CALLING',
+            'recipient_state' => CallSignalBroadcaster::STATE_RINGING,
+        ]);
+
+        $this->signals->send(
+            $calleeId,
+            $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_RINGING),
+            'ringing'
+        );
+    }
+
+    /** Tell the caller their call was answered — both sides go CONNECTED. */
+    public function signalAccepted(CounselingCall $call): void
+    {
+        Log::info('[Call] Call accepted', [
+            'call_id' => (int) $call->id,
+            'appointment_id' => (int) $call->appointment_id,
+            'accepted_by_user_id' => $this->calleeId($call),
+            'caller_user_id' => $this->callerId($call),
+            'state' => CallSignalBroadcaster::STATE_CONNECTED,
+        ]);
+
+        $this->signals->send(
+            $this->callerId($call),
+            $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_CONNECTED),
+            'accepted'
+        );
+    }
 
     /**
      * Runs $callback with every given user id's call-state locked against concurrent
@@ -113,31 +175,74 @@ class CallCoordinator
     public function notifyMissed(CounselingCall $call): void
     {
         $isStudentCaller = $call->caller_role === CounselingCall::CALLER_STUDENT;
-        $notifyUserId = $isStudentCaller ? (int) $call->counselor_id : (int) $call->student_id;
+        $notifyUserId = $this->calleeId($call);
         $notifyBody = $isStudentCaller ? 'Missed audio/video call from student.' : 'Missed audio/video call from counselor.';
         $notifyRoute = $isStudentCaller ? '/counselor/video' : '/student/video-call';
 
         $this->pushAndNotify($notifyUserId, 'Missed call', $notifyBody, $notifyRoute, $call, requireInteraction: false);
+
+        Log::info('[Call] Call missed', [
+            'call_id' => (int) $call->id,
+            'appointment_id' => (int) $call->appointment_id,
+            'caller_user_id' => $this->callerId($call),
+            'recipient_user_id' => $notifyUserId,
+            'state' => CallSignalBroadcaster::STATE_ENDED,
+        ]);
+
+        // Both sides must tear down: the callee's ring stops, the caller's ringback stops.
+        $payload = $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_ENDED);
+        $this->signals->send($notifyUserId, $payload, 'missed');
+        $this->signals->send($this->callerId($call), $payload, 'missed');
     }
 
     /** Notify the caller that the callee explicitly declined. */
     public function notifyDeclined(CounselingCall $call): void
     {
         $isStudentCaller = $call->caller_role === CounselingCall::CALLER_STUDENT;
-        $callerUserId = $isStudentCaller ? (int) $call->student_id : (int) $call->counselor_id;
+        $callerUserId = $this->callerId($call);
         $notifyRoute = $isStudentCaller ? '/student/video-call' : '/counselor/video';
 
         $this->pushAndNotify($callerUserId, 'Call declined', 'Your call was declined.', $notifyRoute, $call, requireInteraction: false);
+
+        Log::info('[Call] Call declined', [
+            'call_id' => (int) $call->id,
+            'appointment_id' => (int) $call->appointment_id,
+            'declined_by_user_id' => $this->calleeId($call),
+            'caller_user_id' => $callerUserId,
+            'state' => CallSignalBroadcaster::STATE_ENDED,
+        ]);
+
+        $this->signals->send(
+            $callerUserId,
+            $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_ENDED),
+            'declined'
+        );
     }
 
     /** Notify the callee that the caller cancelled before they answered. */
     public function notifyCancelled(CounselingCall $call): void
     {
         $isStudentCaller = $call->caller_role === CounselingCall::CALLER_STUDENT;
-        $notifyUserId = $isStudentCaller ? (int) $call->counselor_id : (int) $call->student_id;
+        $notifyUserId = $this->calleeId($call);
         $notifyRoute = $isStudentCaller ? '/counselor/video' : '/student/video-call';
 
         $this->pushAndNotify($notifyUserId, 'Call cancelled', 'The call was cancelled.', $notifyRoute, $call, requireInteraction: false);
+
+        Log::info('[Call] Call cancelled by caller', [
+            'call_id' => (int) $call->id,
+            'appointment_id' => (int) $call->appointment_id,
+            'caller_user_id' => $this->callerId($call),
+            'recipient_user_id' => $notifyUserId,
+            'state' => CallSignalBroadcaster::STATE_ENDED,
+        ]);
+
+        // Stops the ring on the recipient's device — without this their overlay keeps
+        // ringing for the full auto-dismiss window after the caller has hung up.
+        $this->signals->send(
+            $notifyUserId,
+            $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_ENDED),
+            'cancelled'
+        );
     }
 
     private function pushAndNotify(

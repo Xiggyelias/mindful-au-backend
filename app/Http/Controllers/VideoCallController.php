@@ -129,6 +129,7 @@ class VideoCallController extends Controller
 
         $isStudent = (int) $appointment->student_id === (int) $user->id && $user->hasRole('student');
         $isCounselor = $user->hasRole('counselor') && (int) $appointment->counselor_id === (int) $user->id;
+        $activeCall = null;
 
         if ($isStudent || $isCounselor) {
             $callTypeResult = $this->resolveCallType(
@@ -146,6 +147,14 @@ class VideoCallController extends Controller
             $callerId = (int) $user->id;
             $calleeId = $isStudent ? (int) $appointment->counselor_id : (int) $appointment->student_id;
 
+            Log::info('[Call] Call initiated', [
+                'appointment_id' => (int) $appointment->id,
+                'caller_role' => $callerRole,
+                'caller_user_id' => $callerId,
+                'recipient_user_id' => $calleeId,
+                'call_type' => $validated['call_type'] ?? 'video',
+            ]);
+
             try {
                 $outcome = $this->calls->withUsersLocked([$callerId, $calleeId], function () use ($appointment, $callTypeResult, $callerRole, $callerId, $calleeId) {
                     $missed = $this->calls->sweepExpired($callerId, $calleeId);
@@ -155,6 +164,15 @@ class VideoCallController extends Controller
                     if ($conflict) {
                         $sameAppointment = (int) $conflict->appointment_id === (int) $appointment->id;
                         $sameCaller = $conflict->caller_role === $callerRole;
+
+                        if ($sameAppointment && $conflict->status === CounselingCall::STATUS_ACCEPTED) {
+                            // The call has already been answered and both participants are
+                            // joining it. This is the callee's own authorize request right
+                            // after they hit Accept — treating their answered call as a
+                            // conflicting "incoming call" would 409 them out of the very
+                            // call they just accepted.
+                            return ['type' => 'reused', 'call' => $conflict, 'missed' => $missed];
+                        }
 
                         if ($sameAppointment && $sameCaller) {
                             // Idempotent: rapid double-click, retry, or a page refresh mid-call —
@@ -213,6 +231,12 @@ class VideoCallController extends Controller
             if ($outcome['type'] === 'created') {
                 $isAudio = $callTypeResult === 'audio';
                 $notifyUserId = $calleeId;
+
+                // Ring the recipient first — this is the signal that puts them in RINGING.
+                // It goes to the callee only; the caller already renders CALLING locally.
+                // Everything below (web push, in-app notification) is a slower backstop
+                // for a recipient who isn't currently connected to realtime.
+                $this->calls->signalRinging($outcome['call']);
                 $notifyRoute = $isStudent ? '/counselor/video' : '/student/video-call';
                 $notifyBody = $isStudent
                     ? sprintf('A student is calling you for %s.', $isAudio ? 'an audio session' : 'a video session')
@@ -259,6 +283,15 @@ class VideoCallController extends Controller
                     ]);
                 }
             }
+
+            if ($outcome['type'] === 'reused' && $outcome['call']->status === CounselingCall::STATUS_PENDING) {
+                // A retry, refresh or double-click on a call that is still ringing. Re-ring
+                // the recipient: the first signal may have been sent before their tab was
+                // listening, and re-sending is idempotent on the receiving end.
+                $this->calls->signalRinging($outcome['call']);
+            }
+
+            $activeCall = $outcome['call'] ?? null;
         }
 
         return response()->json([
@@ -267,6 +300,11 @@ class VideoCallController extends Controller
             'channel' => "video-call-{$appointment->id}",
             'max_duration_minutes' => $authorizedDurationMinutes,
             'window' => $window,
+            'call_id' => $activeCall ? (int) $activeCall->id : null,
+            // The caller is CALLING until the recipient answers; the recipient is RINGING.
+            'call_state' => $activeCall && $activeCall->status === CounselingCall::STATUS_PENDING
+                ? 'CALLING'
+                : null,
         ]);
     }
 

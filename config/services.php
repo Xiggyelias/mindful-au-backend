@@ -45,6 +45,16 @@ return [
         'speed_model' => env('OPENROUTER_SPEED_MODEL', 'liquid/lfm-2.5-1.2b-thinking:free'),
     ],
 
+    // Realtime transport used to push call signaling (incoming call / accepted /
+    // declined / cancelled / missed) straight to the recipient. The anon/publishable
+    // key is enough — these are public broadcast channels, same as the browser uses.
+    // Leave unset to fall back to HTTP polling on the client.
+    'supabase' => [
+        'url' => env('SUPABASE_URL', null),
+        'key' => env('SUPABASE_SERVICE_KEY', env('SUPABASE_ANON_KEY')),
+        'timeout' => env('SUPABASE_REALTIME_TIMEOUT_SECONDS', 3),
+    ],
+
     'ai' => [
         'provider_timeout_seconds' => env('AI_PROVIDER_TIMEOUT_SECONDS', 8),
         'provider_connect_timeout_seconds' => env('AI_PROVIDER_CONNECT_TIMEOUT_SECONDS', 5),
