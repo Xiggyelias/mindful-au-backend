@@ -76,15 +76,24 @@ class DiagnosticController extends Controller
 
         $validated = $request->validate([
             'responses' => 'required|array|min:1|max:200',
-            'questionnaire_id' => 'required|integer|exists:diagnostic_questionnaires,id',
+            'questionnaire_id' => 'nullable|integer',
             'is_anonymous' => 'boolean',
+            'assessment_mode' => 'nullable|string|in:quick,full_university,clinical_intake',
         ]);
 
-        $questionnaire = DiagnosticQuestionnaire::findOrFail($validated['questionnaire_id']);
+        $questionnaire = null;
+        if (! empty($validated['questionnaire_id'])) {
+            $questionnaire = DiagnosticQuestionnaire::find($validated['questionnaire_id']);
+        }
+        if (! $questionnaire) {
+            $questionnaire = DiagnosticQuestionnaire::where('status', 'active')->latest()->first()
+                ?? DiagnosticQuestionnaire::query()->latest()->first();
+        }
+
         $user = $request->user();
 
         $questionsForScoring = $this->normalizeQuestionnaireForScoring(
-            is_array($questionnaire->questions) ? $questionnaire->questions : []
+            $questionnaire && is_array($questionnaire->questions) ? $questionnaire->questions : []
         );
 
         // Calculate scores
@@ -111,6 +120,15 @@ class DiagnosticController extends Controller
         if (! empty($scoreData['scoring_model'])) {
             $recommendations['scoring_model'] = $scoreData['scoring_model'];
         }
+        if (! empty($validated['assessment_mode'])) {
+            $recommendations['assessment_mode'] = $validated['assessment_mode'];
+        }
+
+        $user->loadMissing('profile');
+        $liveProfileAnon = $user->profile !== null ? (bool) $user->profile->anonymous_mode : false;
+        $isAnonymous = array_key_exists('is_anonymous', $validated)
+            ? ($liveProfileAnon && (bool) $validated['is_anonymous'])
+            : $liveProfileAnon;
 
         // Create diagnostic record
         $diagnostic = new Diagnostic([
@@ -120,7 +138,7 @@ class DiagnosticController extends Controller
             'risk_level' => $scoreData['risk_level'],
             'category_scores' => $scoreData['category_scores'],
             'ai_recommendations' => $recommendations,
-            'is_anonymous' => $validated['is_anonymous'] ?? false,
+            'is_anonymous' => $isAnonymous,
         ]);
 
         if ($diagnostic->is_anonymous) {
@@ -142,7 +160,7 @@ class DiagnosticController extends Controller
                 'id' => $diagnostic->id,
                 'total_score' => $diagnostic->total_score,
                 'risk_level' => $diagnostic->risk_level,
-                'category_scores' => $diagnostic->category_scores,
+                'category_scores' => $scoreData['category_scores'],
                 'ai_recommendations' => $diagnostic->ai_recommendations,
                 'created_at' => $diagnostic->created_at,
             ],

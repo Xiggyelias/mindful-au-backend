@@ -125,7 +125,24 @@ class DiagnosticScoringService
             return $this->calculateUniversityV1($responses);
         }
 
-        if (($questionnaire['meta']['scoring_model'] ?? null) === 'pre_counselling_v1') {
+        if (
+            ($questionnaire['meta']['scoring_model'] ?? null) === 'pre_counselling_v1'
+            || $this->hasPreCounsellingResponses($responses)
+        ) {
+            $hasMatchingIds = false;
+            foreach ($questions as $q) {
+                if (isset($q['id']) && array_key_exists((string) $q['id'], $responses)) {
+                    $hasMatchingIds = true;
+                    break;
+                }
+            }
+            if (! $hasMatchingIds) {
+                $fallbackPayload = \App\Support\PreCounsellingQuestionnaire::payload();
+                if (! empty($fallbackPayload['questions']) && is_array($fallbackPayload['questions'])) {
+                    $questions = $fallbackPayload['questions'];
+                }
+            }
+
             return $this->calculatePreCounsellingV1($responses, $questions);
         }
 
@@ -180,9 +197,8 @@ class DiagnosticScoringService
     }
 
     /**
-     * Returns true when at least 5 response keys start with "univ_", indicating
-     * the front-end submitted from its built-in university question bank rather
-     * than from the stored questionnaire.
+     * Returns true when response keys start with "univ_", indicating
+     * the front-end submitted from its built-in university question bank.
      */
     private function hasUniversityResponses(array $responses): bool
     {
@@ -190,7 +206,26 @@ class DiagnosticScoringService
         foreach (array_keys($responses) as $key) {
             if (str_starts_with((string) $key, 'univ_')) {
                 $count++;
-                if ($count >= 5) {
+                if ($count >= 3) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns true when response keys match the pre_counselling_v1 question bank
+     * (either the 7-question Quick Check-In or the full Pre-Counselling Intake).
+     */
+    private function hasPreCounsellingResponses(array $responses): bool
+    {
+        $prefixes = ['ctx_', 'emo_', 'cog_', 'beh_', 'fn_', 'str_', 'soc_', 'res_', 'cop_', 'risk_', 'sess_'];
+        foreach (array_keys($responses) as $key) {
+            $k = (string) $key;
+            foreach ($prefixes as $prefix) {
+                if (str_starts_with($k, $prefix)) {
                     return true;
                 }
             }
@@ -295,18 +330,13 @@ class DiagnosticScoringService
         foreach ($questions as $question) {
             $id = $question['id'];
             $category = (string) ($question['category'] ?? 'general');
-            $required = ($question['required'] ?? true) === true;
 
             if (! array_key_exists($id, $responses)) {
-                if ($required) {
-                    // Missing required answer — neutral penalty band so submission still validates elsewhere
-                    $distress = 50;
-                } else {
-                    continue;
-                }
-            } else {
-                $distress = $this->scorePreCounsellingItem($responses[$id], $question, $riskFlags);
+                // Only score questions that were actually presented and answered in the selected assessment mode.
+                continue;
             }
+
+            $distress = $this->scorePreCounsellingItem($responses[$id], $question, $riskFlags);
 
             if ($distress === null) {
                 continue;

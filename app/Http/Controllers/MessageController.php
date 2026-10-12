@@ -1057,21 +1057,18 @@ class MessageController extends Controller
 
     private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool
     {
-        if (! $user->hasRole('peer_counselor')) {
+        if (! $user->hasRole('peer_counselor') || $session->assigned_role !== 'peer_counselor') {
             return false;
         }
 
-        if (
-            (int) $session->peer_counselor_id === (int) $user->id
-            && $session->assigned_role === 'peer_counselor'
-        ) {
+        if ((int) $session->peer_counselor_id === (int) $user->id) {
             return true;
         }
 
         return PeerAssignment::query()
             ->where('session_id', (int) $session->id)
             ->where('peer_counselor_id', (int) $user->id)
-            ->whereIn('status', ['active', 'escalated'])
+            ->where('status', 'active')
             ->exists();
     }
 
@@ -1195,15 +1192,19 @@ class MessageController extends Controller
     private function resolveRecipientId(CounselingSession $session, int $senderId): ?int
     {
         $recipientId = null;
-        $casePeerCounselorId = (int) $session->peer_counselor_id;
-        if ($casePeerCounselorId <= 0) {
-            $casePeerCounselorId = (int) (PeerAssignment::query()
-                ->where('session_id', (int) $session->id)
-                ->whereNotNull('peer_counselor_id')
-                ->whereIn('status', ['active', 'escalated'])
-                ->orderByDesc('assigned_at')
-                ->orderByDesc('id')
-                ->value('peer_counselor_id') ?? 0);
+        $casePeerCounselorId = 0;
+
+        if ($session->assigned_role === 'peer_counselor') {
+            $casePeerCounselorId = (int) $session->peer_counselor_id;
+            if ($casePeerCounselorId <= 0) {
+                $casePeerCounselorId = (int) (PeerAssignment::query()
+                    ->where('session_id', (int) $session->id)
+                    ->whereNotNull('peer_counselor_id')
+                    ->where('status', 'active')
+                    ->orderByDesc('assigned_at')
+                    ->orderByDesc('id')
+                    ->value('peer_counselor_id') ?? 0);
+            }
         }
 
         if ((int) $session->student_id === $senderId) {
@@ -1212,7 +1213,7 @@ class MessageController extends Controller
             } else {
                 $recipientId = $session->counselor_id ? (int) $session->counselor_id : null;
             }
-        } elseif ($casePeerCounselorId === $senderId) {
+        } elseif ($casePeerCounselorId > 0 && $casePeerCounselorId === $senderId) {
             $recipientId = (int) $session->student_id;
         } elseif ((int) $session->counselor_id === $senderId) {
             $recipientId = (int) $session->student_id;
@@ -1241,25 +1242,22 @@ class MessageController extends Controller
     {
         $studentId = (int) $session->student_id;
         $counselorId = (int) $session->counselor_id;
-        $peerCounselorId = (int) $session->peer_counselor_id;
-        if ($peerCounselorId <= 0) {
-            $peerCounselorId = (int) (PeerAssignment::query()
-                ->where('session_id', (int) $session->id)
-                ->whereNotNull('peer_counselor_id')
-                ->whereIn('status', ['active', 'escalated'])
-                ->orderByDesc('assigned_at')
-                ->orderByDesc('id')
-                ->value('peer_counselor_id') ?? 0);
-        }
-        $isDelegatedPeerThread = $peerCounselorId > 0
-            && (
-                $session->assigned_role === 'peer_counselor'
-                || PeerAssignment::query()
+        $peerCounselorId = 0;
+
+        if ($session->assigned_role === 'peer_counselor') {
+            $peerCounselorId = (int) $session->peer_counselor_id;
+            if ($peerCounselorId <= 0) {
+                $peerCounselorId = (int) (PeerAssignment::query()
                     ->where('session_id', (int) $session->id)
-                    ->where('peer_counselor_id', $peerCounselorId)
-                    ->whereIn('status', ['active', 'escalated'])
-                    ->exists()
-            );
+                    ->whereNotNull('peer_counselor_id')
+                    ->where('status', 'active')
+                    ->orderByDesc('assigned_at')
+                    ->orderByDesc('id')
+                    ->value('peer_counselor_id') ?? 0);
+            }
+        }
+
+        $isDelegatedPeerThread = $session->assigned_role === 'peer_counselor' && $peerCounselorId > 0;
 
         $participantIds = $isDelegatedPeerThread
             ? [$studentId, $peerCounselorId, $counselorId]

@@ -438,21 +438,18 @@ class VoiceNotesController extends Controller
 
     private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool
     {
-        if (! $user->hasRole('peer_counselor')) {
+        if (! $user->hasRole('peer_counselor') || $session->assigned_role !== 'peer_counselor') {
             return false;
         }
 
-        if (
-            (int) $session->peer_counselor_id === (int) $user->id
-            && $session->assigned_role === 'peer_counselor'
-        ) {
+        if ((int) $session->peer_counselor_id === (int) $user->id) {
             return true;
         }
 
         return PeerAssignment::query()
             ->where('session_id', (int) $session->id)
             ->where('peer_counselor_id', (int) $user->id)
-            ->whereIn('status', ['active', 'escalated'])
+            ->where('status', 'active')
             ->exists();
     }
 
@@ -539,6 +536,11 @@ class VoiceNotesController extends Controller
         int $recipientId,
         ?bool $sentAsAnonymousSnapshot = null,
     ): bool {
+        $session->loadMissing('student.profile');
+        if ($session->student && $session->student->profile && ! (bool) $session->student->profile->anonymous_mode) {
+            return false;
+        }
+
         $effectiveAnonymous = $sentAsAnonymousSnapshot ?? (bool) $session->is_anonymous;
 
         if (! $effectiveAnonymous) {
@@ -554,14 +556,26 @@ class VoiceNotesController extends Controller
             return true;
         }
 
-        if (
-            $session->identity_revealed_at !== null
-            && (
-                $recipient->hasRole('admin')
-                || ($recipient->hasRole('counselor') && $recipientId === (int) $session->counselor_id)
-            )
-        ) {
-            return false;
+        if ($session->identity_revealed_at !== null) {
+            if ($recipient->hasRole('admin')) {
+                return false;
+            }
+            if ($recipient->hasRole('counselor') && $recipientId === (int) $session->counselor_id) {
+                return false;
+            }
+            if (
+                $recipient->hasRole('peer_counselor')
+                && (
+                    $recipientId === (int) $session->peer_counselor_id
+                    || PeerAssignment::query()
+                        ->where('session_id', (int) $session->id)
+                        ->where('peer_counselor_id', $recipientId)
+                        ->whereIn('status', ['active', 'escalated'])
+                        ->exists()
+                )
+            ) {
+                return false;
+            }
         }
 
         return true;
@@ -597,15 +611,19 @@ class VoiceNotesController extends Controller
 
     private function activeCasePeerCounselorId(CounselingSession $session): int
     {
+        if ($session->assigned_role !== 'peer_counselor') {
+            return 0;
+        }
+
         $peerCounselorId = (int) ($session->peer_counselor_id ?? 0);
-        if ($peerCounselorId > 0 && $session->assigned_role === 'peer_counselor') {
+        if ($peerCounselorId > 0) {
             return $peerCounselorId;
         }
 
         return (int) (PeerAssignment::query()
             ->where('session_id', (int) $session->id)
             ->whereNotNull('peer_counselor_id')
-            ->whereIn('status', ['active', 'escalated'])
+            ->where('status', 'active')
             ->orderByDesc('assigned_at')
             ->orderByDesc('id')
             ->value('peer_counselor_id') ?? 0);

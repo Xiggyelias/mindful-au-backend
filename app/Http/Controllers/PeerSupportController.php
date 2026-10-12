@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CounselingSession;
 use App\Models\Escalation;
+use App\Models\PeerAssignment;
 use App\Models\Profile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,10 +30,20 @@ class PeerSupportController extends Controller
             ->whereIn('status', ['pending', 'active'])
             ->count();
 
-        $chatHistoryCount = CounselingSession::query()
+        $assignedSessionIds = PeerAssignment::query()
+            ->where('peer_counselor_id', $user->id)
+            ->pluck('session_id')
+            ->map(static fn ($id) => (int) $id)
+            ->all();
+
+        $directSessionIds = CounselingSession::query()
             ->where('peer_counselor_id', $user->id)
             ->where('session_type', 'chat')
-            ->count();
+            ->pluck('id')
+            ->map(static fn ($id) => (int) $id)
+            ->all();
+
+        $chatHistoryCount = count(array_unique(array_filter(array_merge($assignedSessionIds, $directSessionIds))));
 
         $escalatedCases = Escalation::query()
             ->where('escalated_by', $user->id)
@@ -53,9 +64,7 @@ class PeerSupportController extends Controller
             ->limit(8)
             ->get()
             ->map(function (CounselingSession $session) {
-                $displayName = $session->is_anonymous
-                    ? ($session->anonymous_id ?: "Student_#{$session->student_id}")
-                    : ($session->student?->profile?->full_name ?: "Student_#{$session->student_id}");
+                $displayName = $this->resolveStudentLabelForPeer($session);
 
                 return [
                     'id' => $session->id,
@@ -93,9 +102,9 @@ class PeerSupportController extends Controller
             ->get()
             ->map(function (Escalation $escalation) {
                 $session = $escalation->session;
-                $studentLabel = $session?->is_anonymous
-                    ? ($session->anonymous_id ?: "Student_#{$session?->student_id}")
-                    : ($session?->student?->profile?->full_name ?: "Student_#{$session?->student_id}");
+                $studentLabel = $session
+                    ? $this->resolveStudentLabelForPeer($session)
+                    : 'Anonymous User';
 
                 return [
                     'id' => $escalation->id,
@@ -111,6 +120,20 @@ class PeerSupportController extends Controller
             });
 
         return response()->json($rows);
+    }
+
+    private function resolveStudentLabelForPeer(CounselingSession $session): string
+    {
+        $studentProfile = $session->student?->profile;
+        $liveProfileAnon = $studentProfile !== null ? (bool) $studentProfile->anonymous_mode : null;
+        $isAnonymous = $liveProfileAnon !== null ? $liveProfileAnon : (bool) $session->is_anonymous;
+
+        if ($isAnonymous && $session->identity_revealed_at === null) {
+            return 'Anonymous User';
+        }
+
+        return $studentProfile?->full_name
+            ?: ($session->student?->email ?: "Student_#{$session->student_id}");
     }
 
     public function setAvailability(Request $request): JsonResponse

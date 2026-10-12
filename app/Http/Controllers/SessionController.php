@@ -351,7 +351,7 @@ class SessionController extends Controller
         $latestCasePeerAssignments = DB::table('peer_assignments as latest_pa')
             ->select('latest_pa.session_id', DB::raw('MAX(latest_pa.id) as latest_peer_assignment_id'))
             ->whereNotNull('latest_pa.peer_counselor_id')
-            ->whereIn('latest_pa.status', ['active', 'escalated'])
+            ->where('latest_pa.status', 'active')
             ->groupBy('latest_pa.session_id');
 
         $orderedQuery = (clone $scopedSessionQuery)
@@ -472,8 +472,11 @@ class SessionController extends Controller
             $studentIsOnline = $studentLastSeenAt instanceof Carbon
                 && $studentLastSeenAt->greaterThanOrEqualTo($studentOnlineThreshold);
 
-            $sessionPeerId = $row->peer_counselor_id ? (int) $row->peer_counselor_id : null;
-            $casePeerId = $sessionPeerId ?: ($row->case_peer_counselor_id ? (int) $row->case_peer_counselor_id : null);
+            $isPeerAssignedRole = ($row->assigned_role ?? null) === 'peer_counselor';
+            $sessionPeerId = $isPeerAssignedRole && $row->peer_counselor_id ? (int) $row->peer_counselor_id : null;
+            $casePeerId = $isPeerAssignedRole
+                ? ($sessionPeerId ?: ($row->case_peer_counselor_id ? (int) $row->case_peer_counselor_id : null))
+                : null;
             $casePeerEmail = $sessionPeerId ? $row->peer_email : $row->case_peer_email;
             $casePeerLastSeenAt = $sessionPeerId ? $row->peer_last_seen_at : $row->case_peer_last_seen_at;
             $casePeerFullName = $sessionPeerId ? $row->peer_full_name : $row->case_peer_full_name;
@@ -1476,6 +1479,8 @@ class SessionController extends Controller
 
         $session->update([
             'assigned_by' => $user->id,
+            'assigned_role' => 'counselor',
+            'peer_counselor_id' => null,
             'status' => in_array((string) $session->status, ['completed', 'cancelled'], true)
                 ? $session->status
                 : 'active',
@@ -1487,6 +1492,7 @@ class SessionController extends Controller
             ->where('status', 'active')
             ->update([
                 'status' => 'escalated',
+                'unassigned_at' => now(),
                 'notes' => 'Escalated to supervising counselor',
             ]);
 
@@ -1569,6 +1575,8 @@ class SessionController extends Controller
 
         $session->update([
             'assigned_by' => $user->id,
+            'assigned_role' => 'counselor',
+            'peer_counselor_id' => null,
             'status' => in_array((string) $session->status, ['completed', 'cancelled'], true)
                 ? $session->status
                 : 'active',
@@ -1580,6 +1588,7 @@ class SessionController extends Controller
             ->where('status', 'active')
             ->update([
                 'status' => 'escalated',
+                'unassigned_at' => now(),
                 'notes' => 'Urgent concern flagged for supervising counselor',
             ]);
 
@@ -1668,16 +1677,26 @@ class SessionController extends Controller
 
         // Immediate counselor handover for emergency scenarios.
         if (
-            $user->hasRole('peer_counselor')
-            && (int) $session->peer_counselor_id === (int) $user->id
-            && $session->assigned_role === 'peer_counselor'
+            $session->assigned_role === 'peer_counselor'
+            || (int) ($session->peer_counselor_id ?? 0) > 0
         ) {
             $session->update([
                 'assigned_by' => $user->id,
+                'assigned_role' => 'counselor',
+                'peer_counselor_id' => null,
                 'status' => in_array((string) $session->status, ['completed', 'cancelled'], true)
                     ? $session->status
                     : 'active',
             ]);
+
+            PeerAssignment::query()
+                ->where('session_id', (int) $session->id)
+                ->where('status', 'active')
+                ->update([
+                    'status' => 'escalated',
+                    'unassigned_at' => now(),
+                    'notes' => 'Emergency panic handover to supervising counselor',
+                ]);
         }
 
         Escalation::query()->create([
@@ -1949,6 +1968,13 @@ class SessionController extends Controller
 
     private function appendCasePeerParticipant(CounselingSession $session): void
     {
+        if ($session->assigned_role !== 'peer_counselor') {
+            $session->setAttribute('case_peer_counselor_id', null);
+            $session->setAttribute('case_peer_counselor', null);
+
+            return;
+        }
+
         $peerId = (int) ($session->peer_counselor_id ?? 0);
         $peer = null;
 
@@ -1962,7 +1988,7 @@ class SessionController extends Controller
             $assignment = PeerAssignment::query()
                 ->where('session_id', $session->id)
                 ->whereNotNull('peer_counselor_id')
-                ->whereIn('status', ['active', 'escalated'])
+                ->where('status', 'active')
                 ->orderByDesc('assigned_at')
                 ->orderByDesc('id')
                 ->first(['peer_counselor_id']);
