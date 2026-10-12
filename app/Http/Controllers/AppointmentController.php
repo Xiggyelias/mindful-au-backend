@@ -195,7 +195,13 @@ class AppointmentController extends Controller
         if (! $isEmergencyBooking) {
             $matchedEmergency = EmergencyRequest::query()
                 ->where('student_id', $studentId)
-                ->where('counselor_id', $counselorId)
+                ->where(function ($query) use ($counselorId) {
+                    $query->where('counselor_id', $counselorId)
+                        ->orWhere('assigned_to', $counselorId)
+                        ->orWhere(function ($q) {
+                            $q->whereNull('counselor_id')->whereNull('assigned_to');
+                        });
+                })
                 ->whereIn('status', ['queued', 'assigned'])
                 ->latest('id')
                 ->first();
@@ -402,7 +408,13 @@ class AppointmentController extends Controller
                     ->first()
                 : \App\Models\EmergencyRequest::query()
                     ->where('student_id', $studentId)
-                    ->where('counselor_id', $counselorId)
+                    ->where(function ($query) use ($counselorId) {
+                        $query->where('counselor_id', $counselorId)
+                            ->orWhere('assigned_to', $counselorId)
+                            ->orWhere(function ($q) {
+                                $q->whereNull('counselor_id')->whereNull('assigned_to');
+                            });
+                    })
                     ->whereIn('status', ['queued', 'assigned'])
                     ->latest('id')
                     ->first();
