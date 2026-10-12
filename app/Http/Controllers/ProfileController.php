@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Models\CounselingSession;
 use App\Models\User;
 use App\Support\AppointmentCallFormat;
 use App\Support\AppointmentCallWindow;
@@ -100,28 +101,32 @@ class ProfileController extends Controller
     }
 
     /**
-     * Keep ALL upcoming appointments aligned with the student's profile default.
+     * Keep ALL upcoming appointments AND open chat sessions aligned with the
+     * student's profile default when they toggle anonymous_mode.
      *
-     * Chat sessions keep their own per-thread anonymity flag. A profile toggle
-     * should affect future chats and upcoming bookings only; changing every open
-     * chat would rewrite the student's current support context.
+     * WHY CHAT SESSIONS MUST ALSO BE SYNCED:
+     * The chat session has its own `is_anonymous` flag. Messages are stamped with
+     * `sent_as_anonymous = (bool) $session->is_anonymous` at send time.
+     * If the student turns off anonymous mode on their profile but the chat session
+     * still has `is_anonymous=true`, every subsequent message they send is STILL
+     * stamped as anonymous and appears as "Anonymous User" to the counselor.
+     * This created an infinite loop where new messages always showed anonymous
+     * even after the student had toggled the setting off.
      *
-     * IMPORTANT: We deliberately do NOT limit this to the currently-open call window.
-     * The old code used AppointmentCallWindow::isOpen() as a gate, which meant that
-     * any future appointment (e.g. booked for next week) was never de-anonymized when
-     * the student turned off anonymous mode on their profile — causing the "stuck on
-     * anonymous mode" bug where all upcoming sessions kept showing as "Anonymous User"
-     * even after the profile toggle was saved.
+     * WHAT WE DO:
+     * - turning OFF anonymous → clear `is_anonymous` + `anonymous_id` on all open
+     *   chat sessions (pending/active) so future messages are identified.
+     * - turning ON anonymous → set `is_anonymous=true` + generate `anonymous_id`
+     *   on all open chat sessions so future messages are anonymous.
      *
-     * We sync every upcoming active appointment so that the student's identity choice
-     * is reflected immediately everywhere, regardless of how far in the future the
-     * appointment is scheduled.
+     * NOTE: Old messages keep their stored `sent_as_anonymous` snapshot. We do not
+     * rewrite history — only new messages sent AFTER the toggle will reflect the
+     * new mode. This mirrors WhatsApp's approach where message context is frozen
+     * at send time but future messages use the current setting.
      */
     private function syncStudentAppointmentAnonymityFromProfile(User $user, bool $anonymousMode): void
     {
-        // Include any appointment that could still be upcoming or currently joinable.
-        // The lower bound avoids touching very old records but is still generous enough
-        // to catch sessions that started recently and are still in their grace window.
+        // ── Appointments ──────────────────────────────────────────────────────
         $earliestPossibleStart = now()->subMinutes(
             AppointmentCallWindow::MAX_DURATION_MINUTES + AppointmentCallWindow::JOIN_LATE_GRACE_MINUTES
         );
@@ -146,10 +151,6 @@ class ProfileController extends Controller
                 continue;
             }
 
-            // Turning off anonymous mode: clear the flag on ALL upcoming appointments,
-            // not just the ones whose call window is currently open. This ensures that
-            // a student who toggles "identified mode" sees their real name everywhere
-            // immediately, not only for sessions happening right now.
             $appointment->update(array_merge(
                 [
                     'is_anonymous' => false,
@@ -160,6 +161,43 @@ class ProfileController extends Controller
                     (bool) $appointment->is_anonymous
                 )
             ));
+        }
+
+        // ── Chat sessions ─────────────────────────────────────────────────────
+        // Sync every open (pending/active) chat session the student has so that
+        // new messages after the toggle are stamped with the correct anonymity flag.
+        $chatSessions = CounselingSession::query()
+            ->where('student_id', $user->id)
+            ->where('session_type', 'chat')
+            ->whereIn('status', ['pending', 'active'])
+            ->get(['id', 'is_anonymous', 'anonymous_id']);
+
+        foreach ($chatSessions as $chatSession) {
+            if ($anonymousMode) {
+                $anonId = trim((string) ($chatSession->anonymous_id ?? '')) !== ''
+                    ? $chatSession->anonymous_id
+                    : CounselingSession::generateUniqueAnonymousId();
+
+                CounselingSession::query()
+                    ->whereKey((int) $chatSession->id)
+                    ->update([
+                        'is_anonymous'           => true,
+                        'anonymous_id'           => $anonId,
+                        'identity_revealed_at'   => null,
+                        'identity_revealed_by'   => null,
+                    ]);
+            } else {
+                // Turn off: clear the flag, remove the anonymous_id, and reset
+                // any identity-reveal state so the session is fully identified.
+                CounselingSession::query()
+                    ->whereKey((int) $chatSession->id)
+                    ->update([
+                        'is_anonymous'           => false,
+                        'anonymous_id'           => null,
+                        'identity_revealed_at'   => null,
+                        'identity_revealed_by'   => null,
+                    ]);
+            }
         }
     }
 

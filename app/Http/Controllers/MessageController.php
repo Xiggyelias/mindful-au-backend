@@ -550,6 +550,29 @@ class MessageController extends Controller
             $senderNameSnapshot = 'User';
         }
 
+        // Resolve sent_as_anonymous: the session flag is the primary source, but we
+        // apply a live profile override so the student's identity choice is respected
+        // even in the race-condition window right after they toggle their profile
+        // (before the session sync from ProfileController has completed).
+        //
+        // Rule:
+        //   - If the student's profile.anonymous_mode is explicitly FALSE → the message
+        //     is NEVER anonymous, regardless of what session.is_anonymous says.
+        //     This ends the loop where new messages kept appearing as "Anonymous User"
+        //     even after the student turned off anonymous mode on their profile.
+        //   - Otherwise use the session flag as-is (covers non-student senders such as
+        //     counselors and peer-counselors, for whom the profile check doesn't apply).
+        $sentAsAnonymous = (bool) $session->is_anonymous;
+        $isStudentSender = (int) $session->student_id === (int) $user->id;
+        if ($isStudentSender && $sentAsAnonymous) {
+            // Override with live profile value — if the student has turned off
+            // anonymous mode on their profile, their messages are never anonymous.
+            $liveProfileAnonymous = (bool) ($user->profile?->anonymous_mode ?? true);
+            if (! $liveProfileAnonymous) {
+                $sentAsAnonymous = false;
+            }
+        }
+
         $message = Message::create([
             'session_id'           => $sessionId,
             'sender_id'            => $user->id,
@@ -560,7 +583,7 @@ class MessageController extends Controller
             'file_url'             => $validated['file_url'] ?? null,
             'has_file'             => ! empty($validated['file_url']),
             'is_encrypted'         => $isEncrypted,
-            'sent_as_anonymous'    => (bool) $session->is_anonymous,
+            'sent_as_anonymous'    => $sentAsAnonymous,
             'seen_at'              => null,
         ]);
 
