@@ -41,9 +41,9 @@ class CounselorIncomingCallController extends Controller
             $student = $call->student;
             $profile = $student?->profile;
             $fullName = trim((string) (optional($profile)->full_name ?? ''));
-            // The appointment carries the anonymity flag. If the student has identified
-            // mode on their profile, respect it so incoming calls are not stuck as anonymous.
-            $isAnonymous = ($apt === null || (bool) $apt->is_anonymous) && (bool) (optional($profile)->anonymous_mode ?? true);
+            // The appointment carries the anonymity flag (which ProfileController and
+            // revealIdentity keep in sync with the student's privacy choice).
+            $isAnonymous = $apt === null || (bool) $apt->is_anonymous;
 
             $studentLabel = $isAnonymous
                 ? 'Anonymous User'

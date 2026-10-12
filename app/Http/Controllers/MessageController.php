@@ -550,31 +550,7 @@ class MessageController extends Controller
             $senderNameSnapshot = 'User';
         }
 
-        // Resolve sent_as_anonymous: the session flag is the primary source, but we
-        // apply a live profile override so the student's identity choice is respected
-        // even in the race-condition window right after they toggle their profile
-        // (before the session sync from ProfileController has completed).
-        //
-        // Rule:
-        //   - If the student's profile.anonymous_mode is explicitly FALSE → the message
-        //     is NEVER anonymous, regardless of what session.is_anonymous says.
-        //     This ends the loop where new messages kept appearing as "Anonymous User"
-        //     even after the student turned off anonymous mode on their profile.
-        //   - Otherwise use the session flag as-is (covers non-student senders such as
-        //     counselors and peer-counselors, for whom the profile check doesn't apply).
         $sentAsAnonymous = (bool) $session->is_anonymous;
-        $isStudentSender = (int) $session->student_id === (int) $user->id;
-        if ($isStudentSender && $sentAsAnonymous) {
-            // Override with live profile value — if the student has turned off
-            // anonymous mode on their profile, their messages are never anonymous.
-            // Default to FALSE (not anonymous) when the profile row is missing.
-            // Using true as the fallback was a loophole: any student whose profile
-            // failed to load would silently send every message as anonymous.
-            $liveProfileAnonymous = (bool) ($user->profile?->anonymous_mode ?? false);
-            if (! $liveProfileAnonymous) {
-                $sentAsAnonymous = false;
-            }
-        }
 
         $message = Message::create([
             'session_id'           => $sessionId,
@@ -1102,13 +1078,6 @@ class MessageController extends Controller
         int $recipientId,
         ?bool $sentAsAnonymousSnapshot = null,
     ): bool {
-        // If the student has turned off anonymous mode on their profile, respect that setting
-        // system-wide. It must NOT remain stuck on anonymous mode.
-        $session->loadMissing('student.profile');
-        if ($session->student && $session->student->profile && ! (bool) $session->student->profile->anonymous_mode) {
-            return false;
-        }
-
         // Use the per-message snapshot when available; fall back to the live session flag.
         // NULL snapshot (old rows) is treated as session->is_anonymous so historical
         // anonymous messages remain masked even after the session flag changes.

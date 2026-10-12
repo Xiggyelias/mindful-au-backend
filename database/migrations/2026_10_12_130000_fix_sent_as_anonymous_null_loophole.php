@@ -42,14 +42,23 @@ return new class extends Migration
         }
 
         // Back-fill messages in sessions that are/were anonymous.
-        // We join on counseling_sessions to detect which sessions were ever anonymous.
-        DB::statement("
-            UPDATE messages m
-            INNER JOIN counseling_sessions cs ON cs.id = m.session_id
-            SET m.sent_as_anonymous = TRUE
-            WHERE m.sent_as_anonymous IS NULL
-              AND (cs.is_anonymous = TRUE OR cs.identity_revealed_at IS NOT NULL)
-        ");
+        if (Schema::hasTable('counseling_sessions')) {
+            $anonymousSessionIds = DB::table('counseling_sessions')
+                ->where(function ($query): void {
+                    $query->where('is_anonymous', true);
+                    if (Schema::hasColumn('counseling_sessions', 'identity_revealed_at')) {
+                        $query->orWhereNotNull('identity_revealed_at');
+                    }
+                })
+                ->pluck('id');
+
+            if ($anonymousSessionIds->isNotEmpty()) {
+                DB::table('messages')
+                    ->whereNull('sent_as_anonymous')
+                    ->whereIn('session_id', $anonymousSessionIds)
+                    ->update(['sent_as_anonymous' => true]);
+            }
+        }
 
         // Back-fill all remaining NULL rows as not-anonymous.
         DB::table('messages')
@@ -58,38 +67,52 @@ return new class extends Migration
 
         // Decisive data repair: for any student whose profile currently has
         // anonymous_mode = false, ensure none of their appointments or sessions remain stuck
-        // with is_anonymous = true.
+        // with is_anonymous = true (or stuck with Online audio format from anonymity).
         try {
-            DB::statement("
-                UPDATE appointments a
-                INNER JOIN profiles p ON p.user_id = a.student_id
-                SET a.is_anonymous = FALSE, a.anonymous_id = NULL
-                WHERE p.anonymous_mode = FALSE AND a.is_anonymous = TRUE
-            ");
+            if (Schema::hasTable('profiles')) {
+                $identifiedUserIds = DB::table('profiles')
+                    ->where('anonymous_mode', false)
+                    ->pluck('user_id');
+
+                if ($identifiedUserIds->isNotEmpty()) {
+                    if (Schema::hasTable('appointments')) {
+                        $onlineAudioUpdate = [
+                            'is_anonymous' => false,
+                            'anonymous_id' => null,
+                            'notes' => 'Online',
+                        ];
+                        if (Schema::hasColumn('appointments', 'call_type')) {
+                            $onlineAudioUpdate['call_type'] = 'video';
+                        }
+
+                        DB::table('appointments')
+                            ->whereIn('student_id', $identifiedUserIds)
+                            ->where('is_anonymous', true)
+                            ->where('notes', 'Online audio')
+                            ->update($onlineAudioUpdate);
+
+                        DB::table('appointments')
+                            ->whereIn('student_id', $identifiedUserIds)
+                            ->where('is_anonymous', true)
+                            ->update([
+                                'is_anonymous' => false,
+                                'anonymous_id' => null,
+                            ]);
+                    }
+
+                    if (Schema::hasTable('counseling_sessions')) {
+                        DB::table('counseling_sessions')
+                            ->whereIn('student_id', $identifiedUserIds)
+                            ->where('is_anonymous', true)
+                            ->update([
+                                'is_anonymous' => false,
+                                'anonymous_id' => null,
+                            ]);
+                    }
+                }
+            }
         } catch (\Throwable) {
             // Ignore if profiles or appointments schema differs
-        }
-
-        try {
-            DB::statement("
-                UPDATE counseling_sessions cs
-                INNER JOIN profiles p ON p.user_id = cs.student_id
-                SET cs.is_anonymous = FALSE, cs.anonymous_id = NULL
-                WHERE p.anonymous_mode = FALSE AND cs.is_anonymous = TRUE
-            ");
-        } catch (\Throwable) {
-            // Ignore if schema differs
-        }
-
-        try {
-            DB::statement("
-                UPDATE messages m
-                INNER JOIN profiles p ON p.user_id = m.sender_id
-                SET m.sent_as_anonymous = FALSE
-                WHERE p.anonymous_mode = FALSE AND m.sent_as_anonymous = TRUE
-            ");
-        } catch (\Throwable) {
-            // Ignore if schema differs
         }
 
         // Add a proper column-level default so future inserts never get NULL.

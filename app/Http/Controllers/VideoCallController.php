@@ -37,12 +37,6 @@ class VideoCallController extends Controller
         $user = $request->user();
         $appointment = Appointment::findOrFail($validated['appointment_id']);
 
-        // Live profile check: if student turned off anonymous mode, respect it in call auth
-        $appointment->loadMissing('student.profile');
-        if ($appointment->student && $appointment->student->profile && ! (bool) $appointment->student->profile->anonymous_mode) {
-            $appointment->is_anonymous = false;
-        }
-
         if (! $this->isParticipant($appointment, (int) $user->id)) {
             Log::warning('[VideoCall] User not participant', ['user_id' => $user->id, 'appointment_id' => $appointment->id]);
 

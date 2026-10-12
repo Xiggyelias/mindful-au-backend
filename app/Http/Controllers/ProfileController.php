@@ -58,10 +58,8 @@ class ProfileController extends Controller
             $profile->update($profileData);
             $newMode = (bool) $profile->anonymous_mode;
 
-            // Always sync when anonymous_mode is submitted or whenever mode is false,
-            // ensuring any stuck sessions or appointments are decisively cleaned up.
-            if ($user->hasRole('student') && (array_key_exists('anonymous_mode', $profileData) || ! $newMode || $oldMode !== $newMode)) {
-                $this->syncStudentAppointmentAnonymityFromProfile($user, $newMode);
+            if ($user->hasRole('student') && (array_key_exists('anonymous_mode', $profileData) || $oldMode !== $newMode)) {
+                $this->syncStudentAppointmentAnonymityFromProfile($user, $newMode, $oldMode);
             }
         }
 
@@ -104,39 +102,27 @@ class ProfileController extends Controller
     }
 
     /**
-     * Keep ALL upcoming appointments AND open chat sessions aligned with the
-     * student's profile default when they toggle anonymous_mode.
-     *
-     * WHY CHAT SESSIONS MUST ALSO BE SYNCED:
-     * The chat session has its own `is_anonymous` flag. Messages are stamped with
-     * `sent_as_anonymous = (bool) $session->is_anonymous` at send time.
-     * If the student turns off anonymous mode on their profile but the chat session
-     * still has `is_anonymous=true`, every subsequent message they send is STILL
-     * stamped as anonymous and appears as "Anonymous User" to the counselor.
-     * This created an infinite loop where new messages always showed anonymous
-     * even after the student had toggled the setting off.
-     *
-     * WHAT WE DO:
-     * - turning OFF anonymous → clear `is_anonymous` + `anonymous_id` on all open
-     *   chat sessions (pending/active) so future messages are identified.
-     * - turning ON anonymous → set `is_anonymous=true` + generate `anonymous_id`
-     *   on all open chat sessions so future messages are anonymous.
-     *
-     * NOTE: Old messages keep their stored `sent_as_anonymous` snapshot. We do not
-     * rewrite history — only new messages sent AFTER the toggle will reflect the
-     * new mode. This mirrors WhatsApp's approach where message context is frozen
-     * at send time but future messages use the current setting.
+     * Keep upcoming and currently-open appointments aligned with the student's
+     * profile default when they toggle anonymous_mode.
      */
-    private function syncStudentAppointmentAnonymityFromProfile(User $user, bool $anonymousMode): void
-    {
+    private function syncStudentAppointmentAnonymityFromProfile(
+        User $user,
+        bool $anonymousMode,
+        bool $oldMode = false
+    ): void {
         if (! $anonymousMode) {
-            // Turning off anonymous mode: clean up ALL appointments of this student so
-            // none remain stuck as "Anonymous User" anywhere across the system.
+            // Turning off anonymous mode: de-anonymize upcoming/active appointments and restore
+            // video format for any row that was forced to audio by anonymity.
             $appointments = Appointment::query()
                 ->where('student_id', $user->id)
+                ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
                 ->get();
 
             foreach ($appointments as $appointment) {
+                $wasForcedByAnonymity = (bool) $appointment->is_anonymous
+                    || $oldMode
+                    || $appointment->anonymous_id !== null;
+
                 $appointment->update(array_merge(
                     [
                         'is_anonymous' => false,
@@ -144,26 +130,10 @@ class ProfileController extends Controller
                     ],
                     AppointmentCallFormat::identifiedFormatUpdates(
                         $appointment,
-                        (bool) $appointment->is_anonymous
+                        $wasForcedByAnonymity
                     )
                 ));
             }
-
-            // Clean up ALL sessions for this student
-            CounselingSession::query()
-                ->where('student_id', $user->id)
-                ->update([
-                    'is_anonymous'         => false,
-                    'anonymous_id'         => null,
-                    'identity_revealed_at' => null,
-                    'identity_revealed_by' => null,
-                ]);
-
-            // Unmask all messages sent by this student
-            Message::query()
-                ->where('sender_id', $user->id)
-                ->where('sent_as_anonymous', true)
-                ->update(['sent_as_anonymous' => false]);
 
             return;
         }
@@ -180,6 +150,10 @@ class ProfileController extends Controller
             ->get();
 
         foreach ($appointments as $appointment) {
+            if (! AppointmentCallWindow::isOpen($appointment)) {
+                continue;
+            }
+
             $updates = ['is_anonymous' => true];
             if ($appointment->anonymous_id === null || trim((string) $appointment->anonymous_id) === '') {
                 $updates['anonymous_id'] = $this->generateAnonymousIdForAppointment();
@@ -188,27 +162,6 @@ class ProfileController extends Controller
                 $updates,
                 AppointmentCallFormat::anonymousFormatUpdates($appointment)
             ));
-        }
-
-        $chatSessions = CounselingSession::query()
-            ->where('student_id', $user->id)
-            ->where('session_type', 'chat')
-            ->whereIn('status', ['pending', 'active'])
-            ->get(['id', 'is_anonymous', 'anonymous_id']);
-
-        foreach ($chatSessions as $chatSession) {
-            $anonId = trim((string) ($chatSession->anonymous_id ?? '')) !== ''
-                ? $chatSession->anonymous_id
-                : CounselingSession::generateUniqueAnonymousId();
-
-            CounselingSession::query()
-                ->whereKey((int) $chatSession->id)
-                ->update([
-                    'is_anonymous'         => true,
-                    'anonymous_id'         => $anonId,
-                    'identity_revealed_at' => null,
-                    'identity_revealed_by' => null,
-                ]);
         }
     }
 

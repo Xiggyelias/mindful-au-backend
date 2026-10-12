@@ -192,8 +192,23 @@ class AppointmentController extends Controller
                 ->exists();
         }
 
-        $isExplicitEmergencySlot = $explicitSlot instanceof CounselorSlot && $explicitSlot->counselor_schedule_id === null;
-        if (! $isExplicitEmergencySlot && ! $isEmergencyBooking) {
+        if (! $isEmergencyBooking) {
+            $matchedEmergency = EmergencyRequest::query()
+                ->where('student_id', $studentId)
+                ->where('counselor_id', $counselorId)
+                ->whereIn('status', ['queued', 'assigned'])
+                ->latest('id')
+                ->first();
+            if ($matchedEmergency) {
+                $isEmergencyBooking = true;
+                $validated['emergency_request_id'] = $matchedEmergency->id;
+            }
+        }
+
+        $hasExplicitSlot = $explicitSlot instanceof CounselorSlot;
+        // Do not convert an explicit slot chosen from the calendar into an emergency request;
+        // only check outside_hours if no slot was selected and this is not an emergency booking.
+        if (! $hasExplicitSlot && ! $isEmergencyBooking) {
             $slotResolution = $this->slotService->resolveSlotForBooking($counselorId, $proposedStart, $durationMinutes);
             if (($slotResolution['reason'] ?? null) === 'outside_hours') {
                 return $this->queueEmergencyFromAppointmentRequest(
@@ -376,28 +391,32 @@ class AppointmentController extends Controller
             report($e);
         }
 
-        // Resolve the linked emergency request when the student books via the
-        // emergency "pick a slot" flow.  Only resolve if it belongs to this
-        // student and is still open (queued / assigned).
-        if (! empty($validated['emergency_request_id'])) {
-            try {
-                $emergencyRequest = \App\Models\EmergencyRequest::query()
+        // Resolve any open emergency request between this student and counselor
+        // so the student is never stuck with an active emergency banner/loop.
+        try {
+            $emergencyRequest = ! empty($validated['emergency_request_id'])
+                ? \App\Models\EmergencyRequest::query()
                     ->where('id', (int) $validated['emergency_request_id'])
                     ->where('student_id', $studentId)
                     ->whereIn('status', ['queued', 'assigned'])
+                    ->first()
+                : \App\Models\EmergencyRequest::query()
+                    ->where('student_id', $studentId)
+                    ->where('counselor_id', $counselorId)
+                    ->whereIn('status', ['queued', 'assigned'])
+                    ->latest('id')
                     ->first();
 
-                if ($emergencyRequest) {
-                    $resolvePayload = ['status' => 'resolved'];
-                    if (\Illuminate\Support\Facades\Schema::hasColumn('emergency_requests', 'resolved_at')) {
-                        $resolvePayload['resolved_at'] = now();
-                    }
-                    $emergencyRequest->update($resolvePayload);
+            if ($emergencyRequest) {
+                $resolvePayload = ['status' => 'resolved'];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('emergency_requests', 'resolved_at')) {
+                    $resolvePayload['resolved_at'] = now();
                 }
-            } catch (\Throwable $e) {
-                // Non-fatal: the appointment was created; just log and continue.
-                report($e);
+                $emergencyRequest->update($resolvePayload);
             }
+        } catch (\Throwable $e) {
+            // Non-fatal: the appointment was created; just log and continue.
+            report($e);
         }
 
         try {
@@ -724,8 +743,25 @@ class AppointmentController extends Controller
         Carbon $requestedAt,
         mixed $notes
     ): JsonResponse {
+        $studentId = (int) $request->user()->id;
+
+        // Check if student already has an active emergency request to prevent duplicate loops
+        $existing = EmergencyRequest::query()
+            ->where('student_id', $studentId)
+            ->whereIn('status', ['queued', 'assigned'])
+            ->latest('id')
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'message' => 'This time is outside normal counselling hours. You already have an active emergency request in the priority queue.',
+                'emergency' => true,
+                'emergency_request' => $existing,
+            ], 202);
+        }
+
         $emergencyRequest = EmergencyRequest::query()->create([
-            'student_id' => $request->user()->id,
+            'student_id' => $studentId,
             'counselor_id' => $counselorId,
             'requested_at' => $requestedAt,
             'is_after_hours' => true,
@@ -1065,28 +1101,6 @@ class AppointmentController extends Controller
             $appointment->setAttribute('identity_visible_to_viewer', true);
 
             return;
-        }
-
-        // Live override: if the appointment's stored is_anonymous flag is true, but the
-        // student's current profile has anonymous_mode = false, treat this appointment as
-        // identified. This catches sync lag from ProfileController (e.g. the student toggled
-        // off anonymous mode but the appointment row was not yet updated), or any other case
-        // where the profile toggle did not propagate to the appointment in time.
-        //
-        // Only applies when the student relation (with profile) is loaded so we can read it
-        // without an extra query per appointment. ProfileController always syncs, so this is
-        // purely a safety net / real-time consistency layer.
-        if ($appointment->student_id) {
-            $appointment->loadMissing('student.profile');
-            if ($appointment->student && $appointment->student->profile) {
-                $studentProfileAnonymousMode = (bool) $appointment->student->profile->anonymous_mode;
-                if (! $studentProfileAnonymousMode) {
-                    $appointment->is_anonymous = false;
-                    $appointment->setAttribute('identity_visible_to_viewer', true);
-
-                    return;
-                }
-            }
         }
 
         $isStudentViewer = (int) $appointment->student_id === (int) $viewer->id;
