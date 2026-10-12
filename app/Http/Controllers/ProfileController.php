@@ -4,10 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Appointment;
 use App\Models\User;
+use App\Support\AppointmentCallFormat;
+use App\Support\AppointmentCallWindow;
 use App\Support\SafeEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ProfileController extends Controller
@@ -99,48 +100,67 @@ class ProfileController extends Controller
     }
 
     /**
-     * Keep upcoming appointments aligned with the student's profile default.
+     * Keep ALL upcoming appointments aligned with the student's profile default.
      *
      * Chat sessions keep their own per-thread anonymity flag. A profile toggle
      * should affect future chats and upcoming bookings only; changing every open
      * chat would rewrite the student's current support context.
+     *
+     * IMPORTANT: We deliberately do NOT limit this to the currently-open call window.
+     * The old code used AppointmentCallWindow::isOpen() as a gate, which meant that
+     * any future appointment (e.g. booked for next week) was never de-anonymized when
+     * the student turned off anonymous mode on their profile — causing the "stuck on
+     * anonymous mode" bug where all upcoming sessions kept showing as "Anonymous User"
+     * even after the profile toggle was saved.
+     *
+     * We sync every upcoming active appointment so that the student's identity choice
+     * is reflected immediately everywhere, regardless of how far in the future the
+     * appointment is scheduled.
      */
     private function syncStudentAppointmentAnonymityFromProfile(User $user, bool $anonymousMode): void
     {
-        $graceStart = now()->subMinutes(15);
+        // Include any appointment that could still be upcoming or currently joinable.
+        // The lower bound avoids touching very old records but is still generous enough
+        // to catch sessions that started recently and are still in their grace window.
+        $earliestPossibleStart = now()->subMinutes(
+            AppointmentCallWindow::MAX_DURATION_MINUTES + AppointmentCallWindow::JOIN_LATE_GRACE_MINUTES
+        );
 
         $appointments = Appointment::query()
             ->where('student_id', $user->id)
             ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
-            ->where('scheduled_at', '>=', $graceStart)
+            ->where('scheduled_at', '>=', $earliestPossibleStart)
             ->get();
 
         foreach ($appointments as $appointment) {
-            $notes = strtolower(trim((string) ($appointment->notes ?? '')));
-            $isPhysical = str_starts_with($notes, 'physical');
-
             if ($anonymousMode) {
-                $updates = [
-                    'is_anonymous' => true,
-                ];
+                $updates = ['is_anonymous' => true];
                 if ($appointment->anonymous_id === null || trim((string) $appointment->anonymous_id) === '') {
                     $updates['anonymous_id'] = $this->generateAnonymousIdForAppointment();
                 }
-                if (! $isPhysical) {
-                    $updates['notes'] = 'Online audio';
-                    if ($this->appointmentSupportsCallTypeColumn()) {
-                        $updates['call_type'] = 'audio';
-                    }
-                }
-                $appointment->update($updates);
-            } else {
-                $appointment->update([
+                $appointment->update(array_merge(
+                    $updates,
+                    AppointmentCallFormat::anonymousFormatUpdates($appointment)
+                ));
+
+                continue;
+            }
+
+            // Turning off anonymous mode: clear the flag on ALL upcoming appointments,
+            // not just the ones whose call window is currently open. This ensures that
+            // a student who toggles "identified mode" sees their real name everywhere
+            // immediately, not only for sessions happening right now.
+            $appointment->update(array_merge(
+                [
                     'is_anonymous' => false,
                     'anonymous_id' => null,
-                ]);
-            }
+                ],
+                AppointmentCallFormat::identifiedFormatUpdates(
+                    $appointment,
+                    (bool) $appointment->is_anonymous
+                )
+            ));
         }
-
     }
 
     private function generateAnonymousIdForAppointment(): string
@@ -150,10 +170,5 @@ class ProfileController extends Controller
         } while (Appointment::query()->where('anonymous_id', $candidate)->exists());
 
         return $candidate;
-    }
-
-    private function appointmentSupportsCallTypeColumn(): bool
-    {
-        return Schema::hasColumn('appointments', 'call_type');
     }
 }

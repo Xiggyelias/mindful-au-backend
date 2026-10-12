@@ -41,7 +41,10 @@ class CounselorIncomingCallController extends Controller
             $student = $call->student;
             $profile = $student?->profile;
             $fullName = trim((string) (optional($profile)->full_name ?? ''));
-            $isAnonymous = (bool) ($apt?->is_anonymous);
+            // The appointment carries the anonymity flag. If it cannot be loaded at all we
+            // cannot prove the booking was identified, so mask rather than risk naming a
+            // student who booked anonymously.
+            $isAnonymous = $apt === null || (bool) $apt->is_anonymous;
 
             $studentLabel = $isAnonymous
                 ? 'Anonymous User'
@@ -97,8 +100,11 @@ class CounselorIncomingCallController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        // `missed` is the recipient's ring simply running out. It has to be distinguishable
+        // from `declined`, otherwise the caller is told they were rejected when in fact the
+        // counselor never got to the screen in time.
         $validated = $request->validate([
-            'status' => 'required|in:accepted,declined',
+            'status' => 'required|in:accepted,declined,missed',
         ]);
 
         try {
@@ -141,7 +147,9 @@ class CounselorIncomingCallController extends Controller
             return response()->json(['message' => 'This call has expired.'], 410);
         }
 
-        if ($validated['status'] === 'declined') {
+        if ($validated['status'] === 'missed') {
+            $this->calls->notifyMissed($outcome['call']);
+        } elseif ($validated['status'] === 'declined') {
             $this->calls->notifyDeclined($outcome['call']);
         } else {
             $this->calls->signalAccepted($outcome['call']);

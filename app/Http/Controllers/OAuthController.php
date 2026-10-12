@@ -156,6 +156,8 @@ class OAuthController extends Controller
             );
 
             $profile = Profile::query()->firstOrNew(['user_id' => $user->id]);
+            $isNewProfile = ! $profile->exists;
+
             if (($resolved['full_name'] ?? null) !== null) {
                 $profile->full_name = (string) $resolved['full_name'];
             } elseif (! $profile->full_name) {
@@ -169,6 +171,15 @@ class OAuthController extends Controller
             if ($googleUser->getAvatar()) {
                 $profile->avatar_url = (string) $googleUser->getAvatar();
             }
+
+            // For brand-new student profiles, explicitly set anonymous_mode using the system
+            // default. We never inherit a null/missing DB column value that could silently
+            // resolve to true — identified mode is always the explicit starting point unless
+            // the admin has intentionally enabled the anonymous_mode_default system setting.
+            if ($isNewProfile && $resolved['role'] === 'student') {
+                $profile->anonymous_mode = \App\Support\SystemSettings::getBool('anonymous_mode_default', false);
+            }
+
             $profile->save();
 
             UserRole::query()->updateOrCreate(

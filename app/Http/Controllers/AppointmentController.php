@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\CounselorSlotService;
 use App\Services\WebPushService;
 use App\Support\AnalyticsCache;
+use App\Support\AppointmentCallFormat;
 use App\Support\PaginationPayload;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Builder;
@@ -685,10 +686,17 @@ class AppointmentController extends Controller
             return response()->json(['message' => 'Identity is already revealed.'], 422);
         }
 
-        $appointment->update([
-            'is_anonymous' => false,
-            'anonymous_id' => null,
-        ]);
+        // Revealing identity also lifts the anonymous audio-only restriction. Without the
+        // format restore the appointment keeps `notes = 'Online audio'`, so every call it
+        // produces stays audio-only and the student appears "stuck in anonymous mode" even
+        // though their identity is visible.
+        $appointment->update(array_merge(
+            [
+                'is_anonymous' => false,
+                'anonymous_id' => null,
+            ],
+            AppointmentCallFormat::identifiedFormatUpdates($appointment, true)
+        ));
 
         // Also update any active session linked to this appointment
         CounselingSession::where('student_id', $user->id)
@@ -1057,6 +1065,34 @@ class AppointmentController extends Controller
             $appointment->setAttribute('identity_visible_to_viewer', true);
 
             return;
+        }
+
+        // Live override: if the appointment's stored is_anonymous flag is true, but the
+        // student's current profile has anonymous_mode = false, treat this appointment as
+        // identified. This catches sync lag from ProfileController (e.g. the student toggled
+        // off anonymous mode but the appointment row was not yet updated), or any other case
+        // where the profile toggle did not propagate to the appointment in time.
+        //
+        // Only applies when the student relation (with profile) is loaded so we can read it
+        // without an extra query per appointment. ProfileController always syncs, so this is
+        // purely a safety net / real-time consistency layer.
+        if (
+            $appointment->relationLoaded('student')
+            && $appointment->student
+            && $appointment->student->relationLoaded('profile')
+            && $appointment->student->profile
+        ) {
+            $studentProfileAnonymousMode = (bool) $appointment->student->profile->anonymous_mode;
+            if (! $studentProfileAnonymousMode) {
+                // Student has identified mode on their profile — honour it immediately.
+                // Also clear the appointment's own flag so subsequent reads are consistent.
+                // We use setRawAttributes to avoid triggering the Eloquent booted hook that
+                // would re-enforce audio format for anonymous rows.
+                $appointment->is_anonymous = false;
+                $appointment->setAttribute('identity_visible_to_viewer', true);
+
+                return;
+            }
         }
 
         $isStudentViewer = (int) $appointment->student_id === (int) $viewer->id;

@@ -43,16 +43,16 @@ class StudentIncomingCallController extends Controller
             $fullName = trim((string) (optional($profile)->full_name ?? ''));
             $isAnonymous = (bool) ($apt?->is_anonymous);
 
-            $counselorLabel = $isAnonymous
-                ? 'Your counselor'
+            // Anonymity protects the *student*, never the counselor: on an anonymous booking
+            // it is the counselor who must not learn who they are talking to, not the other
+            // way round. Masking the counselor here left the student staring at a nameless
+            // "Your counselor" ring screen next to that same counselor's photo.
+            $counselorLabel = $fullName !== ''
+                ? $fullName
                 : (
-                    $fullName !== ''
-                    ? $fullName
-                    : (
-                        $counselor?->email
-                        ? strstr((string) $counselor->email, '@', true) ?: (string) $counselor->email
-                        : 'Counselor'
-                    )
+                    $counselor?->email
+                    ? strstr((string) $counselor->email, '@', true) ?: (string) $counselor->email
+                    : 'Counselor'
                 );
 
             $scheduledAt = $apt?->scheduled_at;
@@ -96,8 +96,11 @@ class StudentIncomingCallController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        // `missed` is the recipient's ring simply running out. It has to be distinguishable
+        // from `declined`, otherwise the caller is told they were rejected when in fact the
+        // student never got to the screen in time.
         $validated = $request->validate([
-            'status' => 'required|in:accepted,declined',
+            'status' => 'required|in:accepted,declined,missed',
         ]);
 
         try {
@@ -140,7 +143,9 @@ class StudentIncomingCallController extends Controller
             return response()->json(['message' => 'This call has expired.'], 410);
         }
 
-        if ($validated['status'] === 'declined') {
+        if ($validated['status'] === 'missed') {
+            $this->calls->notifyMissed($outcome['call']);
+        } elseif ($validated['status'] === 'declined') {
             $this->calls->notifyDeclined($outcome['call']);
         } else {
             $this->calls->signalAccepted($outcome['call']);

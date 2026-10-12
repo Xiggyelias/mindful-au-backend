@@ -9,6 +9,8 @@ use App\Models\CounselingSession;
 use App\Models\Notification;
 use App\Services\WebPushService;
 use App\Support\AnalyticsCache;
+use App\Support\AppointmentCallWindow;
+use App\Support\AppointmentCompletion;
 use App\Support\CallCoordinator;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;
@@ -20,16 +22,6 @@ use Illuminate\Support\Str;
 
 class VideoCallController extends Controller
 {
-    private const MIN_DURATION_MINUTES = 15;
-
-    private const MAX_DURATION_MINUTES = 120;
-
-    private const DEFAULT_DURATION_MINUTES = 60;
-
-    private const JOIN_EARLY_MINUTES = 15;
-
-    private const JOIN_LATE_GRACE_MINUTES = 15;
-
     public function __construct(
         private readonly WebPushService $webPush,
         private readonly CallCoordinator $calls,
@@ -301,6 +293,15 @@ class VideoCallController extends Controller
             'max_duration_minutes' => $authorizedDurationMinutes,
             'window' => $window,
             'call_id' => $activeCall ? (int) $activeCall->id : null,
+            // The authoritative media type for this call. resolveCallType() downgrades
+            // anonymous and audio-only bookings to audio, and the client must negotiate
+            // WebRTC with the same answer — otherwise the stored row says "audio" while
+            // the peers exchange video, and the two sides disagree about the session.
+            'call_type' => $activeCall
+                ? (string) $activeCall->call_type
+                : ($appointment->is_anonymous ? 'audio' : (string) ($appointment->call_type ?: 'video')),
+            'caller_role' => $activeCall ? (string) $activeCall->caller_role : null,
+            'is_anonymous' => (bool) $appointment->is_anonymous,
             // The caller is CALLING until the recipient answers; the recipient is RINGING.
             'call_state' => $activeCall && $activeCall->status === CounselingCall::STATUS_PENDING
                 ? 'CALLING'
@@ -364,6 +365,18 @@ class VideoCallController extends Controller
         ]);
     }
 
+    /**
+     * A call hung up or dropped.
+     *
+     * Ending a *call* is not the same as ending the *session*. While the appointment's window
+     * is still open the slot has to stay callable: a connection that drops two minutes into a
+     * one-hour session used to complete the whole appointment, which dropped it out of both
+     * participants' call queues and left them with no way to call back.
+     *
+     * The appointment finishes when its window closes — swept by `appointments:complete-past`
+     * for sessions nobody hangs up on — or when a counselor marks it completed from the
+     * appointments screen.
+     */
     public function end(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -376,6 +389,8 @@ class VideoCallController extends Controller
         if (! $this->isParticipant($appointment, (int) $user->id)) {
             return response()->json(['message' => 'Unauthorized for this video call.'], 403);
         }
+
+        $sessionStillOpen = AppointmentCallWindow::isOpen($appointment);
 
         // Clean up any pending call for this appointment through the same coordinator
         // (lock + status transitions + notification) that authorize/cancel/accept/decline
@@ -408,7 +423,7 @@ class VideoCallController extends Controller
             $this->calls->notifyCancelled($cancelledCall);
         }
 
-        $result = DB::transaction(function () use ($appointment) {
+        $result = DB::transaction(function () use ($appointment, $sessionStillOpen) {
             $lockedAppointment = Appointment::query()
                 ->with(['student.profile', 'counselor.profile'])
                 ->lockForUpdate()
@@ -426,6 +441,23 @@ class VideoCallController extends Controller
 
             $appointmentMarkedCompleted = false;
 
+            // The call is over but the session is not: leave the counseling session active so
+            // re-calling reuses this same row (and its notes) instead of starting a new one,
+            // and leave the appointment status alone so the slot stays in both call queues.
+            if ($sessionStillOpen) {
+                if ($session && ! $session->started_at) {
+                    $session->update(['started_at' => now()]);
+                }
+
+                return [
+                    'message' => 'Call ended. The session is still open — you can call again.',
+                    'session' => $session?->fresh(),
+                    'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
+                    'appointment_marked_completed' => false,
+                    'session_still_open' => true,
+                ];
+            }
+
             if ($session) {
                 $session->update([
                     'status' => 'completed',
@@ -433,7 +465,7 @@ class VideoCallController extends Controller
                     'ended_at' => now(),
                 ]);
 
-                if ($this->shouldMarkAppointmentCompleted($lockedAppointment, $session->fresh(), true)) {
+                if (AppointmentCompletion::shouldComplete($lockedAppointment, $session->fresh(), true)) {
                     $lockedAppointment->update([
                         'status' => 'completed',
                     ]);
@@ -445,6 +477,7 @@ class VideoCallController extends Controller
                     'session' => $session->fresh(),
                     'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
                     'appointment_marked_completed' => $appointmentMarkedCompleted,
+                    'session_still_open' => false,
                 ];
             }
 
@@ -456,7 +489,7 @@ class VideoCallController extends Controller
                 ->latest('id')
                 ->first();
 
-            if ($this->shouldMarkAppointmentCompleted($lockedAppointment, $latestSession, false)) {
+            if (AppointmentCompletion::shouldComplete($lockedAppointment, $latestSession, false)) {
                 $lockedAppointment->update([
                     'status' => 'completed',
                 ]);
@@ -468,6 +501,7 @@ class VideoCallController extends Controller
                 'session' => $latestSession,
                 'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
                 'appointment_marked_completed' => $appointmentMarkedCompleted,
+                'session_still_open' => false,
             ];
         });
 
@@ -482,6 +516,10 @@ class VideoCallController extends Controller
             'status' => $result['session']?->status,
             'appointment_id' => (int) $result['appointment']->id,
             'appointment_status' => $result['appointment']->status,
+            // Tells the client whether the slot is still callable. When true the appointment
+            // must stay in the call queue so either party can start the call again.
+            'session_still_open' => (bool) $result['session_still_open'],
+            'window' => AppointmentCallWindow::describe($result['appointment']),
         ]);
     }
 
@@ -530,152 +568,9 @@ class VideoCallController extends Controller
         return $requested;
     }
 
-    private function shouldMarkAppointmentCompleted(
-        Appointment $appointment,
-        ?CounselingSession $session,
-        bool $allowInferenceWithoutAppointmentNote = false
-    ): bool {
-        if (! $session) {
-            return false;
-        }
-
-        if (in_array((string) $appointment->status, ['completed', 'cancelled'], true)) {
-            return false;
-        }
-
-        if ((string) $session->status !== 'completed') {
-            return false;
-        }
-
-        if (! $this->counselingSessionMatchesAppointmentParticipants($appointment, $session)) {
-            return false;
-        }
-
-        if (! $session->started_at && ! $session->ended_at) {
-            return false;
-        }
-
-        $sessionNotes = trim((string) ($session->notes ?? ''));
-
-        if ($this->counselingSessionNotesReferenceAppointment($appointment, $sessionNotes)) {
-            return true;
-        }
-
-        if (! $allowInferenceWithoutAppointmentNote) {
-            return false;
-        }
-
-        if ($sessionNotes !== '' && $this->counselingSessionNotesExplicitlyReferToAnotherAppointmentId($appointment, $sessionNotes)) {
-            return false;
-        }
-
-        return true;
-    }
-
-    private function counselingSessionMatchesAppointmentParticipants(
-        Appointment $appointment,
-        CounselingSession $session
-    ): bool {
-        return (int) $session->student_id === (int) $appointment->student_id
-            && (int) $session->counselor_id === (int) $appointment->counselor_id
-            && (string) $session->session_type === 'video'
-            && (bool) $session->is_anonymous === (bool) $appointment->is_anonymous;
-    }
-
-    private function counselingSessionNotesReferenceAppointment(Appointment $appointment, string $sessionNotes): bool
-    {
-        if ($sessionNotes === '') {
-            return false;
-        }
-
-        $id = (int) $appointment->id;
-        $idPattern = preg_quote((string) $id, '/');
-
-        return (bool) preg_match('/video\s+appointment\s*#\s*'.$idPattern.'(?!\d)/iu', $sessionNotes)
-            || (bool) preg_match('/appointment\s*#\s*'.$idPattern.'(?!\d)/iu', $sessionNotes);
-    }
-
-    private function counselingSessionNotesExplicitlyReferToAnotherAppointmentId(
-        Appointment $appointment,
-        string $sessionNotes
-    ): bool {
-        $myId = (int) $appointment->id;
-        $pattern = '/(?:video\s+)?appointment\s*#\s*(\d+)(?!\d)/iu';
-
-        if (! preg_match_all($pattern, $sessionNotes, $matches)) {
-            return false;
-        }
-
-        foreach ($matches[1] as $digits) {
-            if ((int) $digits !== $myId) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function normalizeDurationMinutes(?int $durationMinutes): int
-    {
-        if (! $durationMinutes) {
-            return self::DEFAULT_DURATION_MINUTES;
-        }
-
-        return max(
-            self::MIN_DURATION_MINUTES,
-            min(self::MAX_DURATION_MINUTES, (int) round($durationMinutes))
-        );
-    }
-
     private function getWindow(Appointment $appointment): array
     {
-        $scheduledAt = Carbon::parse($appointment->scheduled_at);
-        $durationMinutes = $this->normalizeDurationMinutes($appointment->duration_minutes);
-
-        $opensAt = $scheduledAt->copy()->subMinutes(self::JOIN_EARLY_MINUTES);
-        $closesAt = $scheduledAt->copy()->addMinutes($durationMinutes + self::JOIN_LATE_GRACE_MINUTES);
-        $now = now();
-        $secondsUntilClose = $now->diffInSeconds($closesAt, false);
-
-        if ($now->lt($opensAt)) {
-            return [
-                'can_start' => false,
-                'message' => sprintf(
-                    'Call is locked until %d minutes before the scheduled time.',
-                    self::JOIN_EARLY_MINUTES
-                ),
-                'scheduled_at' => $scheduledAt->toIso8601String(),
-                'opens_at' => $opensAt->toIso8601String(),
-                'closes_at' => $closesAt->toIso8601String(),
-                'duration_minutes' => $durationMinutes,
-                'starts_in_seconds' => $now->diffInSeconds($opensAt),
-                'ends_in_seconds' => $now->diffInSeconds($closesAt),
-            ];
-        }
-
-        if ($now->greaterThanOrEqualTo($closesAt) || $secondsUntilClose < 60) {
-            return [
-                'can_start' => false,
-                'message' => 'This call window has closed.',
-                'scheduled_at' => $scheduledAt->toIso8601String(),
-                'opens_at' => $opensAt->toIso8601String(),
-                'closes_at' => $closesAt->toIso8601String(),
-                'duration_minutes' => $durationMinutes,
-                'starts_in_seconds' => 0,
-                'ends_in_seconds' => 0,
-            ];
-        }
-
-        return [
-            'can_start' => true,
-            'message' => 'Call is ready.',
-            'scheduled_at' => $scheduledAt->toIso8601String(),
-            'opens_at' => $opensAt->toIso8601String(),
-            'closes_at' => $closesAt->toIso8601String(),
-            'duration_minutes' => $durationMinutes,
-            'starts_in_seconds' => 0,
-            'ends_in_seconds' => $secondsUntilClose,
-        ];
+        return AppointmentCallWindow::describe($appointment);
     }
 
     private function notifyStudentOnAppointmentCompleted(Appointment $appointment): void

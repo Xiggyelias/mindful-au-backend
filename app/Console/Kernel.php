@@ -14,6 +14,12 @@ class Kernel extends ConsoleKernel
         // Run daily counselor health check at 9 AM
         $schedule->job(new DailyCounselorHealthCheck)->daily()->at('09:00');
 
+        // Hanging up a call leaves the slot callable for the rest of its window, so this is
+        // what finally completes appointments once that window has closed.
+        $schedule->command('appointments:complete-past')
+            ->everyTenMinutes()
+            ->withoutOverlapping();
+
         // Send daily admin summary only when enabled in system settings.
         $schedule->command('system:daily-report')
             ->daily()

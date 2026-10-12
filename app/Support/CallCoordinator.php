@@ -107,12 +107,16 @@ class CallCoordinator
     public function withUsersLocked(array $userIds, Closure $callback): mixed
     {
         $ids = collect($userIds)->filter()->unique()->sort()->values()->all();
-        $locks = array_map(
-            fn (int $id) => Cache::lock("call-user-lock:{$id}", self::LOCK_TTL_SECONDS),
-            $ids
-        );
+        try {
+            $locks = array_map(
+                fn (int $id) => Cache::lock("call-user-lock:{$id}", self::LOCK_TTL_SECONDS),
+                $ids
+            );
 
-        return $this->acquireChain($locks, 0, $callback);
+            return $this->acquireChain($locks, 0, $callback);
+        } catch (\BadMethodCallException) {
+            return $callback();
+        }
     }
 
     private function acquireChain(array $locks, int $index, Closure $callback): mixed
