@@ -24,7 +24,11 @@ class MessageController extends Controller
 {
     private const DELETE_TOMBSTONE = 'This message was deleted.';
 
-    private const TYPING_STATE_TTL_SECONDS = 5;
+    // Keep the typing flag alive for 30 s — long enough to survive the polling
+    // interval of 20 s plus network jitter without the indicator blinking out
+    // between polls on the recipient's side (the old 5 s value caused it to
+    // disappear before the peer's next poll fired).
+    private const TYPING_STATE_TTL_SECONDS = 30;
 
     private const PRESENCE_TOUCH_INTERVAL_SECONDS = 15;
 
@@ -534,17 +538,30 @@ class MessageController extends Controller
 
         $recipientId = $this->resolveRecipientId($session, (int) $user->id);
 
+        // Snapshot the sender's display name at send time so the message always
+        // shows the correct name even if the user later changes their profile,
+        // switches anonymous mode, or the session is archived. WhatsApp does the
+        // same — the name shown in a message thread is the name from when it was sent.
+        $user->loadMissing('profile');
+        $senderNameSnapshot = trim(
+            (string) ($user->profile?->full_name ?? Str::before((string) ($user->email ?? ''), '@'))
+        );
+        if ($senderNameSnapshot === '') {
+            $senderNameSnapshot = 'User';
+        }
+
         $message = Message::create([
-            'session_id' => $sessionId,
-            'sender_id' => $user->id,
-            'recipient_id' => $recipientId,
-            'content' => $content,
-            'message_type' => $messageType,
-            'file_url' => $validated['file_url'] ?? null,
-            'has_file' => ! empty($validated['file_url']),
-            'is_encrypted' => $isEncrypted,
-            'sent_as_anonymous' => (bool) $session->is_anonymous,
-            'seen_at' => null,
+            'session_id'           => $sessionId,
+            'sender_id'            => $user->id,
+            'recipient_id'         => $recipientId,
+            'sender_name_snapshot' => $senderNameSnapshot,
+            'content'              => $content,
+            'message_type'         => $messageType,
+            'file_url'             => $validated['file_url'] ?? null,
+            'has_file'             => ! empty($validated['file_url']),
+            'is_encrypted'         => $isEncrypted,
+            'sent_as_anonymous'    => (bool) $session->is_anonymous,
+            'seen_at'              => null,
         ]);
 
         // ML Crisis Detection
