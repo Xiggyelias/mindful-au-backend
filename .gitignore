@@ -26,6 +26,8 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+.commitmsg
+do_commit.ps1
 
 
 

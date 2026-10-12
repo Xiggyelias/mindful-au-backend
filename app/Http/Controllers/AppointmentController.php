@@ -1076,22 +1076,16 @@ class AppointmentController extends Controller
         // Only applies when the student relation (with profile) is loaded so we can read it
         // without an extra query per appointment. ProfileController always syncs, so this is
         // purely a safety net / real-time consistency layer.
-        if (
-            $appointment->relationLoaded('student')
-            && $appointment->student
-            && $appointment->student->relationLoaded('profile')
-            && $appointment->student->profile
-        ) {
-            $studentProfileAnonymousMode = (bool) $appointment->student->profile->anonymous_mode;
-            if (! $studentProfileAnonymousMode) {
-                // Student has identified mode on their profile — honour it immediately.
-                // Also clear the appointment's own flag so subsequent reads are consistent.
-                // We use setRawAttributes to avoid triggering the Eloquent booted hook that
-                // would re-enforce audio format for anonymous rows.
-                $appointment->is_anonymous = false;
-                $appointment->setAttribute('identity_visible_to_viewer', true);
+        if ($appointment->student_id) {
+            $appointment->loadMissing('student.profile');
+            if ($appointment->student && $appointment->student->profile) {
+                $studentProfileAnonymousMode = (bool) $appointment->student->profile->anonymous_mode;
+                if (! $studentProfileAnonymousMode) {
+                    $appointment->is_anonymous = false;
+                    $appointment->setAttribute('identity_visible_to_viewer', true);
 
-                return;
+                    return;
+                }
             }
         }
 

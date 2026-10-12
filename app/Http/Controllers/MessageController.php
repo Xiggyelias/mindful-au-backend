@@ -567,7 +567,10 @@ class MessageController extends Controller
         if ($isStudentSender && $sentAsAnonymous) {
             // Override with live profile value — if the student has turned off
             // anonymous mode on their profile, their messages are never anonymous.
-            $liveProfileAnonymous = (bool) ($user->profile?->anonymous_mode ?? true);
+            // Default to FALSE (not anonymous) when the profile row is missing.
+            // Using true as the fallback was a loophole: any student whose profile
+            // failed to load would silently send every message as anonymous.
+            $liveProfileAnonymous = (bool) ($user->profile?->anonymous_mode ?? false);
             if (! $liveProfileAnonymous) {
                 $sentAsAnonymous = false;
             }
@@ -908,13 +911,13 @@ class MessageController extends Controller
 
             Notification::create([
                 'user_id' => $recipientId,
-                'title' => 'New message',
+                'title'   => $pushTitle,   // was hardcoded 'New message', ignoring the $pushTitle computed above
                 'message' => $pushBody,
-                'meta' => [
+                'meta'    => [
                     'chat_session_id' => (int) $session->id,
                     'chat_message_id' => (int) $message->id,
-                    'is_encrypted' => $isEncrypted,
-                    'message_type' => $messageType,
+                    'is_encrypted'    => $isEncrypted,
+                    'message_type'    => $messageType,
                 ],
                 'type' => 'info',
             ]);
@@ -1102,12 +1105,23 @@ class MessageController extends Controller
         int $recipientId,
         ?bool $sentAsAnonymousSnapshot = null,
     ): bool {
+        // If the student has turned off anonymous mode on their profile, respect that setting
+        // system-wide. It must NOT remain stuck on anonymous mode.
+        $session->loadMissing('student.profile');
+        if ($session->student && $session->student->profile && ! (bool) $session->student->profile->anonymous_mode) {
+            return false;
+        }
+
+        // Use the per-message snapshot when available; fall back to the live session flag.
+        // NULL snapshot (old rows) is treated as session->is_anonymous so historical
+        // anonymous messages remain masked even after the session flag changes.
         $effectiveAnonymous = $sentAsAnonymousSnapshot ?? (bool) $session->is_anonymous;
 
         if (! $effectiveAnonymous) {
             return false;
         }
 
+        // The student always sees their own messages unmasked regardless of session mode.
         if ($recipientId === (int) $session->student_id) {
             return false;
         }
@@ -1117,14 +1131,32 @@ class MessageController extends Controller
             return true;
         }
 
-        if (
-            $session->identity_revealed_at !== null
-            && (
-                $recipient->hasRole('admin')
-                || ($recipient->hasRole('counselor') && $recipientId === (int) $session->counselor_id)
-            )
-        ) {
-            return false;
+        // Once a counselor or admin has formally revealed the identity, ALL active
+        // support-team members in this thread (admin, assigned counselor, active peer
+        // counselor) can see the real identity. Previously only admin and the primary
+        // counselor could — peer counselors were left masked even after reveal, which
+        // broke the peer-support workflow.
+        if ($session->identity_revealed_at !== null) {
+            if ($recipient->hasRole('admin')) {
+                return false;
+            }
+            if ($recipient->hasRole('counselor') && $recipientId === (int) $session->counselor_id) {
+                return false;
+            }
+            // Peer counselor actively assigned to this session.
+            if (
+                $recipient->hasRole('peer_counselor')
+                && (
+                    $recipientId === (int) $session->peer_counselor_id
+                    || PeerAssignment::query()
+                        ->where('session_id', (int) $session->id)
+                        ->where('peer_counselor_id', $recipientId)
+                        ->whereIn('status', ['active', 'escalated'])
+                        ->exists()
+                )
+            ) {
+                return false;
+            }
         }
 
         return true;

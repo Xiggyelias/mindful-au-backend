@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Appointment;
 use App\Models\CounselingSession;
+use App\Models\Message;
 use App\Models\User;
 use App\Support\AppointmentCallFormat;
 use App\Support\AppointmentCallWindow;
@@ -57,7 +58,9 @@ class ProfileController extends Controller
             $profile->update($profileData);
             $newMode = (bool) $profile->anonymous_mode;
 
-            if ($oldMode !== $newMode && $user->hasRole('student')) {
+            // Always sync when anonymous_mode is submitted or whenever mode is false,
+            // ensuring any stuck sessions or appointments are decisively cleaned up.
+            if ($user->hasRole('student') && (array_key_exists('anonymous_mode', $profileData) || ! $newMode || $oldMode !== $newMode)) {
                 $this->syncStudentAppointmentAnonymityFromProfile($user, $newMode);
             }
         }
@@ -126,7 +129,46 @@ class ProfileController extends Controller
      */
     private function syncStudentAppointmentAnonymityFromProfile(User $user, bool $anonymousMode): void
     {
-        // ── Appointments ──────────────────────────────────────────────────────
+        if (! $anonymousMode) {
+            // Turning off anonymous mode: clean up ALL appointments of this student so
+            // none remain stuck as "Anonymous User" anywhere across the system.
+            $appointments = Appointment::query()
+                ->where('student_id', $user->id)
+                ->get();
+
+            foreach ($appointments as $appointment) {
+                $appointment->update(array_merge(
+                    [
+                        'is_anonymous' => false,
+                        'anonymous_id' => null,
+                    ],
+                    AppointmentCallFormat::identifiedFormatUpdates(
+                        $appointment,
+                        (bool) $appointment->is_anonymous
+                    )
+                ));
+            }
+
+            // Clean up ALL sessions for this student
+            CounselingSession::query()
+                ->where('student_id', $user->id)
+                ->update([
+                    'is_anonymous'         => false,
+                    'anonymous_id'         => null,
+                    'identity_revealed_at' => null,
+                    'identity_revealed_by' => null,
+                ]);
+
+            // Unmask all messages sent by this student
+            Message::query()
+                ->where('sender_id', $user->id)
+                ->where('sent_as_anonymous', true)
+                ->update(['sent_as_anonymous' => false]);
+
+            return;
+        }
+
+        // ── Turning ON anonymous mode ─────────────────────────────────────────
         $earliestPossibleStart = now()->subMinutes(
             AppointmentCallWindow::MAX_DURATION_MINUTES + AppointmentCallWindow::JOIN_LATE_GRACE_MINUTES
         );
@@ -138,34 +180,16 @@ class ProfileController extends Controller
             ->get();
 
         foreach ($appointments as $appointment) {
-            if ($anonymousMode) {
-                $updates = ['is_anonymous' => true];
-                if ($appointment->anonymous_id === null || trim((string) $appointment->anonymous_id) === '') {
-                    $updates['anonymous_id'] = $this->generateAnonymousIdForAppointment();
-                }
-                $appointment->update(array_merge(
-                    $updates,
-                    AppointmentCallFormat::anonymousFormatUpdates($appointment)
-                ));
-
-                continue;
+            $updates = ['is_anonymous' => true];
+            if ($appointment->anonymous_id === null || trim((string) $appointment->anonymous_id) === '') {
+                $updates['anonymous_id'] = $this->generateAnonymousIdForAppointment();
             }
-
             $appointment->update(array_merge(
-                [
-                    'is_anonymous' => false,
-                    'anonymous_id' => null,
-                ],
-                AppointmentCallFormat::identifiedFormatUpdates(
-                    $appointment,
-                    (bool) $appointment->is_anonymous
-                )
+                $updates,
+                AppointmentCallFormat::anonymousFormatUpdates($appointment)
             ));
         }
 
-        // ── Chat sessions ─────────────────────────────────────────────────────
-        // Sync every open (pending/active) chat session the student has so that
-        // new messages after the toggle are stamped with the correct anonymity flag.
         $chatSessions = CounselingSession::query()
             ->where('student_id', $user->id)
             ->where('session_type', 'chat')
@@ -173,31 +197,18 @@ class ProfileController extends Controller
             ->get(['id', 'is_anonymous', 'anonymous_id']);
 
         foreach ($chatSessions as $chatSession) {
-            if ($anonymousMode) {
-                $anonId = trim((string) ($chatSession->anonymous_id ?? '')) !== ''
-                    ? $chatSession->anonymous_id
-                    : CounselingSession::generateUniqueAnonymousId();
+            $anonId = trim((string) ($chatSession->anonymous_id ?? '')) !== ''
+                ? $chatSession->anonymous_id
+                : CounselingSession::generateUniqueAnonymousId();
 
-                CounselingSession::query()
-                    ->whereKey((int) $chatSession->id)
-                    ->update([
-                        'is_anonymous'           => true,
-                        'anonymous_id'           => $anonId,
-                        'identity_revealed_at'   => null,
-                        'identity_revealed_by'   => null,
-                    ]);
-            } else {
-                // Turn off: clear the flag, remove the anonymous_id, and reset
-                // any identity-reveal state so the session is fully identified.
-                CounselingSession::query()
-                    ->whereKey((int) $chatSession->id)
-                    ->update([
-                        'is_anonymous'           => false,
-                        'anonymous_id'           => null,
-                        'identity_revealed_at'   => null,
-                        'identity_revealed_by'   => null,
-                    ]);
-            }
+            CounselingSession::query()
+                ->whereKey((int) $chatSession->id)
+                ->update([
+                    'is_anonymous'         => true,
+                    'anonymous_id'         => $anonId,
+                    'identity_revealed_at' => null,
+                    'identity_revealed_by' => null,
+                ]);
         }
     }
 

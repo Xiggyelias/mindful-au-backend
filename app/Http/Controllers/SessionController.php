@@ -387,6 +387,7 @@ class SessionController extends Controller
                 'student.email as student_email',
                 'student.last_seen_at as student_last_seen_at',
                 'student_profile.full_name as student_full_name',
+                'student_profile.anonymous_mode as student_anonymous_mode',
                 'counselor.email as counselor_email',
                 'counselor.last_seen_at as counselor_last_seen_at',
                 'counselor_profile.full_name as counselor_full_name',
@@ -424,9 +425,13 @@ class SessionController extends Controller
 
         $transformStart = microtime(true);
         $sessions = $rows->map(function ($row) use ($viewerId, $viewerIsAdmin, $studentOnlineThreshold) {
-            $isAnonymous = (bool) $row->is_anonymous;
+            $studentProfileAnon = $row->student_anonymous_mode !== null ? (bool) $row->student_anonymous_mode : null;
+            $isAnonymous = $studentProfileAnon !== null ? $studentProfileAnon : (bool) $row->is_anonymous;
             $isAnonymousForViewer = $isAnonymous;
             $dbAnonymousId = trim((string) ($row->anonymous_id ?? ''));
+
+            $isAssignedPeer = (int) ($row->peer_counselor_id ?? 0) === $viewerId
+                || (int) ($row->case_peer_counselor_id ?? 0) === $viewerId;
 
             $identityVisible = ! $isAnonymousForViewer
                 || (int) $row->student_id === $viewerId
@@ -435,6 +440,7 @@ class SessionController extends Controller
                     && (
                         $viewerIsAdmin
                         || (int) $row->counselor_id === $viewerId
+                        || $isAssignedPeer
                     )
                 );
             $visibleStudentId = $identityVisible ? (int) $row->student_id : 0;
@@ -702,6 +708,14 @@ class SessionController extends Controller
 
         $this->applyChatAnonymity($session, $isAnonymous);
         $session->save();
+
+        if (! $isAnonymous) {
+            Message::query()
+                ->where('session_id', $session->id)
+                ->where('sender_id', $user->id)
+                ->where('sent_as_anonymous', true)
+                ->update(['sent_as_anonymous' => false]);
+        }
 
         $session->load(['student.profile', 'counselor.profile', 'peerCounselor.profile']);
         $this->appendRiskSignals($session, $user, $request);
@@ -2049,6 +2063,13 @@ class SessionController extends Controller
 
     private function canViewerSeeAnonymousIdentity(User $viewer, CounselingSession $session): bool
     {
+        // Live profile override: if the student has turned off anonymous mode on their
+        // profile, the session is never anonymous for any viewer.
+        $session->loadMissing('student.profile');
+        if ($session->student && $session->student->profile && ! (bool) $session->student->profile->anonymous_mode) {
+            return true;
+        }
+
         $treatAsAnonymous = (bool) $session->is_anonymous;
 
         if (! $treatAsAnonymous) {
@@ -2071,6 +2092,20 @@ class SessionController extends Controller
             return true;
         }
 
+        if (
+            $viewer->hasRole('peer_counselor')
+            && (
+                (int) $session->peer_counselor_id === (int) $viewer->id
+                || PeerAssignment::query()
+                    ->where('session_id', (int) $session->id)
+                    ->where('peer_counselor_id', (int) $viewer->id)
+                    ->whereIn('status', ['active', 'escalated'])
+                    ->exists()
+            )
+        ) {
+            return true;
+        }
+
         return false;
     }
 
@@ -2079,6 +2114,13 @@ class SessionController extends Controller
         User $viewer,
         bool $identityVisible
     ): void {
+        // Live profile override: never mask if the student has identified profile mode
+        $session->loadMissing('student.profile');
+        if ($session->student && $session->student->profile && ! (bool) $session->student->profile->anonymous_mode) {
+            $session->setAttribute('is_anonymous', false);
+            return;
+        }
+
         $treatAsAnonymous = (bool) $session->is_anonymous;
 
         if (! $treatAsAnonymous) {
@@ -2111,6 +2153,11 @@ class SessionController extends Controller
 
     private function resolveAnonymousDisplayId(CounselingSession $session): string
     {
+        $session->loadMissing('student.profile');
+        if ($session->student && $session->student->profile && ! (bool) $session->student->profile->anonymous_mode) {
+            return '';
+        }
+
         if (! $session->is_anonymous) {
             return '';
         }
