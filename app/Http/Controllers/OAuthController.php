@@ -40,6 +40,7 @@ class OAuthController extends Controller
 
         try {
             $url = Socialite::driver('google')
+                ->stateless()
                 ->scopes(['openid', 'profile', 'email'])
                 ->with([
                     // Hint Google account chooser to institutional domain.
@@ -95,7 +96,7 @@ class OAuthController extends Controller
                 );
             }
 
-            $googleUser = Socialite::driver('google')->user();
+            $googleUser = Socialite::driver('google')->stateless()->user();
 
             $email = SafeEmail::normalize((string) ($googleUser->getEmail() ?? ''));
             if ($email === '' || SafeEmail::hasControlCharacters((string) ($googleUser->getEmail() ?? ''))) {
@@ -582,6 +583,14 @@ class OAuthController extends Controller
 
         if (str_contains($message, 'access_denied')) {
             return 'Google sign-in was canceled.';
+        }
+
+        if (
+            $e instanceof \Laravel\Socialite\Two\InvalidStateException
+            || str_contains($message, 'invalidstate')
+            || str_contains($message, 'invalid state')
+        ) {
+            return 'Google sign-in session expired or was interrupted. Please try signing in again.';
         }
 
         if (str_contains($message, 'redirect_uri_mismatch')) {
