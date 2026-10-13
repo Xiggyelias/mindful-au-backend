@@ -228,13 +228,30 @@ class CallCoordinator
         );
 
         foreach ($calls as $call) {
-            // Pending and past expiration: sweep it
+            // 1. Pending and past expiration: sweep it
             if ($call->status === CounselingCall::STATUS_PENDING && $call->isExpired()) {
                 $call->update(['status' => CounselingCall::STATUS_MISSED]);
                 continue;
             }
 
-            // Accepted and appointment finished / closed / stale: sweep it
+            // 2. Same participants on a different appointment:
+            // If this prior call is between the exact same student and counselor,
+            // they are now moving to / opening a new appointment together.
+            // Any prior call between them is finished and must not block them.
+            if ($targetAppointment && (int) $call->appointment_id !== (int) $targetAppointment->id) {
+                $isSamePair = (int) $call->student_id === (int) $targetAppointment->student_id
+                    && (int) $call->counselor_id === (int) $targetAppointment->counselor_id;
+                if ($isSamePair) {
+                    $call->update([
+                        'status' => $call->status === CounselingCall::STATUS_PENDING
+                            ? CounselingCall::STATUS_CANCELLED
+                            : CounselingCall::STATUS_ENDED,
+                    ]);
+                    continue;
+                }
+            }
+
+            // 3. Accepted and appointment finished / closed / stale: sweep it
             if ($call->status === CounselingCall::STATUS_ACCEPTED) {
                 $apt = $call->appointment;
                 if (! $apt || in_array($apt->status, ['completed', 'cancelled'], true) || ! AppointmentCallWindow::isOpen($apt)) {
@@ -248,22 +265,16 @@ class CallCoordinator
                 }
             }
 
-            // Emergency priority override:
-            // If the incoming session is an EMERGENCY call, it must never be blocked by a lingering call
-            // from a different non-emergency appointment. Clean up the non-emergency call and proceed.
+            // 4. Emergency priority override:
+            // Priority crisis sessions must NEVER be blocked by any lingering calls on other appointments,
+            // regardless of whether the old appointment was also an emergency or regular session.
             if ($isTargetEmergency && $targetAppointment && (int) $call->appointment_id !== (int) $targetAppointment->id) {
-                $conflictIsEmergency = $call->appointment && (
-                    (bool) ($call->appointment->is_emergency ?? false) ||
-                    AppointmentCallWindow::isEmergency($call->appointment)
-                );
-                if (! $conflictIsEmergency) {
-                    $call->update([
-                        'status' => $call->status === CounselingCall::STATUS_PENDING
-                            ? CounselingCall::STATUS_CANCELLED
-                            : CounselingCall::STATUS_ENDED,
-                    ]);
-                    continue;
-                }
+                $call->update([
+                    'status' => $call->status === CounselingCall::STATUS_PENDING
+                        ? CounselingCall::STATUS_CANCELLED
+                        : CounselingCall::STATUS_ENDED,
+                ]);
+                continue;
             }
 
             return $call;
