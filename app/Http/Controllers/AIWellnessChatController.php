@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Appointment;
 use App\Models\CounselingSession;
 use App\Models\Notification;
 use App\Models\User;
@@ -1052,8 +1053,11 @@ CRITICAL:
     private function resolveCrisisHotline(): ?string
     {
         $hotline = trim(SystemSettings::getString('crisis_hotline', ''));
+        if ($hotline === '') {
+            $hotline = trim((string) env('CRISIS_HOTLINE', '+263 77 123 4567'));
+        }
 
-        return $hotline !== '' ? $hotline : null;
+        return $hotline !== '' ? $hotline : '+263 77 123 4567';
     }
 
     private function availableAiProviders(): array
@@ -1124,7 +1128,10 @@ CRITICAL:
     private function triggerAiCrisisAlert(User $student, array $words, int $conversationId): void
     {
         $wordList = implode(', ', $words);
-        $studentName = $student->profile?->full_name ?: $student->email;
+        $isAnonymous = (bool) ($student->profile?->anonymous_mode ?? false);
+        $studentName = $isAnonymous
+            ? 'Anonymous Student #'.$student->id
+            : ($student->profile?->full_name ?: $student->email);
 
         $activeSession = CounselingSession::where('student_id', $student->id)
             ->where('status', 'active')
@@ -1132,6 +1139,26 @@ CRITICAL:
 
         $counselorId = $activeSession?->counselor_id;
         $peerCounselorId = $activeSession?->peer_counselor_id;
+
+        if (! $counselorId) {
+            $latestAppointment = Appointment::where('student_id', $student->id)
+                ->whereNotNull('counselor_id')
+                ->latest('scheduled_at')
+                ->first();
+            $counselorId = $latestAppointment?->counselor_id;
+        }
+
+        if (! $counselorId) {
+            $latestSession = CounselingSession::where('student_id', $student->id)
+                ->whereNotNull('counselor_id')
+                ->latest('id')
+                ->first();
+            $counselorId = $latestSession?->counselor_id;
+            if (! $peerCounselorId) {
+                $peerCounselorId = $latestSession?->peer_counselor_id;
+            }
+        }
+
         $adminIds = User::whereHas('roles', function ($q) {
             $q->where('role', 'admin')->where('approved', true);
         })->pluck('id')->all();
@@ -1159,6 +1186,8 @@ CRITICAL:
                 'type' => 'error', // High priority
                 'meta' => [
                     'path' => $recipientPath,
+                    'conversation_id' => $conversationId,
+                    'student_id' => $student->id,
                 ],
             ]);
 
@@ -1171,7 +1200,7 @@ CRITICAL:
                         $studentName,
                         $wordList
                     ),
-                    '/admin/wellness-chat/'.$student->id,
+                    $recipientPath,
                     [
                         'tag' => 'ai-crisis-'.$student->id.'-'.time(),
                         'urgency' => 'high',

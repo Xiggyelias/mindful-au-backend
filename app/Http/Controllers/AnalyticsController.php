@@ -311,16 +311,23 @@ class AnalyticsController extends Controller
 
     private function getAppointmentStats(): array
     {
+        $totalAppointments = Appointment::count();
+        $physicalCount = Appointment::where(function ($q) {
+            $q->where('notes', 'like', '%Physical%')
+              ->orWhere('call_type', 'in_person');
+        })->count();
+        $onlineCount = max(0, $totalAppointments - $physicalCount);
+
         return [
-            'total_appointments' => Appointment::count(),
+            'total_appointments' => $totalAppointments,
             'appointments_by_status' => Appointment::select('status', DB::raw('count(*) as count'))
                 ->groupBy('status')
                 ->get()
                 ->pluck('count', 'status')
                 ->toArray(),
             'appointments_by_mode' => [
-                'physical' => Appointment::where('notes', 'like', '%Physical%')->count(),
-                'online' => Appointment::where('notes', 'not like', '%Physical%')->count(),
+                'physical' => $physicalCount,
+                'online' => $onlineCount,
             ],
             'upcoming_appointments' => Appointment::where('scheduled_at', '>', now())
                 ->where('status', '!=', 'cancelled')
@@ -347,12 +354,19 @@ class AnalyticsController extends Controller
             ->whereHas('roles', fn ($q) => $q->where('role', 'student')->where('approved', true))
             ->count();
 
-        $riskDistribution = AiDiagnostic::select('risk_level', DB::raw('count(*) as count'))
+        $rawRiskDistribution = AiDiagnostic::select('risk_level', DB::raw('count(*) as count'))
             ->whereNotNull('risk_level')
             ->groupBy('risk_level')
             ->get()
             ->pluck('count', 'risk_level')
             ->toArray();
+
+        $riskDistribution = [
+            'low' => (int) ($rawRiskDistribution['low'] ?? 0),
+            'medium' => (int) ($rawRiskDistribution['medium'] ?? 0),
+            'high' => (int) ($rawRiskDistribution['high'] ?? 0),
+            'critical' => (int) ($rawRiskDistribution['critical'] ?? 0),
+        ];
 
         $highRiskAlerts = (int) (($riskDistribution['high'] ?? 0) + ($riskDistribution['critical'] ?? 0));
         $coveragePercentage = $totalStudents > 0
@@ -401,13 +415,20 @@ class AnalyticsController extends Controller
 
     private function getRiskLevelDistribution(): array
     {
-        return AiDiagnostic::select('risk_level', DB::raw('count(*) as count'))
+        $distribution = AiDiagnostic::select('risk_level', DB::raw('count(*) as count'))
             ->whereNotNull('risk_level')
             ->groupBy('risk_level')
             ->orderBy('count', 'desc')
             ->get()
             ->pluck('count', 'risk_level')
             ->toArray();
+
+        return [
+            'low' => (int) ($distribution['low'] ?? 0),
+            'medium' => (int) ($distribution['medium'] ?? 0),
+            'high' => (int) ($distribution['high'] ?? 0),
+            'critical' => (int) ($distribution['critical'] ?? 0),
+        ];
     }
 
     private function getCounselorPerformance(): array
