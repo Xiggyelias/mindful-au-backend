@@ -2139,15 +2139,19 @@ class SessionController extends Controller
         $session->setAttribute('student_id', 0);
 
         if ($session->relationLoaded('student') && $session->student) {
-            $session->student->setAttribute('id', 0);
-            $session->student->email = null;
-            $session->student->setAttribute('masked_for_viewer', true);
+            $student = clone $session->student;
+            $student->setAttribute('id', 0);
+            $student->email = null;
+            $student->setAttribute('masked_for_viewer', true);
 
-            if ($session->student->relationLoaded('profile') && $session->student->profile) {
-                $session->student->profile->full_name = $anonymousDisplayId;
-                $session->student->profile->id_number = null;
-                $session->student->profile->avatar_url = null;
+            if ($student->relationLoaded('profile') && $student->profile) {
+                $profile = clone $student->profile;
+                $profile->full_name = $anonymousDisplayId;
+                $profile->id_number = null;
+                $profile->avatar_url = null;
+                $student->setRelation('profile', $profile);
             }
+            $session->setRelation('student', $student);
         }
 
         $session->setAttribute('identity_masked', true);

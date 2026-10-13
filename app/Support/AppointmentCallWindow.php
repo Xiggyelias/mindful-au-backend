@@ -47,9 +47,15 @@ class AppointmentCallWindow
         }
 
         $duration = self::normalizeDurationMinutes($appointment->duration_minutes);
+        $scheduledAt = Carbon::parse($appointment->scheduled_at);
+        $closesAt = $scheduledAt->copy()->addMinutes($duration + self::JOIN_LATE_GRACE_MINUTES);
+        $isEmergency = (bool) ($appointment->is_emergency ?? false);
 
-        return Carbon::parse($appointment->scheduled_at)
-            ->addMinutes($duration + self::JOIN_LATE_GRACE_MINUTES);
+        if ($isEmergency && $closesAt->lt(now())) {
+            return now()->addMinutes($duration + self::JOIN_LATE_GRACE_MINUTES);
+        }
+
+        return $closesAt;
     }
 
     /**
@@ -71,10 +77,21 @@ class AppointmentCallWindow
     {
         $scheduledAt = Carbon::parse($appointment->scheduled_at);
         $durationMinutes = self::normalizeDurationMinutes($appointment->duration_minutes);
-
-        $opensAt = $scheduledAt->copy()->subMinutes(self::JOIN_EARLY_MINUTES);
-        $closesAt = $scheduledAt->copy()->addMinutes($durationMinutes + self::JOIN_LATE_GRACE_MINUTES);
         $now = now();
+        $isEmergency = (bool) ($appointment->is_emergency ?? false);
+
+        if ($isEmergency) {
+            // Priority crisis calls can start immediately upon booking without waiting for the 15m early lock.
+            $opensAt = $appointment->created_at ? Carbon::parse($appointment->created_at)->subMinutes(5) : $now->copy()->subMinutes(5);
+        } else {
+            $opensAt = $scheduledAt->copy()->subMinutes(self::JOIN_EARLY_MINUTES);
+        }
+
+        $closesAt = $scheduledAt->copy()->addMinutes($durationMinutes + self::JOIN_LATE_GRACE_MINUTES);
+        if ($isEmergency && $closesAt->lt($now)) {
+            $closesAt = $now->copy()->addMinutes($durationMinutes + self::JOIN_LATE_GRACE_MINUTES);
+        }
+
         $secondsUntilClose = $now->diffInSeconds($closesAt, false);
 
         $base = [

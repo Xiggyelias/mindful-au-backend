@@ -113,9 +113,13 @@ class ProfileController extends Controller
         if (! $anonymousMode) {
             // Turning off anonymous mode: de-anonymize upcoming/active appointments and restore
             // video format for any row that was forced to audio by anonymity.
+            // Emergency appointments are always identified and should never be altered here.
             $appointments = Appointment::query()
                 ->where('student_id', $user->id)
                 ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
+                ->where(function ($q) {
+                    $q->whereNull('is_emergency')->orWhere('is_emergency', false);
+                })
                 ->get();
 
             foreach ($appointments as $appointment) {
@@ -147,6 +151,9 @@ class ProfileController extends Controller
             ->where('student_id', $user->id)
             ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
             ->where('scheduled_at', '>=', $earliestPossibleStart)
+            ->where(function ($q) {
+                $q->whereNull('is_emergency')->orWhere('is_emergency', false);
+            })
             ->get();
 
         foreach ($appointments as $appointment) {

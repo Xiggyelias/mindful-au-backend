@@ -1130,14 +1130,18 @@ class AppointmentController extends Controller
         $appointment->setAttribute('anonymous_id', null);
 
         if ($appointment->relationLoaded('student') && $appointment->student) {
-            $appointment->student->setAttribute('id', 0);
-            $appointment->student->email = null;
-            $appointment->student->setAttribute('masked_for_viewer', true);
-            if ($appointment->student->relationLoaded('profile') && $appointment->student->profile) {
-                $appointment->student->profile->full_name = $this->resolveAppointmentStudentAlias($appointment);
-                $appointment->student->profile->id_number = null;
-                $appointment->student->profile->avatar_url = null;
+            $student = clone $appointment->student;
+            $student->setAttribute('id', 0);
+            $student->email = null;
+            $student->setAttribute('masked_for_viewer', true);
+            if ($student->relationLoaded('profile') && $student->profile) {
+                $profile = clone $student->profile;
+                $profile->full_name = $this->resolveAppointmentStudentAlias($appointment);
+                $profile->id_number = null;
+                $profile->avatar_url = null;
+                $student->setRelation('profile', $profile);
             }
+            $appointment->setRelation('student', $student);
         }
     }
 

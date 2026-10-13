@@ -70,15 +70,14 @@ class VideoCallController extends Controller
                 ->where('student_id', $appointment->student_id)
                 ->where('counselor_id', $appointment->counselor_id)
                 ->where('session_type', 'video')
-                ->where('is_anonymous', (bool) $appointment->is_anonymous)
                 ->whereIn('status', ['pending', 'active'])
-                ->where('created_at', '>=', now()->subDay())
                 ->lockForUpdate()
                 ->latest('id')
                 ->first();
 
+            $isAnonymous = (bool) $appointment->is_anonymous;
+
             if (! $session) {
-                $isAnonymous = (bool) $appointment->is_anonymous;
                 $session = CounselingSession::create([
                     'student_id' => $appointment->student_id,
                     'counselor_id' => $appointment->counselor_id,
@@ -88,24 +87,24 @@ class VideoCallController extends Controller
                     'notes' => "Video appointment #{$appointment->id}",
                     'is_anonymous' => $isAnonymous,
                     'anonymous_id' => $isAnonymous
-                        ? ($appointment->anonymous_id ?: 'User_'.str_pad((string) ((int) $appointment->id % 10000), 4, '0', STR_PAD_LEFT))
+                        ? CounselingSession::generateUniqueAnonymousId()
                         : null,
                 ]);
-            } elseif ($session->status !== 'active') {
-                $session->update([
+            } else {
+                $updates = [
                     'status' => 'active',
                     'started_at' => $session->started_at ?? now(),
                     'notes' => "Video appointment #{$appointment->id}",
-                ]);
-            } elseif (! $session->started_at) {
-                $session->update([
-                    'started_at' => now(),
-                    'notes' => "Video appointment #{$appointment->id}",
-                ]);
-            } elseif ((string) ($session->notes ?? '') !== "Video appointment #{$appointment->id}") {
-                $session->update([
-                    'notes' => "Video appointment #{$appointment->id}",
-                ]);
+                ];
+
+                if ((bool) $session->is_anonymous !== $isAnonymous) {
+                    $updates['is_anonymous'] = $isAnonymous;
+                    $updates['anonymous_id'] = $isAnonymous
+                        ? ($session->anonymous_id ?: CounselingSession::generateUniqueAnonymousId())
+                        : null;
+                }
+
+                $session->update($updates);
             }
 
             return $session->fresh();
@@ -433,7 +432,6 @@ class VideoCallController extends Controller
                 ->where('student_id', $lockedAppointment->student_id)
                 ->where('counselor_id', $lockedAppointment->counselor_id)
                 ->where('session_type', 'video')
-                ->where('is_anonymous', (bool) $lockedAppointment->is_anonymous)
                 ->whereIn('status', ['pending', 'active'])
                 ->lockForUpdate()
                 ->latest('id')
