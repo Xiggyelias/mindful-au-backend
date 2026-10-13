@@ -29,6 +29,7 @@ use App\Http\Controllers\OAuthController;
 use App\Http\Controllers\OpenRouterChatController;
 use App\Http\Controllers\PanicLogController;
 use App\Http\Controllers\PeerSupportController;
+use App\Http\Controllers\PreSessionCheckInController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PushSubscriptionController;
@@ -218,6 +219,10 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/diagnostics/trends', [DiagnosticController::class, 'getTrends']);
     Route::get('/diagnostics/counselor-dashboard', [DiagnosticController::class, 'getCounselorDashboard'])->middleware('counselor');
     Route::post('/diagnostics/assign', [DiagnosticController::class, 'assignNewAssessment'])->middleware('counselor');
+    Route::post('/pre-session-check-in', [PreSessionCheckInController::class, 'store'])->middleware('student');
+    Route::get('/pre-session-check-in/latest', [PreSessionCheckInController::class, 'latest']);
+    Route::get('/pre-session-check-in/history', [PreSessionCheckInController::class, 'history']);
+    Route::post('/pre-session-check-in/request', [PreSessionCheckInController::class, 'requestCheckIn'])->middleware('counselor');
     Route::get('/student-wellness/summary', [StudentWellnessController::class, 'summary']);
     Route::get('/ml/counselor-matches', [MlInsightsController::class, 'counselorMatches']);
     Route::get('/ml/health', [MlInsightsController::class, 'health']);
