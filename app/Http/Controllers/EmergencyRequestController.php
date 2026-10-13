@@ -9,6 +9,7 @@ use App\Models\EmergencyRequest;
 use App\Models\Notification;
 use App\Models\User;
 use App\Services\CounselorSlotService;
+use App\Services\WebPushService;
 use App\Support\AnalyticsCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class EmergencyRequestController extends Controller
 {
     public function __construct(
         private readonly CounselorSlotService $slotService,
+        private readonly WebPushService $webPush,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -354,6 +356,24 @@ class EmergencyRequestController extends Controller
                     ],
                 ]);
                 event(new NotificationCreated($notification));
+
+                try {
+                    $recipientPath = $recipient->hasRole('admin') ? '/admin/alerts' : '/counselor/alerts';
+                    $this->webPush->sendToUser(
+                        (int) $recipient->id,
+                        '🚨 Emergency Support Request',
+                        $message,
+                        $recipientPath,
+                        [
+                            'tag' => 'emergency-req-'.$emergencyRequest->id.'-'.time(),
+                            'urgency' => 'high',
+                            'requireInteraction' => true,
+                        ]
+                    );
+                } catch (\Throwable $_) {
+                    // ignore web push failure
+                }
+
                 $notified++;
             } catch (\Throwable $exception) {
                 Log::warning('Emergency request notification failed', [

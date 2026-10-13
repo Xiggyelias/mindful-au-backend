@@ -15,6 +15,7 @@ use App\Models\PanicLog;
 use App\Models\PeerAssignment;
 use App\Models\User;
 use App\Support\SystemSettings;
+use App\Services\WebPushService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\RelationshipNotFoundException;
 use Illuminate\Http\JsonResponse;
@@ -29,6 +30,10 @@ use Illuminate\Support\Str;
 class SessionController extends Controller
 {
     private const ANONYMOUS_SESSION_TTL_HOURS = 24;
+
+    public function __construct(
+        private readonly ?WebPushService $webPush = null,
+    ) {}
 
     /**
      * Cached risk lookups for the current request to avoid N+1 diagnostics queries.
@@ -1473,32 +1478,56 @@ class SessionController extends Controller
         $peerCounselorLabel = $peerCounselor?->profile?->full_name
             ?: ($peerCounselor?->email ? Str::before((string) $peerCounselor->email, '@') : 'Peer counselor');
 
-        Notification::query()->create([
+        $peerNotification = Notification::query()->create([
             'user_id' => $peerCounselorId,
             'title' => 'New peer support assignment',
             'message' => "{$studentLabel} has been assigned to you for peer support. Open Messages to start chat.",
             'type' => 'info',
+            'meta' => [
+                'path' => "/peer/chats?session={$targetSession->id}",
+                'chat_session_id' => (int) $targetSession->id,
+            ],
         ]);
+        try {
+            event(new NotificationCreated($peerNotification));
+            $this->webPush?->sendToUser(
+                $peerCounselorId,
+                'New Peer Support Assignment',
+                "{$studentLabel} has been assigned to you for peer support.",
+                "/peer/chats?session={$targetSession->id}"
+            );
+        } catch (\Throwable $_) {}
 
-        Notification::query()->create([
+        $studentNotification = Notification::query()->create([
             'user_id' => $targetSession->student_id,
             'title' => 'Case assigned for peer support',
             'message' => "Your counselor assigned {$peerCounselorLabel} as your supervised peer counselor for this chat case.",
             'type' => 'info',
+            'meta' => [
+                'path' => "/student/chat?session={$targetSession->id}",
+                'chat_session_id' => (int) $targetSession->id,
+            ],
         ]);
+        try {
+            event(new NotificationCreated($studentNotification));
+        } catch (\Throwable $_) {}
 
         if ((int) $targetSession->counselor_id > 0) {
-            Notification::query()->create([
+            $counselorNotification = Notification::query()->create([
                 'user_id' => (int) $targetSession->counselor_id,
                 'title' => 'Peer counselor assigned',
                 'message' => "{$peerCounselorLabel} is now assigned to {$studentLabel}.",
                 'meta' => [
+                    'path' => "/counselor/messages?session={$targetSession->id}",
                     'chat_session_id' => (int) $targetSession->id,
                     'peer_counselor_id' => $peerCounselorId,
                     'student_id' => (int) $targetSession->student_id,
                 ],
                 'type' => 'success',
             ]);
+            try {
+                event(new NotificationCreated($counselorNotification));
+            } catch (\Throwable $_) {}
         }
 
         $adminIds = User::query()
@@ -1509,17 +1538,21 @@ class SessionController extends Controller
             ->all();
 
         foreach (array_unique($adminIds) as $adminId) {
-            Notification::query()->create([
+            $adminNotification = Notification::query()->create([
                 'user_id' => $adminId,
                 'title' => 'Peer support assignment updated',
                 'message' => "{$peerCounselorLabel} was assigned to {$studentLabel}.",
                 'meta' => [
+                    'path' => '/admin/students',
                     'chat_session_id' => (int) $targetSession->id,
                     'peer_counselor_id' => $peerCounselorId,
                     'student_id' => (int) $targetSession->student_id,
                 ],
                 'type' => 'info',
             ]);
+            try {
+                event(new NotificationCreated($adminNotification));
+            } catch (\Throwable $_) {}
         }
 
         $targetSession->refresh()->load([
@@ -1702,23 +1735,59 @@ class SessionController extends Controller
             ['reason' => $escalationReason !== '' ? $escalationReason : null]
         );
 
-        if ($session->counselor_id) {
-            Notification::query()->create([
-                'user_id' => $session->counselor_id,
+        $escalateRecipients = array_unique(array_filter(array_merge(
+            $session->counselor_id ? [(int) $session->counselor_id] : [],
+            User::query()
+                ->whereHas('roles', fn ($q) => $q->where('role', 'admin')->where('approved', true))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all()
+        )));
+
+        foreach ($escalateRecipients as $recipId) {
+            $recip = User::query()->find($recipId);
+            $path = $recip && $recip->hasRole('admin')
+                ? '/admin/alerts'
+                : "/counselor/messages?session={$session->id}";
+
+            $notif = Notification::query()->create([
+                'user_id' => $recipId,
                 'title' => 'Case escalated by peer counselor',
                 'message' => $escalationReason !== ''
-                    ? "A peer counselor escalated a case back to you: {$escalationReason}"
-                    : 'A peer counselor escalated a case back to you for immediate review.',
+                    ? "A peer counselor escalated a case: {$escalationReason}"
+                    : 'A peer counselor escalated a case for immediate review.',
                 'type' => 'warning',
+                'meta' => [
+                    'path' => $path,
+                    'chat_session_id' => (int) $session->id,
+                    'session_id' => (int) $session->id,
+                ],
             ]);
+            try {
+                event(new NotificationCreated($notif));
+                $this->webPush?->sendToUser(
+                    $recipId,
+                    'Case Escalated by Peer Counselor',
+                    $escalationReason !== '' ? "Case #{$session->id}: {$escalationReason}" : "Case #{$session->id} escalated for review",
+                    $path,
+                    ['urgency' => 'high']
+                );
+            } catch (\Throwable $_) {}
         }
 
-        Notification::query()->create([
+        $studentNotif = Notification::query()->create([
             'user_id' => $session->student_id,
             'title' => 'Case escalated to counselor',
             'message' => 'Your case was escalated to a professional counselor for follow-up.',
             'type' => 'info',
+            'meta' => [
+                'path' => "/student/chat?session={$session->id}",
+                'chat_session_id' => (int) $session->id,
+            ],
         ]);
+        try {
+            event(new NotificationCreated($studentNotif));
+        } catch (\Throwable $_) {}
 
         $session->refresh()->load([
             'student.profile',
@@ -1796,21 +1865,61 @@ class SessionController extends Controller
             ['reason' => $reason, 'severity' => 'critical']
         );
 
-        if ($session->counselor_id) {
-            Notification::query()->create([
-                'user_id' => $session->counselor_id,
+        $urgentRecipients = array_unique(array_filter(array_merge(
+            $session->counselor_id ? [(int) $session->counselor_id] : [],
+            User::query()
+                ->whereHas('roles', fn ($q) => $q->where('role', 'admin')->where('approved', true))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all()
+        )));
+
+        foreach ($urgentRecipients as $recipId) {
+            $recip = User::query()->find($recipId);
+            $path = $recip && $recip->hasRole('admin')
+                ? '/admin/alerts'
+                : "/counselor/messages?session={$session->id}";
+
+            $notif = Notification::query()->create([
+                'user_id' => $recipId,
                 'title' => 'Urgent concern flagged by peer counselor',
                 'message' => "Immediate review required: {$reason}",
                 'type' => 'panic',
+                'meta' => [
+                    'path' => $path,
+                    'chat_session_id' => (int) $session->id,
+                    'session_id' => (int) $session->id,
+                ],
             ]);
+            try {
+                event(new NotificationCreated($notif));
+                $this->webPush?->sendToUser(
+                    $recipId,
+                    '🚨 Urgent Concern Flagged',
+                    "Case #{$session->id}: {$reason}",
+                    $path,
+                    [
+                        'tag' => 'urgent-flag-'.$session->id.'-'.time(),
+                        'urgency' => 'high',
+                        'requireInteraction' => true,
+                    ]
+                );
+            } catch (\Throwable $_) {}
         }
 
-        Notification::query()->create([
+        $studentUrgentNotif = Notification::query()->create([
             'user_id' => $session->student_id,
             'title' => 'Your case was escalated',
             'message' => 'Your peer support case was escalated to a professional counselor for urgent follow-up.',
             'type' => 'warning',
+            'meta' => [
+                'path' => "/student/chat?session={$session->id}",
+                'chat_session_id' => (int) $session->id,
+            ],
         ]);
+        try {
+            event(new NotificationCreated($studentUrgentNotif));
+        } catch (\Throwable $_) {}
 
         $session->refresh()->load([
             'student.profile',

@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\AiDiagnostic;
 use App\Models\Appointment;
 use App\Models\CounselingSession;
+use App\Models\EmergencyRequest;
+use App\Models\Escalation;
 use App\Models\Message;
 use App\Models\PanicLog;
 use App\Models\User;
@@ -76,6 +78,7 @@ class AnalyticsController extends Controller
             'total_users' => User::count(),
             'total_students' => User::whereHas('roles', fn ($q) => $q->where('role', 'student'))->count(),
             'total_counselors' => User::whereHas('roles', fn ($q) => $q->where('role', 'counselor'))->count(),
+            'total_peer_counselors' => User::whereHas('roles', fn ($q) => $q->where('role', 'peer_counselor'))->count(),
             'total_sessions' => CounselingSession::count(),
             'active_sessions' => CounselingSession::where('status', 'active')->count(),
             'total_appointments' => Appointment::count(),
@@ -141,6 +144,14 @@ class AnalyticsController extends Controller
             ->where('resolved', false)
             ->count();
 
+        $activeEmergencyRequests = EmergencyRequest::query()
+            ->whereIn('status', ['queued', 'assigned'])
+            ->count();
+
+        $recentEscalations = Escalation::query()
+            ->where('created_at', '>=', now()->subDays(7))
+            ->count();
+
         $highOrCriticalLast30Days = AiDiagnostic::query()
             ->where('created_at', '>=', now()->subDays(30))
             ->whereIn('risk_level', ['high', 'critical'])
@@ -148,8 +159,10 @@ class AnalyticsController extends Controller
 
         return [
             'active_panic_logs' => $activePanicLogs,
+            'active_emergency_requests' => $activeEmergencyRequests,
+            'recent_escalations' => $recentEscalations,
             'high_or_critical_last_30_days' => $highOrCriticalLast30Days,
-            'open_total' => $activePanicLogs + $highOrCriticalLast30Days,
+            'open_total' => $activePanicLogs + $activeEmergencyRequests + $recentEscalations + $highOrCriticalLast30Days,
         ];
     }
 
@@ -160,7 +173,7 @@ class AnalyticsController extends Controller
             ->whereHas('roles', function ($query) {
                 $query->whereIn('role', ['counselor', 'peer_counselor']);
             })
-            ->with(['profile:id,user_id,full_name'])
+            ->with(['profile:id,user_id,full_name', 'roles'])
             ->select(['id', 'email', 'last_seen_at'])
             ->orderByDesc('last_seen_at')
             ->orderByDesc('id')
@@ -202,10 +215,12 @@ class AnalyticsController extends Controller
                 }
 
                 $fallbackName = strtok((string) $member->email, '@') ?: 'Unknown';
+                $roleLabel = $member->hasRole('peer_counselor') ? 'Peer Counselor' : 'Counselor';
 
                 return [
                     'id' => (int) $member->id,
                     'name' => $member->profile?->full_name ?? $fallbackName,
+                    'role' => $roleLabel,
                     'status' => $status,
                     'sessions' => (int) ($appointmentsTodayByCounselor[(int) $member->id] ?? 0),
                 ];

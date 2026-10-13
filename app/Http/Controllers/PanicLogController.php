@@ -6,6 +6,7 @@ use App\Events\NotificationCreated;
 use App\Models\Notification;
 use App\Models\PanicLog;
 use App\Models\User;
+use App\Services\WebPushService;
 use App\Support\AnalyticsCache;
 use App\Support\SystemSettings;
 use Illuminate\Http\JsonResponse;
@@ -15,6 +16,10 @@ use Illuminate\Support\Facades\Schema;
 
 class PanicLogController extends Controller
 {
+    public function __construct(
+        private readonly WebPushService $webPush,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -152,13 +157,30 @@ class PanicLogController extends Controller
                     try {
                         event(new NotificationCreated($notification));
                     } catch (\Throwable $broadcastException) {
-                        // Broadcasting can fail if the broadcaster is misconfigured
-                        // (e.g. no Pusher / Reverb in dev). The DB notification is
-                        // already persisted, so polling will still surface it.
                         Log::warning('Panic notification broadcast failed', [
                             'panic_log_id' => $panicLog->id,
                             'recipient_id' => (int) $recipient->id,
                             'error' => $broadcastException->getMessage(),
+                        ]);
+                    }
+
+                    try {
+                        $this->webPush->sendToUser(
+                            (int) $recipient->id,
+                            '🚨 EMERGENCY: Panic Button Triggered!',
+                            $alertMessage,
+                            $recipientPath,
+                            [
+                                'tag' => 'panic-alert-'.$panicLog->id.'-'.time(),
+                                'urgency' => 'high',
+                                'requireInteraction' => true,
+                            ]
+                        );
+                    } catch (\Throwable $pushException) {
+                        Log::warning('Panic web push dispatch failed', [
+                            'panic_log_id' => $panicLog->id,
+                            'recipient_id' => (int) $recipient->id,
+                            'error' => $pushException->getMessage(),
                         ]);
                     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CounselingSession;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Support\PaginationPayload;
@@ -10,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class UserController extends Controller
 {
@@ -300,7 +302,15 @@ class UserController extends Controller
 
         $onlineThreshold = now()->subMinutes((int) env('COUNSELOR_ONLINE_WINDOW_MINUTES', 10));
 
-        $peerCounselors = $peerCounselors->map(function (User $peer) use ($onlineThreshold) {
+        $activeCasesCounts = CounselingSession::query()
+            ->where('assigned_role', 'peer_counselor')
+            ->whereIn('status', ['pending', 'active'])
+            ->whereNotNull('peer_counselor_id')
+            ->select('peer_counselor_id', DB::raw('count(*) as count'))
+            ->groupBy('peer_counselor_id')
+            ->pluck('count', 'peer_counselor_id');
+
+        $peerCounselors = $peerCounselors->map(function (User $peer) use ($onlineThreshold, $activeCasesCounts) {
             $lastSeenAt = $peer->last_seen_at;
             if (is_string($lastSeenAt)) {
                 $lastSeenAt = Carbon::parse($lastSeenAt);
@@ -311,6 +321,7 @@ class UserController extends Controller
 
             $peer->setAttribute('is_online', $isOnline);
             $peer->setAttribute('is_available', (bool) ($peer->profile?->peer_available ?? true));
+            $peer->setAttribute('active_cases_count', (int) ($activeCasesCounts[(int) $peer->id] ?? 0));
 
             return $peer;
         })->values();

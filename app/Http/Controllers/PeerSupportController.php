@@ -156,4 +156,73 @@ class PeerSupportController extends Controller
             'available' => (bool) $profile->peer_available,
         ]);
     }
+
+    public function allEscalations(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $query = Escalation::query()
+            ->with(['session.student.profile', 'escalatedByUser.profile', 'escalatedToUser.profile'])
+            ->latest('id');
+
+        if (! $user->hasRole('admin')) {
+            $query->where(function ($q) use ($user) {
+                $q->where('escalated_to', $user->id)
+                    ->orWhere('escalated_by', $user->id);
+            });
+        }
+
+        $rows = $query->limit(200)->get()->map(function (Escalation $escalation) {
+            $session = $escalation->session;
+            $student = $session?->student;
+            $studentName = $student?->profile?->full_name ?: ($student?->email ?: "Student #{$session?->student_id}");
+
+            $escalatedByName = $escalation->escalatedByUser?->profile?->full_name
+                ?: ($escalation->escalatedByUser?->email ?: 'Peer Counselor');
+
+            $metadata = is_array($escalation->metadata) ? $escalation->metadata : [];
+            $resolvedAt = $metadata['resolved_at'] ?? null;
+
+            return [
+                'id' => $escalation->id,
+                'session_id' => $escalation->session_id,
+                'student_id' => $session?->student_id,
+                'student_name' => $studentName,
+                'escalated_by_id' => $escalation->escalated_by,
+                'escalated_by_name' => $escalatedByName,
+                'escalated_to' => $escalation->escalatedToUser?->profile?->full_name ?: $escalation->escalatedToUser?->email,
+                'escalation_type' => $escalation->escalation_type,
+                'severity' => $escalation->severity,
+                'reason' => $escalation->reason,
+                'resolved' => ! empty($resolvedAt),
+                'resolved_at' => $resolvedAt,
+                'created_at' => $escalation->created_at,
+            ];
+        });
+
+        return response()->json($rows);
+    }
+
+    public function resolveEscalation(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasRole('admin') && ! $user->hasRole('counselor')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $escalation = Escalation::findOrFail($id);
+        $metadata = is_array($escalation->metadata) ? $escalation->metadata : [];
+        $metadata['resolved_at'] = now()->toISOString();
+        $metadata['resolved_by'] = $user->id;
+        $escalation->metadata = $metadata;
+        $escalation->save();
+
+        return response()->json([
+            'message' => 'Escalation marked as resolved.',
+            'escalation' => $escalation,
+        ]);
+    }
 }

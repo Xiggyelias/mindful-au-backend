@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NotificationCreated;
 use App\Models\Appointment;
 use App\Models\CounselingSession;
 use App\Models\Notification;
@@ -1171,11 +1172,14 @@ CRITICAL:
 
         foreach ($recipients as $recipientId) {
             $recipient = User::find((int) $recipientId);
-            $recipientPath = $recipient && $recipient->hasRole('admin')
-                ? '/admin/alerts'
-                : '/counselor/alerts';
+            $recipientPath = match (true) {
+                $recipient?->hasRole('admin') => '/admin/alerts',
+                $recipient?->hasRole('peer_counselor') => '/peer/escalations',
+                $recipient?->hasRole('counselor') => '/counselor/alerts',
+                default => '/',
+            };
 
-            Notification::create([
+            $notification = Notification::create([
                 'user_id' => $recipientId,
                 'title' => '🚨 Crisis Alert: AI Chat Trigger',
                 'message' => sprintf(
@@ -1190,6 +1194,12 @@ CRITICAL:
                     'student_id' => $student->id,
                 ],
             ]);
+
+            try {
+                event(new NotificationCreated($notification));
+            } catch (\Throwable $_) {
+                // ignore broadcast failure
+            }
 
             try {
                 $this->webPush->sendToUser(

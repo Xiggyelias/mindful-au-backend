@@ -272,6 +272,7 @@ class VideoCallController extends Controller
                             'appointment_id' => (int) $appointment->id,
                             'call_type' => $callTypeResult,
                             'caller_role' => $callerRole,
+                            'path' => $notifyRoute,
                         ],
                     ]);
                     event(new NotificationCreated($notification));

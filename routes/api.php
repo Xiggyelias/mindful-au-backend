@@ -188,6 +188,8 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/peer/dashboard', [PeerSupportController::class, 'dashboard'])->middleware('role:peer_counselor');
     Route::get('/peer/escalations', [PeerSupportController::class, 'escalations'])->middleware('role:peer_counselor');
     Route::patch('/peer/availability', [PeerSupportController::class, 'setAvailability'])->middleware('role:peer_counselor');
+    Route::get('/escalations', [PeerSupportController::class, 'allEscalations'])->middleware('role:admin,counselor');
+    Route::post('/escalations/{id}/resolve', [PeerSupportController::class, 'resolveEscalation'])->middleware('role:admin,counselor');
 
     // Institutional account role records (Admin only)
     Route::get('/institution-accounts', [InstitutionAccountController::class, 'index'])->middleware('admin');

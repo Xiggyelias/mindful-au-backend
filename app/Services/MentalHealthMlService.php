@@ -43,12 +43,14 @@ class MentalHealthMlService
         'falling to pieces', 'hit rock bottom', 'barely holding on',
     ];
 
-    private const CRISIS_TERMS = [
+    public const CRISIS_TERMS = [
         // Explicit self-harm/suicide signals
         'suicide', 'kill myself', 'end my life', 'self harm', 'hurt myself',
         'jump off', 'wish i were dead', 'better off without me', 'take my life',
-        'dont want to live', 'sleeping pills', 'overdose', 'goodbye everyone',
-        'no more pain', 'done with life', 'cutting myself', 'hanging',
+        'take my own life', 'dont want to live', 'sleeping pills', 'overdose',
+        'goodbye everyone', 'no more pain', 'done with life', 'cutting myself',
+        'cutting', 'cut myself', 'hanging', 'hanging myself', 'slit my wrist',
+        'shoot myself', 'drown myself', 'bleed out',
         // Additional high-risk university crisis phrases
         'want to die', 'don t want to be here', 'not worth living',
         'life is not worth', 'ending it all', 'end it all',

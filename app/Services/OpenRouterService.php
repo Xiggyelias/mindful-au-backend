@@ -576,13 +576,7 @@ class OpenRouterService
 
         $normalized = Str::lower($userMessage);
 
-        $crisisTerms = [
-            'suicide',
-            'kill myself',
-            'end my life',
-            'self harm',
-            'hurt myself',
-        ];
+        $crisisTerms = MentalHealthMlService::CRISIS_TERMS;
         foreach ($crisisTerms as $term) {
             if (Str::contains($normalized, $term)) {
                 return 'I am really glad you reached out. If you might harm yourself, please contact emergency services right now and message your counselor immediately. If possible, stay with someone you trust while support is on the way.';
