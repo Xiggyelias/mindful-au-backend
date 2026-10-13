@@ -97,6 +97,8 @@ class CallCoordinator
             $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_CONNECTED),
             'accepted'
         );
+
+        $this->clearCallNotifications((int) $call->appointment_id);
     }
 
     /**
@@ -305,6 +307,8 @@ class CallCoordinator
         $payload = $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_ENDED);
         $this->signals->send($notifyUserId, $payload, 'missed');
         $this->signals->send($this->callerId($call), $payload, 'missed');
+
+        $this->clearCallNotifications((int) $call->appointment_id);
     }
 
     /** Notify the caller that the callee explicitly declined. */
@@ -329,6 +333,8 @@ class CallCoordinator
             $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_ENDED),
             'declined'
         );
+
+        $this->clearCallNotifications((int) $call->appointment_id);
     }
 
     /** Notify the callee that the caller cancelled before they answered. */
@@ -355,6 +361,45 @@ class CallCoordinator
             $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_ENDED),
             'cancelled'
         );
+
+        $this->clearCallNotifications((int) $call->appointment_id);
+    }
+
+    /** Tell both participants the call has ended and stop all rings. */
+    public function notifyEnded(CounselingCall $call): void
+    {
+        Log::info('[Call] Call ended', [
+            'call_id' => (int) $call->id,
+            'appointment_id' => (int) $call->appointment_id,
+            'caller_user_id' => $this->callerId($call),
+            'recipient_user_id' => $this->calleeId($call),
+            'state' => CallSignalBroadcaster::STATE_ENDED,
+        ]);
+
+        $payload = $this->signals->payloadFor($call, CallSignalBroadcaster::STATE_ENDED);
+        $this->signals->send((int) $call->student_id, $payload, 'ended');
+        $this->signals->send((int) $call->counselor_id, $payload, 'ended');
+
+        $this->clearCallNotifications((int) $call->appointment_id);
+    }
+
+    /** Clear any unread incoming-call notifications for this appointment so overhead banners dismiss immediately. */
+    public function clearCallNotifications(int $appointmentId): void
+    {
+        try {
+            Notification::query()
+                ->where('read', false)
+                ->where(function ($query) use ($appointmentId) {
+                    $query->whereJsonContains('meta->appointment_id', $appointmentId)
+                        ->orWhere('meta->appointment_id', $appointmentId);
+                })
+                ->update(['read' => true, 'read_at' => now()]);
+        } catch (\Throwable $e) {
+            Log::warning('[CallCoordinator] Failed to clear call notifications', [
+                'appointment_id' => $appointmentId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function pushAndNotify(

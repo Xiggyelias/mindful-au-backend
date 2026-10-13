@@ -262,6 +262,8 @@ class VideoCallController extends Controller
                 }
 
                 try {
+                    $this->calls->clearCallNotifications((int) $appointment->id);
+
                     $notification = Notification::create([
                         'user_id' => $notifyUserId,
                         'title' => $isAudio ? 'Incoming audio call' : 'Incoming video call',
@@ -398,13 +400,14 @@ class VideoCallController extends Controller
             return response()->json(['message' => 'Unauthorized for this video call.'], 403);
         }
 
-        $sessionStillOpen = AppointmentCallWindow::isOpen($appointment);
+        $isEmergency = (bool) ($appointment->is_emergency ?? false) || AppointmentCallWindow::isEmergency($appointment);
+        // If it's an emergency session: once the call is ended, it has ended!
+        // For regular sessions: the session is only open if the appointment window is open.
+        $sessionStillOpen = ! $isEmergency && AppointmentCallWindow::isOpen($appointment);
 
-        // Clean up any pending call for this appointment through the same coordinator
-        // (lock + status transitions + notification) that authorize/cancel/accept/decline
-        // use, instead of a second hand-rolled implementation of the same thing.
+        // Clean up any pending or active calls for this appointment through the same coordinator
         try {
-            $cancelledCall = $this->calls->withUsersLocked(
+            $callSweep = $this->calls->withUsersLocked(
                 [(int) $appointment->student_id, (int) $appointment->counselor_id],
                 function () use ($appointment) {
                     $activeCalls = CounselingCall::query()
@@ -413,16 +416,18 @@ class VideoCallController extends Controller
                         ->get();
 
                     $cancelled = null;
+                    $ended = null;
                     foreach ($activeCalls as $call) {
                         if ($call->status === CounselingCall::STATUS_PENDING) {
                             $call->update(['status' => CounselingCall::STATUS_CANCELLED]);
                             $cancelled = $call;
                         } else {
                             $call->update(['status' => CounselingCall::STATUS_ENDED]);
+                            $ended = $call;
                         }
                     }
 
-                    return $cancelled;
+                    return ['cancelled' => $cancelled, 'ended' => $ended];
                 }
             );
         } catch (LockTimeoutException) {
@@ -431,11 +436,15 @@ class VideoCallController extends Controller
             ], 503);
         }
 
-        if ($cancelledCall) {
-            $this->calls->notifyCancelled($cancelledCall);
+        if ($callSweep['cancelled']) {
+            $this->calls->notifyCancelled($callSweep['cancelled']);
+        } elseif ($callSweep['ended']) {
+            $this->calls->notifyEnded($callSweep['ended']);
+        } else {
+            $this->calls->clearCallNotifications((int) $appointment->id);
         }
 
-        $result = DB::transaction(function () use ($appointment, $sessionStillOpen) {
+        $result = DB::transaction(function () use ($appointment, $sessionStillOpen, $isEmergency) {
             $lockedAppointment = Appointment::query()
                 ->with(['student.profile', 'counselor.profile'])
                 ->lockForUpdate()
@@ -452,9 +461,30 @@ class VideoCallController extends Controller
 
             $appointmentMarkedCompleted = false;
 
-            // The call is over but the session is not: leave the counseling session active so
-            // re-calling reuses this same row (and its notes) instead of starting a new one,
-            // and leave the appointment status alone so the slot stays in both call queues.
+            // If it's an emergency appointment: once ended, complete immediately!
+            if ($isEmergency) {
+                if ($session) {
+                    $session->update([
+                        'status' => 'completed',
+                        'started_at' => $session->started_at ?? now(),
+                        'ended_at' => now(),
+                    ]);
+                }
+
+                $lockedAppointment->update(['status' => 'completed']);
+                $appointmentMarkedCompleted = true;
+
+                return [
+                    'message' => 'Emergency video session concluded and marked completed.',
+                    'session' => $session?->fresh(),
+                    'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
+                    'appointment_marked_completed' => true,
+                    'appointment_status' => 'completed',
+                    'session_still_open' => false,
+                ];
+            }
+
+            // For regular appointments:
             if ($sessionStillOpen) {
                 if ($session && ! $session->started_at) {
                     $session->update(['started_at' => now()]);
@@ -465,53 +495,29 @@ class VideoCallController extends Controller
                     'session' => $session?->fresh(),
                     'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
                     'appointment_marked_completed' => false,
+                    'appointment_status' => $lockedAppointment->status,
                     'session_still_open' => true,
                 ];
             }
 
+            // Window closed or session finished:
             if ($session) {
                 $session->update([
                     'status' => 'completed',
                     'started_at' => $session->started_at ?? now(),
                     'ended_at' => now(),
                 ]);
-
-                if (AppointmentCompletion::shouldComplete($lockedAppointment, $session->fresh(), true)) {
-                    $lockedAppointment->update([
-                        'status' => 'completed',
-                    ]);
-                    $appointmentMarkedCompleted = true;
-                }
-
-                return [
-                    'message' => 'Video call ended.',
-                    'session' => $session->fresh(),
-                    'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
-                    'appointment_marked_completed' => $appointmentMarkedCompleted,
-                    'session_still_open' => false,
-                ];
             }
 
-            $latestSession = CounselingSession::query()
-                ->where('student_id', $lockedAppointment->student_id)
-                ->where('counselor_id', $lockedAppointment->counselor_id)
-                ->where('session_type', 'video')
-                ->where('is_anonymous', (bool) $lockedAppointment->is_anonymous)
-                ->latest('id')
-                ->first();
-
-            if (AppointmentCompletion::shouldComplete($lockedAppointment, $latestSession, false)) {
-                $lockedAppointment->update([
-                    'status' => 'completed',
-                ]);
-                $appointmentMarkedCompleted = true;
-            }
+            $lockedAppointment->update(['status' => 'completed']);
+            $appointmentMarkedCompleted = true;
 
             return [
-                'message' => 'No active video session found. Call already ended.',
-                'session' => $latestSession,
+                'message' => 'Video call ended.',
+                'session' => $session?->fresh(),
                 'appointment' => $lockedAppointment->fresh(['student.profile', 'counselor.profile']),
-                'appointment_marked_completed' => $appointmentMarkedCompleted,
+                'appointment_marked_completed' => true,
+                'appointment_status' => 'completed',
                 'session_still_open' => false,
             ];
         });

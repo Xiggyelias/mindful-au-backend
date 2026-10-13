@@ -52,6 +52,10 @@ class AppointmentCallWindow
     /** When the session stops being joinable. */
     public static function closesAt(Appointment $appointment): ?Carbon
     {
+        if (in_array($appointment->status, ['completed', 'cancelled'], true)) {
+            return null;
+        }
+
         if (! $appointment->scheduled_at) {
             return null;
         }
@@ -62,7 +66,8 @@ class AppointmentCallWindow
         $isEmergency = self::isEmergency($appointment);
 
         if ($isEmergency && $closesAt->lt(now())) {
-            return now()->addMinutes($duration + self::JOIN_LATE_GRACE_MINUTES);
+            $baseTime = $appointment->created_at ? Carbon::parse($appointment->created_at) : now();
+            return $baseTime->copy()->addMinutes($duration + self::JOIN_LATE_GRACE_MINUTES);
         }
 
         return $closesAt;
@@ -77,6 +82,10 @@ class AppointmentCallWindow
      */
     public static function isOpen(Appointment $appointment): bool
     {
+        if (in_array($appointment->status, ['completed', 'cancelled'], true)) {
+            return false;
+        }
+
         $closesAt = self::closesAt($appointment);
 
         return $closesAt !== null && now()->lessThan($closesAt);
@@ -85,6 +94,20 @@ class AppointmentCallWindow
     /** The full window description used by the call-authorization API. */
     public static function describe(Appointment $appointment): array
     {
+        if (in_array($appointment->status, ['completed', 'cancelled'], true)) {
+            return [
+                'scheduled_at' => $appointment->scheduled_at ? Carbon::parse($appointment->scheduled_at)->toIso8601String() : null,
+                'opens_at' => null,
+                'closes_at' => null,
+                'duration_minutes' => self::normalizeDurationMinutes($appointment->duration_minutes),
+                'is_open' => false,
+                'can_start' => false,
+                'starts_in_seconds' => null,
+                'ends_in_seconds' => 0,
+                'message' => 'This appointment has concluded.',
+            ];
+        }
+
         $scheduledAt = Carbon::parse($appointment->scheduled_at);
         $durationMinutes = self::normalizeDurationMinutes($appointment->duration_minutes);
         $now = now();
