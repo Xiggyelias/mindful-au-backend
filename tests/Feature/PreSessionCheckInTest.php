@@ -113,6 +113,43 @@ class PreSessionCheckInTest extends TestCase
         );
     }
 
+    #[Test]
+    public function appointment_list_includes_pre_session_check_in_status(): void
+    {
+        $student = $this->createPortalUser('student', 'student4@test.com', 'Sam Smith');
+        $counselor = $this->createPortalUser('counselor', 'counselor4@test.com', 'Dr. Greg House');
+
+        $appointment = Appointment::create([
+            'student_id' => $student->id,
+            'counselor_id' => $counselor->id,
+            'scheduled_at' => now()->addMinutes(30),
+            'status' => 'scheduled',
+            'duration_minutes' => 45,
+            'notes' => 'Online audio',
+        ]);
+
+        $this->assertFalse($appointment->fresh()->has_pre_session_check_in);
+
+        PreSessionCheckIn::create([
+            'student_id' => $student->id,
+            'counselor_id' => $counselor->id,
+            'appointment_id' => $appointment->id,
+            'mood' => 'calm',
+            'mood_score' => 4,
+            'energy_level' => 3,
+            'stress_level' => 2,
+            'primary_concerns' => ['Academics & Deadlines'],
+            'session_goal' => 'coping_tools',
+        ]);
+
+        $this->assertTrue($appointment->fresh()->has_pre_session_check_in);
+
+        $response = $this->actingAs($student)->getJson('/api/appointments');
+        $response->assertOk();
+        $response->assertJsonPath('0.has_pre_session_check_in', true);
+        $response->assertJsonPath('0.pre_session_check_in.mood', 'calm');
+    }
+
     private function createPortalUser(string $role, string $email, string $fullName): User
     {
         $user = User::factory()->create([

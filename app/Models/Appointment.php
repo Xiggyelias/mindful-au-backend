@@ -79,6 +79,10 @@ class Appointment extends Model
         'reminder_sent' => 'boolean',
     ];
 
+    protected $appends = [
+        'has_pre_session_check_in',
+    ];
+
     public function student()
     {
         return $this->belongsTo(User::class, 'student_id');
@@ -92,5 +96,33 @@ class Appointment extends Model
     public function counselorSlot()
     {
         return $this->belongsTo(CounselorSlot::class, 'counselor_slot_id');
+    }
+
+    public function preSessionCheckIn()
+    {
+        return $this->hasOne(PreSessionCheckIn::class, 'appointment_id')->latestOfMany();
+    }
+
+    public function getHasPreSessionCheckInAttribute(): bool
+    {
+        if ($this->relationLoaded('preSessionCheckIn')) {
+            if ($this->preSessionCheckIn !== null) {
+                return true;
+            }
+        } elseif ($this->preSessionCheckIn()->exists()) {
+            return true;
+        }
+
+        if ($this->student_id && $this->counselor_id && $this->scheduled_at) {
+            return PreSessionCheckIn::where('student_id', $this->student_id)
+                ->where('counselor_id', $this->counselor_id)
+                ->whereBetween('created_at', [
+                    $this->scheduled_at->copy()->subHours(24),
+                    $this->scheduled_at->copy()->addHours(4),
+                ])
+                ->exists();
+        }
+
+        return false;
     }
 }

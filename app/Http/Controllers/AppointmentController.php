@@ -48,7 +48,7 @@ class AppointmentController extends Controller
         ]);
 
         $query = Appointment::query()
-            ->with(['student.profile', 'counselor.profile']);
+            ->with(['student.profile', 'counselor.profile', 'preSessionCheckIn']);
 
         if ($user->hasRole('student')) {
             $query->where('student_id', $user->id);
