@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Appointment;
+use App\Models\CounselingCall;
 use App\Models\CounselingSession;
 use App\Support\AppointmentCallWindow;
 use App\Support\AppointmentCompletion;
@@ -100,6 +101,11 @@ class CompletePastAppointmentsCommand extends Command
             }
 
             $locked->update(['status' => 'completed']);
+
+            CounselingCall::query()
+                ->where('appointment_id', $locked->id)
+                ->whereIn('status', CounselingCall::ACTIVE_STATUSES)
+                ->update(['status' => CounselingCall::STATUS_ENDED]);
 
             Log::info('[Appointments] Completed after session window closed', [
                 'appointment_id' => (int) $locked->id,

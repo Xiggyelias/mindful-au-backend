@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\NotificationCreated;
 use App\Models\ActivityLog;
 use App\Models\Appointment;
+use App\Models\CounselingCall;
 use App\Models\CounselingSession;
 use App\Models\CounselorSlot;
 use App\Models\EmergencyRequest;
@@ -495,6 +496,12 @@ class AppointmentController extends Controller
         $appointment->update($payload);
         if (($validated['status'] ?? null) === 'cancelled') {
             $this->slotService->releaseSlotForAppointment($appointment);
+        }
+        if (in_array(($validated['status'] ?? null), ['completed', 'cancelled'], true)) {
+            CounselingCall::query()
+                ->where('appointment_id', $appointment->id)
+                ->whereIn('status', CounselingCall::ACTIVE_STATUSES)
+                ->update(['status' => CounselingCall::STATUS_ENDED]);
         }
         $appointment->refresh()->load(['student.profile', 'counselor.profile']);
 

@@ -26,6 +26,9 @@ class CounselingCall extends Model
     /** Nobody answered before expires_at. */
     public const STATUS_MISSED = 'missed';
 
+    /** Call session has ended / hung up. */
+    public const STATUS_ENDED = 'ended';
+
     /** Statuses that make a user "busy" for the purposes of starting/receiving another call. */
     public const ACTIVE_STATUSES = [self::STATUS_PENDING, self::STATUS_ACCEPTED];
 
@@ -69,9 +72,16 @@ class CounselingCall extends Model
     /** A pending call is only "ringing" until its TTL lapses; after that it's stale (should be swept to missed). */
     public function isExpired(): bool
     {
-        return $this->status === self::STATUS_PENDING
-            && $this->expires_at instanceof Carbon
-            && $this->expires_at->isPast();
+        if ($this->status !== self::STATUS_PENDING) {
+            return false;
+        }
+
+        if ($this->expires_at instanceof Carbon) {
+            return $this->expires_at->isPast();
+        }
+
+        // Fallback if expires_at is null: a ring older than 60 seconds is expired
+        return $this->created_at instanceof Carbon && $this->created_at->lt(now()->subSeconds(60));
     }
 
     /** Rows that currently make either participant unavailable for a new call. */
@@ -82,13 +92,23 @@ class CounselingCall extends Model
                 $q->where('student_id', $userId)->orWhere('counselor_id', $userId);
             })
             ->where(function (Builder $q) {
-                $q->where('status', self::STATUS_ACCEPTED)
-                    ->orWhere(function (Builder $pending) {
-                        $pending->where('status', self::STATUS_PENDING)
-                            ->where(function (Builder $notExpired) {
-                                $notExpired->whereNull('expires_at')->orWhere('expires_at', '>', now());
-                            });
-                    });
+                $q->where(function (Builder $accepted) {
+                    $accepted->where('status', self::STATUS_ACCEPTED)
+                        ->where(function (Builder $fresh) {
+                            $fresh->whereNull('connected_at')
+                                ->orWhere('connected_at', '>', now()->subHours(2));
+                        });
+                })
+                ->orWhere(function (Builder $pending) {
+                    $pending->where('status', self::STATUS_PENDING)
+                        ->where(function (Builder $notExpired) {
+                            $notExpired->where('expires_at', '>', now())
+                                ->orWhere(function (Builder $legacy) {
+                                    $legacy->whereNull('expires_at')
+                                        ->where('created_at', '>', now()->subSeconds(60));
+                                });
+                        });
+                });
             });
     }
 }

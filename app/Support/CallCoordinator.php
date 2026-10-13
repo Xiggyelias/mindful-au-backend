@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Events\NotificationCreated;
+use App\Models\Appointment;
 use App\Models\CounselingCall;
 use App\Models\Notification;
 use App\Services\WebPushService;
@@ -132,20 +133,29 @@ class CallCoordinator
     }
 
     /**
-     * Marks any stale (past expires_at, still pending) call rows touching the given users
-     * as missed. Must be called from within withUsersLocked() covering the same user ids.
+     * Marks any stale call rows (expired pending, closed appointment accepted, or past max duration)
+     * touching the given users as missed or ended.
+     * Must be called from within withUsersLocked() covering the same user ids.
      * Returns the rows that were swept so the caller can notify outside the lock.
      */
     public function sweepExpired(int ...$userIds): Collection
     {
-        if (! Schema::hasColumn('calls', 'expires_at')) {
-            return collect();
-        }
+        $hasExpiresAt = Schema::hasColumn('calls', 'expires_at');
 
-        $stale = CounselingCall::query()
+        // 1. Sweep stale PENDING calls (timed-out rings)
+        $stalePending = CounselingCall::query()
             ->where('status', CounselingCall::STATUS_PENDING)
-            ->whereNotNull('expires_at')
-            ->where('expires_at', '<=', now())
+            ->where(function ($query) use ($hasExpiresAt) {
+                if ($hasExpiresAt) {
+                    $query->where('expires_at', '<=', now())
+                        ->orWhere(function ($q) {
+                            $q->whereNull('expires_at')
+                                ->where('created_at', '<=', now()->subSeconds(self::RING_TTL_SECONDS));
+                        });
+                } else {
+                    $query->where('created_at', '<=', now()->subSeconds(self::RING_TTL_SECONDS));
+                }
+            })
             ->where(function ($query) use ($userIds) {
                 foreach ($userIds as $id) {
                     $query->orWhere('student_id', $id)->orWhere('counselor_id', $id);
@@ -153,22 +163,54 @@ class CallCoordinator
             })
             ->get();
 
-        if ($stale->isNotEmpty()) {
+        if ($stalePending->isNotEmpty()) {
             CounselingCall::query()
-                ->whereIn('id', $stale->pluck('id'))
+                ->whereIn('id', $stalePending->pluck('id'))
                 ->update(['status' => CounselingCall::STATUS_MISSED]);
         }
 
-        return $stale;
+        // 2. Sweep stale ACCEPTED calls
+        // An accepted call from a completed/cancelled appointment, a closed appointment window,
+        // or one that connected > 2 hours ago is dead and must not block new calls.
+        $staleAccepted = CounselingCall::query()
+            ->where('status', CounselingCall::STATUS_ACCEPTED)
+            ->where(function ($query) use ($userIds) {
+                foreach ($userIds as $id) {
+                    $query->orWhere('student_id', $id)->orWhere('counselor_id', $id);
+                }
+            })
+            ->with('appointment')
+            ->get()
+            ->filter(function (CounselingCall $call) {
+                if (! $call->appointment || in_array($call->appointment->status, ['completed', 'cancelled'], true)) {
+                    return true;
+                }
+                if (! AppointmentCallWindow::isOpen($call->appointment)) {
+                    return true;
+                }
+                $started = $call->connected_at ?? $call->created_at;
+                if ($started && $started->lt(now()->subHours(2))) {
+                    return true;
+                }
+                return false;
+            });
+
+        if ($staleAccepted->isNotEmpty()) {
+            CounselingCall::query()
+                ->whereIn('id', $staleAccepted->pluck('id'))
+                ->update(['status' => CounselingCall::STATUS_ENDED]);
+        }
+
+        return $stalePending;
     }
 
     /**
      * The active call row (if any) that makes either user unavailable to start or accept
      * a new one. Must be called from within withUsersLocked() covering both user ids.
      */
-    public function findActiveConflict(int $userA, int $userB): ?CounselingCall
+    public function findActiveConflict(int $userA, int $userB, ?Appointment $targetAppointment = null): ?CounselingCall
     {
-        return CounselingCall::query()
+        $calls = CounselingCall::query()
             ->where(function ($query) use ($userA, $userB) {
                 $query->where('student_id', $userA)
                     ->orWhere('counselor_id', $userA)
@@ -176,8 +218,58 @@ class CallCoordinator
                     ->orWhere('counselor_id', $userB);
             })
             ->whereIn('status', CounselingCall::ACTIVE_STATUSES)
+            ->with('appointment')
             ->orderByDesc('id')
-            ->first();
+            ->get();
+
+        $isTargetEmergency = $targetAppointment && (
+            (bool) ($targetAppointment->is_emergency ?? false) ||
+            AppointmentCallWindow::isEmergency($targetAppointment)
+        );
+
+        foreach ($calls as $call) {
+            // Pending and past expiration: sweep it
+            if ($call->status === CounselingCall::STATUS_PENDING && $call->isExpired()) {
+                $call->update(['status' => CounselingCall::STATUS_MISSED]);
+                continue;
+            }
+
+            // Accepted and appointment finished / closed / stale: sweep it
+            if ($call->status === CounselingCall::STATUS_ACCEPTED) {
+                $apt = $call->appointment;
+                if (! $apt || in_array($apt->status, ['completed', 'cancelled'], true) || ! AppointmentCallWindow::isOpen($apt)) {
+                    $call->update(['status' => CounselingCall::STATUS_ENDED]);
+                    continue;
+                }
+                $started = $call->connected_at ?? $call->created_at;
+                if ($started && $started->lt(now()->subHours(2))) {
+                    $call->update(['status' => CounselingCall::STATUS_ENDED]);
+                    continue;
+                }
+            }
+
+            // Emergency priority override:
+            // If the incoming session is an EMERGENCY call, it must never be blocked by a lingering call
+            // from a different non-emergency appointment. Clean up the non-emergency call and proceed.
+            if ($isTargetEmergency && $targetAppointment && (int) $call->appointment_id !== (int) $targetAppointment->id) {
+                $conflictIsEmergency = $call->appointment && (
+                    (bool) ($call->appointment->is_emergency ?? false) ||
+                    AppointmentCallWindow::isEmergency($call->appointment)
+                );
+                if (! $conflictIsEmergency) {
+                    $call->update([
+                        'status' => $call->status === CounselingCall::STATUS_PENDING
+                            ? CounselingCall::STATUS_CANCELLED
+                            : CounselingCall::STATUS_ENDED,
+                    ]);
+                    continue;
+                }
+            }
+
+            return $call;
+        }
+
+        return null;
     }
 
     /** Notify the callee that an unanswered call from them timed out with no response. */

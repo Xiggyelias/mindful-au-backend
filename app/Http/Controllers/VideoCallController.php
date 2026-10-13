@@ -154,7 +154,7 @@ class VideoCallController extends Controller
                 $outcome = $this->calls->withUsersLocked([$callerId, $calleeId], function () use ($appointment, $callTypeResult, $callerRole, $callerId, $calleeId) {
                     $missed = $this->calls->sweepExpired($callerId, $calleeId);
 
-                    $conflict = $this->calls->findActiveConflict($callerId, $calleeId);
+                    $conflict = $this->calls->findActiveConflict($callerId, $calleeId, $appointment);
 
                     if ($conflict) {
                         $sameAppointment = (int) $conflict->appointment_id === (int) $appointment->id;
@@ -407,18 +407,22 @@ class VideoCallController extends Controller
             $cancelledCall = $this->calls->withUsersLocked(
                 [(int) $appointment->student_id, (int) $appointment->counselor_id],
                 function () use ($appointment) {
-                    $pending = CounselingCall::query()
+                    $activeCalls = CounselingCall::query()
                         ->where('appointment_id', $appointment->id)
-                        ->where('status', CounselingCall::STATUS_PENDING)
-                        ->first();
+                        ->whereIn('status', CounselingCall::ACTIVE_STATUSES)
+                        ->get();
 
-                    if (! $pending) {
-                        return null;
+                    $cancelled = null;
+                    foreach ($activeCalls as $call) {
+                        if ($call->status === CounselingCall::STATUS_PENDING) {
+                            $call->update(['status' => CounselingCall::STATUS_CANCELLED]);
+                            $cancelled = $call;
+                        } else {
+                            $call->update(['status' => CounselingCall::STATUS_ENDED]);
+                        }
                     }
 
-                    $pending->update(['status' => CounselingCall::STATUS_CANCELLED]);
-
-                    return $pending;
+                    return $cancelled;
                 }
             );
         } catch (LockTimeoutException) {
