@@ -104,6 +104,8 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/sessions/{id}/attachments', [ChatAttachmentController::class, 'upload'])->middleware('throttle:messages-write');
     Route::get('/messages/{id}/attachment', [ChatAttachmentController::class, 'download'])->middleware('throttle:messages-read');
     Route::post('/sessions/counselor', [SessionController::class, 'storeAsCounselor']);
+    Route::post('/sessions/walk-in', [SessionController::class, 'storeWalkInSession'])->middleware('throttle:messages-write');
+    Route::get('/appointments/{id}/session', [SessionController::class, 'getSessionForAppointment'])->middleware('throttle:messages-read');
     Route::put('/sessions/{id}/note', [SessionController::class, 'upsertNote'])->middleware('throttle:messages-write');
     Route::delete('/sessions/{id}/note', [SessionController::class, 'deleteNote'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/touch', [SessionController::class, 'touch'])->middleware('throttle:session-touch');

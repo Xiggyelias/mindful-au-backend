@@ -39,6 +39,16 @@ class AppointmentCallWindow
         );
     }
 
+    public static function isEmergency(Appointment $appointment): bool
+    {
+        if ((bool) ($appointment->is_emergency ?? false)) {
+            return true;
+        }
+
+        $notes = strtolower((string) ($appointment->notes ?? ''));
+        return str_contains($notes, 'emergency') || str_contains($notes, 'crisis');
+    }
+
     /** When the session stops being joinable. */
     public static function closesAt(Appointment $appointment): ?Carbon
     {
@@ -49,7 +59,7 @@ class AppointmentCallWindow
         $duration = self::normalizeDurationMinutes($appointment->duration_minutes);
         $scheduledAt = Carbon::parse($appointment->scheduled_at);
         $closesAt = $scheduledAt->copy()->addMinutes($duration + self::JOIN_LATE_GRACE_MINUTES);
-        $isEmergency = (bool) ($appointment->is_emergency ?? false);
+        $isEmergency = self::isEmergency($appointment);
 
         if ($isEmergency && $closesAt->lt(now())) {
             return now()->addMinutes($duration + self::JOIN_LATE_GRACE_MINUTES);
@@ -78,7 +88,7 @@ class AppointmentCallWindow
         $scheduledAt = Carbon::parse($appointment->scheduled_at);
         $durationMinutes = self::normalizeDurationMinutes($appointment->duration_minutes);
         $now = now();
-        $isEmergency = (bool) ($appointment->is_emergency ?? false);
+        $isEmergency = self::isEmergency($appointment);
 
         if ($isEmergency) {
             // Priority crisis calls can start immediately upon booking without waiting for the 15m early lock.

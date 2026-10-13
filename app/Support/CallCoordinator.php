@@ -10,6 +10,7 @@ use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Single source of truth for "is this user available to start/receive a call" and for
@@ -137,6 +138,10 @@ class CallCoordinator
      */
     public function sweepExpired(int ...$userIds): Collection
     {
+        if (! Schema::hasColumn('calls', 'expires_at')) {
+            return collect();
+        }
+
         $stale = CounselingCall::query()
             ->where('status', CounselingCall::STATUS_PENDING)
             ->whereNotNull('expires_at')

@@ -127,7 +127,7 @@ class DiagnosticController extends Controller
         $user->loadMissing('profile');
         $liveProfileAnon = $user->profile !== null ? (bool) $user->profile->anonymous_mode : false;
         $isAnonymous = array_key_exists('is_anonymous', $validated)
-            ? ($liveProfileAnon && (bool) $validated['is_anonymous'])
+            ? (bool) $validated['is_anonymous']
             : $liveProfileAnon;
 
         // Create diagnostic record

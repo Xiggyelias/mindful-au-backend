@@ -314,7 +314,7 @@ class ChatAttachmentController extends Controller
 
     private function isAssignedPeerCounselor(User $user, CounselingSession $session): bool
     {
-        if (! $user->hasRole('peer_counselor') || $session->assigned_role !== 'peer_counselor') {
+        if (! $user->hasRole('peer_counselor')) {
             return false;
         }
 
@@ -325,7 +325,7 @@ class ChatAttachmentController extends Controller
         return PeerAssignment::query()
             ->where('session_id', (int) $session->id)
             ->where('peer_counselor_id', (int) $user->id)
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'escalated'])
             ->exists();
     }
 
@@ -462,11 +462,6 @@ class ChatAttachmentController extends Controller
         int $recipientId,
         ?bool $sentAsAnonymousSnapshot = null,
     ): bool {
-        $session->loadMissing('student.profile');
-        if ($session->student && $session->student->profile && ! (bool) $session->student->profile->anonymous_mode) {
-            return false;
-        }
-
         $effectiveAnonymous = $sentAsAnonymousSnapshot ?? (bool) $session->is_anonymous;
 
         if (! $effectiveAnonymous) {
@@ -537,10 +532,6 @@ class ChatAttachmentController extends Controller
 
     private function activeCasePeerCounselorId(CounselingSession $session): int
     {
-        if ($session->assigned_role !== 'peer_counselor') {
-            return 0;
-        }
-
         $peerCounselorId = (int) ($session->peer_counselor_id ?? 0);
         if ($peerCounselorId > 0) {
             return $peerCounselorId;
@@ -549,7 +540,7 @@ class ChatAttachmentController extends Controller
         return (int) (PeerAssignment::query()
             ->where('session_id', (int) $session->id)
             ->whereNotNull('peer_counselor_id')
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'escalated'])
             ->orderByDesc('assigned_at')
             ->orderByDesc('id')
             ->value('peer_counselor_id') ?? 0);

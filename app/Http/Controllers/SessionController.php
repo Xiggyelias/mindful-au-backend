@@ -6,6 +6,7 @@ use App\Events\NotificationCreated;
 use App\Jobs\ProcessAIDiagnostic;
 use App\Models\ActivityLog;
 use App\Models\AiDiagnostic;
+use App\Models\Appointment;
 use App\Models\CounselingSession;
 use App\Models\Escalation;
 use App\Models\Message;
@@ -351,7 +352,7 @@ class SessionController extends Controller
         $latestCasePeerAssignments = DB::table('peer_assignments as latest_pa')
             ->select('latest_pa.session_id', DB::raw('MAX(latest_pa.id) as latest_peer_assignment_id'))
             ->whereNotNull('latest_pa.peer_counselor_id')
-            ->where('latest_pa.status', 'active')
+            ->whereIn('latest_pa.status', ['active', 'escalated'])
             ->groupBy('latest_pa.session_id');
 
         $orderedQuery = (clone $scopedSessionQuery)
@@ -379,6 +380,7 @@ class SessionController extends Controller
                 's.assigned_role',
                 's.session_type',
                 's.status',
+                's.notes',
                 's.is_anonymous',
                 's.anonymous_id',
                 's.identity_revealed_at',
@@ -471,14 +473,16 @@ class SessionController extends Controller
             $studentIsOnline = $studentLastSeenAt instanceof Carbon
                 && $studentLastSeenAt->greaterThanOrEqualTo($studentOnlineThreshold);
 
-            $isPeerAssignedRole = ($row->assigned_role ?? null) === 'peer_counselor';
-            $sessionPeerId = $isPeerAssignedRole && $row->peer_counselor_id ? (int) $row->peer_counselor_id : null;
-            $casePeerId = $isPeerAssignedRole
-                ? ($sessionPeerId ?: ($row->case_peer_counselor_id ? (int) $row->case_peer_counselor_id : null))
-                : null;
+            $sessionPeerId = $row->peer_counselor_id ? (int) $row->peer_counselor_id : null;
+            $casePeerId = $sessionPeerId ?: ($row->case_peer_counselor_id ? (int) $row->case_peer_counselor_id : null);
             $casePeerEmail = $sessionPeerId ? $row->peer_email : $row->case_peer_email;
             $casePeerLastSeenAt = $sessionPeerId ? $row->peer_last_seen_at : $row->case_peer_last_seen_at;
             $casePeerFullName = $sessionPeerId ? $row->peer_full_name : $row->case_peer_full_name;
+
+            $sessionNotes = null;
+            if (! $viewerIsAdmin && ! empty($row->notes)) {
+                $sessionNotes = CounselingSession::decryptValue((string) $row->notes);
+            }
 
             return [
                 'id' => (int) $row->id,
@@ -493,6 +497,7 @@ class SessionController extends Controller
                 'assigned_role' => $row->assigned_role,
                 'session_type' => $row->session_type,
                 'status' => $row->status,
+                'notes' => $sessionNotes,
                 'is_anonymous' => $isAnonymousForViewer,
                 'anonymous_id' => $anonymousIdForPayload,
                 'identity_visible_to_viewer' => $identityVisible,
@@ -785,6 +790,197 @@ class SessionController extends Controller
         $this->appendRiskSignals($session, $user, $request);
 
         return response()->json($session, 201);
+    }
+
+    public function storeWalkInSession(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasRole('counselor') && ! $user->hasRole('admin')) {
+            return response()->json(['message' => 'Only counselors or administrators can record walk-in consultations'], 403);
+        }
+
+        $validated = $request->validate([
+            'student_id' => 'nullable|integer|exists:users,id',
+            'visitor_name' => 'nullable|string|max:255',
+            'visitor_identifier' => 'nullable|string|max:100',
+            'consultation_mode' => 'required|in:in_person_walkin,physical_emergency,unscheduled_visit,follow_up_in_person',
+            'chief_complaint' => 'nullable|string|max:255',
+            'risk_level' => 'nullable|in:low,medium,high,critical',
+            'notes' => 'required|string|max:10000',
+            'action_taken' => 'nullable|string|max:1000',
+            'started_at' => 'nullable|date',
+            'duration_minutes' => 'nullable|integer|min:5|max:480',
+            'is_anonymous' => 'nullable|boolean',
+        ]);
+
+        $modeLabels = [
+            'in_person_walkin' => 'In-Person Walk-In',
+            'physical_emergency' => 'Physical Emergency / Crisis',
+            'unscheduled_visit' => 'Unscheduled In-Person Consultation',
+            'follow_up_in_person' => 'Follow-Up Physical Visit',
+        ];
+        $modeKey = (string) $validated['consultation_mode'];
+        $modeLabel = $modeLabels[$modeKey] ?? 'In-Person Consultation';
+        $isEmergency = ($modeKey === 'physical_emergency');
+
+        // Resolve or create student identity
+        $studentId = null;
+        $isAnonymous = ! empty($validated['is_anonymous']);
+        $anonymousId = null;
+
+        if (! empty($validated['student_id'])) {
+            $studentId = (int) $validated['student_id'];
+            if (! $this->isApprovedStudent($studentId)) {
+                return response()->json(['message' => 'Selected student is not available'], 422);
+            }
+            if ($isAnonymous) {
+                $anonymousId = CounselingSession::generateUniqueAnonymousId();
+            }
+        } else {
+            // Unregistered walk-in or anonymous emergency visitor
+            $visitorUser = User::firstOrCreate(
+                ['email' => 'walkin.visitor@mindful.africau.co.zw'],
+                [
+                    'password' => \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(32)),
+                    'email_verified_at' => now(),
+                ]
+            );
+            if (! $visitorUser->hasRole('student')) {
+                $visitorUser->roles()->create([
+                    'role' => 'student',
+                    'approved' => true,
+                ]);
+            }
+            if (! $visitorUser->profile) {
+                \App\Models\Profile::create([
+                    'user_id' => $visitorUser->id,
+                    'full_name' => 'Walk-In Visitor',
+                ]);
+            }
+            $studentId = (int) $visitorUser->id;
+            $isAnonymous = true;
+            $visitorName = trim((string) ($validated['visitor_name'] ?? ''));
+            $visitorId = trim((string) ($validated['visitor_identifier'] ?? ''));
+            if ($visitorId !== '') {
+                $anonymousId = "WalkIn ({$visitorId})";
+            } elseif ($visitorName !== '') {
+                $anonymousId = "WalkIn ({$visitorName})";
+            } else {
+                $anonymousId = CounselingSession::generateUniqueAnonymousId();
+            }
+        }
+
+        $startedAt = ! empty($validated['started_at']) ? Carbon::parse($validated['started_at']) : now();
+        $duration = max(5, min(480, (int) ($validated['duration_minutes'] ?? 45)));
+        $endedAt = (clone $startedAt)->addMinutes($duration);
+
+        // Build clinical note content
+        $notesBody = trim((string) $validated['notes']);
+        $metaHeaderParts = [];
+        $metaHeaderParts[] = "Mode: {$modeLabel}";
+        if (! empty($validated['risk_level'])) {
+            $metaHeaderParts[] = 'Triage Risk: '.strtoupper((string) $validated['risk_level']);
+        }
+        if (! empty($validated['chief_complaint'])) {
+            $metaHeaderParts[] = 'Chief Concern: '.trim((string) $validated['chief_complaint']);
+        }
+        if (! empty($validated['action_taken'])) {
+            $metaHeaderParts[] = 'Action Taken: '.trim((string) $validated['action_taken']);
+        }
+
+        $formattedNotes = '['.implode(' | ', $metaHeaderParts)."]\n\n".$notesBody;
+
+        $session = CounselingSession::create([
+            'student_id' => $studentId,
+            'counselor_id' => $user->id,
+            'session_type' => 'in_person',
+            'status' => 'completed',
+            'assigned_role' => 'counselor',
+            'assigned_by' => $user->id,
+            'is_anonymous' => $isAnonymous,
+            'anonymous_id' => $anonymousId,
+            'notes' => $formattedNotes,
+            'started_at' => $startedAt,
+            'ended_at' => $endedAt,
+        ]);
+
+        // Keep appointment records and analytics synchronized
+        try {
+            Appointment::create([
+                'student_id' => $studentId,
+                'counselor_id' => $user->id,
+                'scheduled_at' => $startedAt,
+                'duration_minutes' => $duration,
+                'status' => 'completed',
+                'is_anonymous' => $isAnonymous,
+                'is_emergency' => $isEmergency,
+                'anonymous_id' => $anonymousId,
+                'notes' => "Physical consultation - {$modeLabel}".(! empty($validated['chief_complaint']) ? ' ('.trim((string) $validated['chief_complaint']).')' : ''),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Failed to record appointment for walk-in session', [
+                'session_id' => $session->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $this->logCaseTransition(
+            $request,
+            'counselor_walkin_consultation_recorded',
+            "Counselor {$user->id} documented {$modeLabel} consultation for session {$session->id}.",
+            $session,
+            $session->counselor_id,
+            ['mode' => $modeKey, 'is_emergency' => $isEmergency, 'risk' => $validated['risk_level'] ?? 'low']
+        );
+
+        $session->load(['student.profile', 'counselor.profile']);
+        $this->appendRiskSignals($session, $user, $request);
+
+        return response()->json([
+            'message' => 'Walk-in consultation documented successfully',
+            'session' => $session,
+        ], 201);
+    }
+
+    public function getSessionForAppointment(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+        $appointment = Appointment::with(['student.profile', 'counselor.profile'])->findOrFail($id);
+
+        $isStudent = (int) $appointment->student_id === (int) $user->id;
+        $isCounselor = (int) $appointment->counselor_id === (int) $user->id;
+        $isAdmin = $user->hasRole('admin');
+
+        if (! $isStudent && ! $isCounselor && ! $isAdmin) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $session = CounselingSession::where('student_id', $appointment->student_id)
+            ->where('counselor_id', $appointment->counselor_id)
+            ->whereIn('status', ['pending', 'active'])
+            ->latest('id')
+            ->first();
+
+        if (! $session) {
+            $isAnonymous = (bool) $appointment->is_anonymous;
+            $session = CounselingSession::create([
+                'student_id' => $appointment->student_id,
+                'counselor_id' => $appointment->counselor_id,
+                'session_type' => 'video',
+                'status' => 'active',
+                'assigned_role' => 'counselor',
+                'assigned_by' => $appointment->counselor_id,
+                'started_at' => now(),
+                'notes' => "Video appointment #{$appointment->id}",
+                'is_anonymous' => $isAnonymous,
+                'anonymous_id' => $isAnonymous ? CounselingSession::generateUniqueAnonymousId() : null,
+            ]);
+        }
+
+        $session->load(['student.profile', 'counselor.profile']);
+        $this->appendRiskSignals($session, $user, $request);
+
+        return response()->json($session);
     }
 
     public function show(Request $request, string $id): JsonResponse
@@ -1470,8 +1666,6 @@ class SessionController extends Controller
 
         $session->update([
             'assigned_by' => $user->id,
-            'assigned_role' => 'counselor',
-            'peer_counselor_id' => null,
             'status' => in_array((string) $session->status, ['completed', 'cancelled'], true)
                 ? $session->status
                 : 'active',
@@ -1483,7 +1677,6 @@ class SessionController extends Controller
             ->where('status', 'active')
             ->update([
                 'status' => 'escalated',
-                'unassigned_at' => now(),
                 'notes' => 'Escalated to supervising counselor',
             ]);
 
@@ -1566,8 +1759,6 @@ class SessionController extends Controller
 
         $session->update([
             'assigned_by' => $user->id,
-            'assigned_role' => 'counselor',
-            'peer_counselor_id' => null,
             'status' => in_array((string) $session->status, ['completed', 'cancelled'], true)
                 ? $session->status
                 : 'active',
@@ -1579,7 +1770,6 @@ class SessionController extends Controller
             ->where('status', 'active')
             ->update([
                 'status' => 'escalated',
-                'unassigned_at' => now(),
                 'notes' => 'Urgent concern flagged for supervising counselor',
             ]);
 
@@ -1959,13 +2149,6 @@ class SessionController extends Controller
 
     private function appendCasePeerParticipant(CounselingSession $session): void
     {
-        if ($session->assigned_role !== 'peer_counselor') {
-            $session->setAttribute('case_peer_counselor_id', null);
-            $session->setAttribute('case_peer_counselor', null);
-
-            return;
-        }
-
         $peerId = (int) ($session->peer_counselor_id ?? 0);
         $peer = null;
 
@@ -1979,7 +2162,7 @@ class SessionController extends Controller
             $assignment = PeerAssignment::query()
                 ->where('session_id', $session->id)
                 ->whereNotNull('peer_counselor_id')
-                ->where('status', 'active')
+                ->whereIn('status', ['active', 'escalated'])
                 ->orderByDesc('assigned_at')
                 ->orderByDesc('id')
                 ->first(['peer_counselor_id']);

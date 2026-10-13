@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class VideoCallController extends Controller
@@ -94,8 +95,11 @@ class VideoCallController extends Controller
                 $updates = [
                     'status' => 'active',
                     'started_at' => $session->started_at ?? now(),
-                    'notes' => "Video appointment #{$appointment->id}",
                 ];
+
+                if (empty($session->notes)) {
+                    $updates['notes'] = "Video appointment #{$appointment->id}";
+                }
 
                 if ((bool) $session->is_anonymous !== $isAnonymous) {
                     $updates['is_anonymous'] = $isAnonymous;
@@ -183,15 +187,19 @@ class VideoCallController extends Controller
                         return ['type' => 'busy', 'call' => $conflict, 'missed' => $missed];
                     }
 
-                    $call = CounselingCall::create([
+                    $callData = [
                         'appointment_id' => $appointment->id,
                         'student_id' => $appointment->student_id,
                         'counselor_id' => $appointment->counselor_id,
                         'status' => CounselingCall::STATUS_PENDING,
                         'call_type' => $callTypeResult,
                         'caller_role' => $callerRole,
-                        'expires_at' => now()->addSeconds(CallCoordinator::RING_TTL_SECONDS),
-                    ]);
+                    ];
+                    if (Schema::hasColumn('calls', 'expires_at')) {
+                        $callData['expires_at'] = now()->addSeconds(CallCoordinator::RING_TTL_SECONDS);
+                    }
+
+                    $call = CounselingCall::create($callData);
 
                     return ['type' => 'created', 'call' => $call, 'missed' => $missed];
                 });
@@ -547,23 +555,20 @@ class VideoCallController extends Controller
             $requested = 'video';
         }
 
-        // Anonymous appointments are always audio-only.
-        if ($appointment->is_anonymous) {
+        $isEmergency = (bool) ($appointment->is_emergency ?? false)
+            || str_contains(strtolower((string) ($appointment->notes ?? '')), 'emergency')
+            || str_contains(strtolower((string) ($appointment->notes ?? '')), 'crisis');
+
+        // Anonymous appointments are audio-only to preserve privacy, unless it is a life-safety emergency.
+        if ($appointment->is_anonymous && ! $isEmergency) {
             return 'audio';
         }
 
-        $booked = (string) ($appointment->call_type ?? '');
-
-        if ($booked === 'audio' && $requested === 'video') {
-            // Signal to the caller that they should return a 422.
-            return null;
-        }
-
-        if ($booked === 'audio') {
+        if ($requested === 'audio') {
             return 'audio';
         }
 
-        return $requested;
+        return 'video';
     }
 
     private function getWindow(Appointment $appointment): array

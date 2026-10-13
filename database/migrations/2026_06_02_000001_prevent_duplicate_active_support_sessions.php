@@ -289,7 +289,7 @@ return new class extends Migration
         }
 
         DB::statement(
-            "ALTER TABLE `{$table}` ADD COLUMN `{$column}` VARCHAR(191) GENERATED ALWAYS AS ({$expression}) STORED"
+            "ALTER TABLE `{$table}` ADD COLUMN `{$column}` VARCHAR(191) GENERATED ALWAYS AS ({$expression}) VIRTUAL"
         );
     }
 

@@ -121,7 +121,7 @@ class CounselingSession extends Model
         return 'enc::'.Crypt::encryptString($stringValue);
     }
 
-    private function decryptSensitiveValue($value): ?string
+    public static function decryptValue(?string $value): ?string
     {
         if ($value === null) {
             return null;
@@ -136,12 +136,16 @@ class CounselingSession extends Model
             return Crypt::decryptString(substr($stringValue, 5));
         } catch (\Throwable $exception) {
             Log::warning('Unable to decrypt encrypted counseling session field.', [
-                'session_id' => $this->id,
                 'field' => 'sensitive',
                 'error' => $exception->getMessage(),
             ]);
 
             return null;
         }
+    }
+
+    private function decryptSensitiveValue($value): ?string
+    {
+        return static::decryptValue($value);
     }
 }
