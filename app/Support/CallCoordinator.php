@@ -28,8 +28,8 @@ use Illuminate\Support\Facades\Schema;
  */
 class CallCoordinator
 {
-    /** How long an unanswered call rings before it's considered missed. */
-    public const RING_TTL_SECONDS = 45;
+    /** How long an unanswered call rings before it's considered missed (35s WhatsApp-style timeout). */
+    public const RING_TTL_SECONDS = 35;
 
     private const LOCK_TTL_SECONDS = 10;
 
