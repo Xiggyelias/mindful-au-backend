@@ -308,7 +308,10 @@ class CallCoordinator
         $this->signals->send($notifyUserId, $payload, 'missed');
         $this->signals->send($this->callerId($call), $payload, 'missed');
 
+        // Clear transient ringing overhead notifications before recording the missed call record
         $this->clearCallNotifications((int) $call->appointment_id);
+
+        $this->pushAndNotify($notifyUserId, 'Missed call', $notifyBody, $notifyRoute, $call, requireInteraction: false);
     }
 
     /** Notify the caller that the callee explicitly declined. */
@@ -317,8 +320,6 @@ class CallCoordinator
         $isStudentCaller = $call->caller_role === CounselingCall::CALLER_STUDENT;
         $callerUserId = $this->callerId($call);
         $notifyRoute = $isStudentCaller ? '/student/video-call' : '/counselor/video';
-
-        $this->pushAndNotify($callerUserId, 'Call declined', 'Your call was declined.', $notifyRoute, $call, requireInteraction: false);
 
         Log::info('[Call] Call declined', [
             'call_id' => (int) $call->id,
@@ -335,6 +336,8 @@ class CallCoordinator
         );
 
         $this->clearCallNotifications((int) $call->appointment_id);
+
+        $this->pushAndNotify($callerUserId, 'Call declined', 'Your call was declined.', $notifyRoute, $call, requireInteraction: false);
     }
 
     /** Notify the callee that the caller cancelled before they answered. */
@@ -343,8 +346,6 @@ class CallCoordinator
         $isStudentCaller = $call->caller_role === CounselingCall::CALLER_STUDENT;
         $notifyUserId = $this->calleeId($call);
         $notifyRoute = $isStudentCaller ? '/counselor/video' : '/student/video-call';
-
-        $this->pushAndNotify($notifyUserId, 'Call cancelled', 'The call was cancelled.', $notifyRoute, $call, requireInteraction: false);
 
         Log::info('[Call] Call cancelled by caller', [
             'call_id' => (int) $call->id,
@@ -363,6 +364,8 @@ class CallCoordinator
         );
 
         $this->clearCallNotifications((int) $call->appointment_id);
+
+        $this->pushAndNotify($notifyUserId, 'Call cancelled', 'The call was cancelled.', $notifyRoute, $call, requireInteraction: false);
     }
 
     /** Tell both participants the call has ended and stop all rings. */
@@ -383,17 +386,21 @@ class CallCoordinator
         $this->clearCallNotifications((int) $call->appointment_id);
     }
 
-    /** Clear any unread incoming-call notifications for this appointment so overhead banners dismiss immediately. */
+    /** Clear and remove transient incoming-call notifications for this appointment so overhead banners dismiss immediately. */
     public function clearCallNotifications(int $appointmentId): void
     {
         try {
             Notification::query()
-                ->where('read', false)
                 ->where(function ($query) use ($appointmentId) {
                     $query->whereJsonContains('meta->appointment_id', $appointmentId)
                         ->orWhere('meta->appointment_id', $appointmentId);
                 })
-                ->update(['read' => true, 'read_at' => now()]);
+                ->where(function ($query) {
+                    $query->whereJsonContains('meta->kind', 'incoming_call')
+                        ->orWhere('meta->kind', 'incoming_call')
+                        ->orWhereIn('title', ['Incoming video call', 'Incoming audio call']);
+                })
+                ->delete();
         } catch (\Throwable $e) {
             Log::warning('[CallCoordinator] Failed to clear call notifications', [
                 'appointment_id' => $appointmentId,

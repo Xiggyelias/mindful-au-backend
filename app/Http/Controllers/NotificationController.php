@@ -35,7 +35,12 @@ class NotificationController extends Controller
         $limit = $validated['limit'] ?? 30;
         $unreadOnly = (bool) ($validated['unread_only'] ?? false);
 
-        $baseQuery = $request->user()->notifications();
+        $baseQuery = $request->user()->notifications()
+            ->where(function ($q) {
+                $q->whereNull('meta->kind')
+                    ->orWhereNotIn('meta->kind', ['incoming_call', 'call_update']);
+            })
+            ->whereNotIn('title', ['Incoming video call', 'Incoming audio call', 'Call cancelled', 'Call declined']);
 
         $unreadCount = (clone $baseQuery)
             ->where('read', false)

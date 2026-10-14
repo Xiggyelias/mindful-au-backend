@@ -60,12 +60,22 @@ class PreSessionCheckInController extends Controller
         }
 
         if (! $counselorId) {
-            // Find upcoming or latest appointment
+            // Find upcoming or active scheduled/confirmed appointment
             $latestAppt = Appointment::where('student_id', $user->id)
                 ->whereNotNull('counselor_id')
-                ->where('scheduled_at', '>=', now()->subHours(2))
+                ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
+                ->where('scheduled_at', '>=', now()->subHours(12))
                 ->orderBy('scheduled_at')
                 ->first();
+
+            if (! $latestAppt) {
+                $latestAppt = Appointment::where('student_id', $user->id)
+                    ->whereNotNull('counselor_id')
+                    ->whereIn('status', ['scheduled', 'confirmed', 'pending'])
+                    ->latest('id')
+                    ->first();
+            }
+
             $counselorId = $latestAppt?->counselor_id;
             if (! $appointmentId && $latestAppt) {
                 $appointmentId = $latestAppt->id;

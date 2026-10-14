@@ -113,14 +113,22 @@ class Appointment extends Model
             return true;
         }
 
-        if ($this->student_id && $this->counselor_id && $this->scheduled_at) {
-            return PreSessionCheckIn::where('student_id', $this->student_id)
-                ->where('counselor_id', $this->counselor_id)
-                ->whereBetween('created_at', [
-                    $this->scheduled_at->copy()->subHours(24),
-                    $this->scheduled_at->copy()->addHours(4),
-                ])
-                ->exists();
+        if ($this->id && PreSessionCheckIn::where('appointment_id', $this->id)->exists()) {
+            return true;
+        }
+
+        if ($this->student_id && $this->counselor_id) {
+            $query = PreSessionCheckIn::where('student_id', $this->student_id)
+                ->where('counselor_id', $this->counselor_id);
+
+            if ($this->scheduled_at) {
+                $query->whereBetween('created_at', [
+                    $this->scheduled_at->copy()->subHours(48),
+                    $this->scheduled_at->copy()->addHours(24),
+                ]);
+            }
+
+            return $query->exists();
         }
 
         return false;
