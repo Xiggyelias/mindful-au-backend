@@ -7,6 +7,7 @@ use App\Models\Appointment;
 use App\Models\CounselingCall;
 use App\Models\CounselingSession;
 use App\Models\Notification;
+use App\Services\LiveKitService;
 use App\Services\WebPushService;
 use App\Support\AnalyticsCache;
 use App\Support\AppointmentCallWindow;
@@ -26,6 +27,7 @@ class VideoCallController extends Controller
     public function __construct(
         private readonly WebPushService $webPush,
         private readonly CallCoordinator $calls,
+        private readonly LiveKitService $livekit,
     ) {}
 
     public function authorizeCall(Request $request): JsonResponse
@@ -316,6 +318,45 @@ class VideoCallController extends Controller
             'call_state' => $activeCall && $activeCall->status === CounselingCall::STATUS_PENDING
                 ? 'CALLING'
                 : null,
+        ]);
+    }
+
+    /**
+     * Mint a LiveKit join token for the calling user.
+     *
+     * The client calls this right before room.connect(); the room is created lazily by
+     * LiveKit when the first participant joins. Both authorization (is this user actually
+     * a participant of this appointment?) and call_type come from the same authorize()
+     * call that starts the ring — this endpoint never changes call state.
+     */
+    public function livekitToken(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'appointment_id' => 'required|integer|exists:appointments,id',
+        ]);
+
+        if (! $this->livekit->isConfigured()) {
+            return response()->json(['message' => 'LiveKit is not configured.'], 503);
+        }
+
+        $user = $request->user();
+        $appointment = Appointment::findOrFail($validated['appointment_id']);
+
+        if (! $this->isParticipant($appointment, (int) $user->id)) {
+            return response()->json(['message' => 'Unauthorized for this video call.'], 403);
+        }
+
+        $role = ((int) $appointment->student_id === (int) $user->id) ? 'student' : 'counselor';
+
+        return response()->json([
+            'url' => $this->livekit->url(),
+            'token' => $this->livekit->mintJoinToken(
+                (int) $appointment->id,
+                (int) $user->id,
+                $role,
+                max(300, (int) config('services.livekit.token_ttl_seconds', 3600))
+            ),
+            'room' => $this->livekit->roomName((int) $appointment->id),
         ]);
     }
 

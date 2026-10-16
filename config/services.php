@@ -55,6 +55,16 @@ return [
         'timeout' => env('SUPABASE_REALTIME_TIMEOUT_SECONDS', 3),
     ],
 
+    // LiveKit SFU for call media transport. Replace the api key/secret/url with either a
+    // LiveKit Cloud project or a self-hosted livekit-server instance. When unset, the
+    // video-call pages fall back to the legacy peer-to-peer engine.
+    'livekit' => [
+        'url' => env('LIVEKIT_URL', null),
+        'key' => env('LIVEKIT_API_KEY', null),
+        'secret' => env('LIVEKIT_API_SECRET', null),
+        'token_ttl_seconds' => env('LIVEKIT_TOKEN_TTL_SECONDS', 3600),
+    ],
+
     'ai' => [
         'provider_timeout_seconds' => env('AI_PROVIDER_TIMEOUT_SECONDS', 8),
         'provider_connect_timeout_seconds' => env('AI_PROVIDER_CONNECT_TIMEOUT_SECONDS', 5),

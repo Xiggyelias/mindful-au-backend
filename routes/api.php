@@ -166,6 +166,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
 
     // Video Calls
     Route::post('/video-calls/authorize', [VideoCallController::class, 'authorizeCall'])->middleware('throttle:messages-write');
+    Route::post('/video-calls/livekit-token', [VideoCallController::class, 'livekitToken'])->middleware('throttle:messages-write');
     Route::post('/video-calls/cancel', [VideoCallController::class, 'cancelCall'])->middleware('throttle:messages-write');
     Route::post('/video-calls/end', [VideoCallController::class, 'end'])->middleware('throttle:messages-write');
     Route::get('/counselor/incoming-calls', [CounselorIncomingCallController::class, 'index'])->middleware(['counselor', 'throttle:messages-read']);
