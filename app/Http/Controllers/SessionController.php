@@ -13,9 +13,10 @@ use App\Models\Message;
 use App\Models\Notification;
 use App\Models\PanicLog;
 use App\Models\PeerAssignment;
+use App\Models\Profile;
 use App\Models\User;
-use App\Support\SystemSettings;
 use App\Services\WebPushService;
+use App\Support\SystemSettings;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\RelationshipNotFoundException;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -846,7 +848,7 @@ class SessionController extends Controller
             $visitorUser = User::firstOrCreate(
                 ['email' => 'walkin.visitor@mindful.africau.co.zw'],
                 [
-                    'password' => \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(32)),
+                    'password' => Hash::make(Str::random(32)),
                     'email_verified_at' => now(),
                 ]
             );
@@ -857,7 +859,7 @@ class SessionController extends Controller
                 ]);
             }
             if (! $visitorUser->profile) {
-                \App\Models\Profile::create([
+                Profile::create([
                     'user_id' => $visitorUser->id,
                     'full_name' => 'Walk-In Visitor',
                 ]);
@@ -923,7 +925,7 @@ class SessionController extends Controller
                 'notes' => "Physical consultation - {$modeLabel}".(! empty($validated['chief_complaint']) ? ' ('.trim((string) $validated['chief_complaint']).')' : ''),
             ]);
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Failed to record appointment for walk-in session', [
+            Log::warning('Failed to record appointment for walk-in session', [
                 'session_id' => $session->id,
                 'error' => $e->getMessage(),
             ]);
@@ -1496,7 +1498,8 @@ class SessionController extends Controller
                 "{$studentLabel} has been assigned to you for peer support.",
                 "/peer/chats?session={$targetSession->id}"
             );
-        } catch (\Throwable $_) {}
+        } catch (\Throwable $_) {
+        }
 
         $studentNotification = Notification::query()->create([
             'user_id' => $targetSession->student_id,
@@ -1510,7 +1513,8 @@ class SessionController extends Controller
         ]);
         try {
             event(new NotificationCreated($studentNotification));
-        } catch (\Throwable $_) {}
+        } catch (\Throwable $_) {
+        }
 
         if ((int) $targetSession->counselor_id > 0) {
             $counselorNotification = Notification::query()->create([
@@ -1527,7 +1531,8 @@ class SessionController extends Controller
             ]);
             try {
                 event(new NotificationCreated($counselorNotification));
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $_) {
+            }
         }
 
         $adminIds = User::query()
@@ -1552,7 +1557,8 @@ class SessionController extends Controller
             ]);
             try {
                 event(new NotificationCreated($adminNotification));
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $_) {
+            }
         }
 
         $targetSession->refresh()->load([
@@ -1772,7 +1778,8 @@ class SessionController extends Controller
                     $path,
                     ['urgency' => 'high']
                 );
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $_) {
+            }
         }
 
         $studentNotif = Notification::query()->create([
@@ -1787,7 +1794,8 @@ class SessionController extends Controller
         ]);
         try {
             event(new NotificationCreated($studentNotif));
-        } catch (\Throwable $_) {}
+        } catch (\Throwable $_) {
+        }
 
         $session->refresh()->load([
             'student.profile',
@@ -1904,7 +1912,8 @@ class SessionController extends Controller
                         'requireInteraction' => true,
                     ]
                 );
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $_) {
+            }
         }
 
         $studentUrgentNotif = Notification::query()->create([
@@ -1919,7 +1928,8 @@ class SessionController extends Controller
         ]);
         try {
             event(new NotificationCreated($studentUrgentNotif));
-        } catch (\Throwable $_) {}
+        } catch (\Throwable $_) {
+        }
 
         $session->refresh()->load([
             'student.profile',

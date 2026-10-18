@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\AcademicRiskEvent;
 use App\Models\Appointment;
+use App\Models\ChatConversation;
+use App\Models\ChatMessage;
 use App\Models\Diagnostic;
 use App\Models\StudentMoodLog;
 use App\Models\SystemSetting;
@@ -260,8 +262,8 @@ class MentalHealthMlIntegrationTest extends TestCase
         ]);
 
         // Add positive messages
-        $conv = \App\Models\ChatConversation::create(['user_id' => $student->id]);
-        \App\Models\ChatMessage::create([
+        $conv = ChatConversation::create(['user_id' => $student->id]);
+        ChatMessage::create([
             'conversation_id' => $conv->id,
             'role' => 'user',
             'content' => 'I feel happy, motivated, better and very hopeful today. Doing well!',

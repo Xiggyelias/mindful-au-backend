@@ -8,6 +8,7 @@ use App\Models\CounselingCall;
 use App\Models\Notification;
 use App\Services\WebPushService;
 use Closure;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -106,7 +107,7 @@ class CallCoordinator
      * mutation. Locks are acquired in a fixed (ascending id) order regardless of call
      * argument order, so two requests locking the same pair never deadlock each other.
      *
-     * @throws \Illuminate\Contracts\Cache\LockTimeoutException if a lock can't be acquired in time.
+     * @throws LockTimeoutException if a lock can't be acquired in time.
      */
     public function withUsersLocked(array $userIds, Closure $callback): mixed
     {
@@ -194,6 +195,7 @@ class CallCoordinator
                 if ($started && $started->lt(now()->subHours(2))) {
                     return true;
                 }
+
                 return false;
             });
 
@@ -233,6 +235,7 @@ class CallCoordinator
             // 1. Pending and past expiration: sweep it
             if ($call->status === CounselingCall::STATUS_PENDING && $call->isExpired()) {
                 $call->update(['status' => CounselingCall::STATUS_MISSED]);
+
                 continue;
             }
 
@@ -249,6 +252,7 @@ class CallCoordinator
                             ? CounselingCall::STATUS_CANCELLED
                             : CounselingCall::STATUS_ENDED,
                     ]);
+
                     continue;
                 }
             }
@@ -258,11 +262,13 @@ class CallCoordinator
                 $apt = $call->appointment;
                 if (! $apt || in_array($apt->status, ['completed', 'cancelled'], true) || ! AppointmentCallWindow::isOpen($apt)) {
                     $call->update(['status' => CounselingCall::STATUS_ENDED]);
+
                     continue;
                 }
                 $started = $call->connected_at ?? $call->created_at;
                 if ($started && $started->lt(now()->subHours(2))) {
                     $call->update(['status' => CounselingCall::STATUS_ENDED]);
+
                     continue;
                 }
             }
@@ -276,6 +282,7 @@ class CallCoordinator
                         ? CounselingCall::STATUS_CANCELLED
                         : CounselingCall::STATUS_ENDED,
                 ]);
+
                 continue;
             }
 

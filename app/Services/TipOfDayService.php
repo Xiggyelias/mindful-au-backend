@@ -202,10 +202,10 @@ class TipOfDayService
 
             $notification = Notification::query()->create([
                 'user_id' => $user->id,
-                'title'   => 'Daily Wellness Tip',
+                'title' => 'Daily Wellness Tip',
                 'message' => trim($tip->title.'. '.$tip->content),
-                'type'    => 'info',
-                'read'    => false,
+                'type' => 'info',
+                'read' => false,
             ]);
 
             $fresh->forceFill(['notification_id' => $notification->id])->save();

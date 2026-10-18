@@ -553,17 +553,17 @@ class MessageController extends Controller
         $sentAsAnonymous = (bool) $session->is_anonymous;
 
         $message = Message::create([
-            'session_id'           => $sessionId,
-            'sender_id'            => $user->id,
-            'recipient_id'         => $recipientId,
+            'session_id' => $sessionId,
+            'sender_id' => $user->id,
+            'recipient_id' => $recipientId,
             'sender_name_snapshot' => $senderNameSnapshot,
-            'content'              => $content,
-            'message_type'         => $messageType,
-            'file_url'             => $validated['file_url'] ?? null,
-            'has_file'             => ! empty($validated['file_url']),
-            'is_encrypted'         => $isEncrypted,
-            'sent_as_anonymous'    => $sentAsAnonymous,
-            'seen_at'              => null,
+            'content' => $content,
+            'message_type' => $messageType,
+            'file_url' => $validated['file_url'] ?? null,
+            'has_file' => ! empty($validated['file_url']),
+            'is_encrypted' => $isEncrypted,
+            'sent_as_anonymous' => $sentAsAnonymous,
+            'seen_at' => null,
         ]);
 
         // ML Crisis Detection
@@ -887,13 +887,13 @@ class MessageController extends Controller
 
             Notification::create([
                 'user_id' => $recipientId,
-                'title'   => $pushTitle,   // was hardcoded 'New message', ignoring the $pushTitle computed above
+                'title' => $pushTitle,   // was hardcoded 'New message', ignoring the $pushTitle computed above
                 'message' => $pushBody,
-                'meta'    => [
+                'meta' => [
                     'chat_session_id' => (int) $session->id,
                     'chat_message_id' => (int) $message->id,
-                    'is_encrypted'    => $isEncrypted,
-                    'message_type'    => $messageType,
+                    'is_encrypted' => $isEncrypted,
+                    'message_type' => $messageType,
                 ],
                 'type' => 'info',
             ]);

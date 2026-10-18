@@ -3,8 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
-use App\Models\CounselingSession;
-use App\Models\Message;
 use App\Models\User;
 use App\Support\AppointmentCallFormat;
 use App\Support\AppointmentCallWindow;

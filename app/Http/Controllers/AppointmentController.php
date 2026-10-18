@@ -402,12 +402,12 @@ class AppointmentController extends Controller
         // so the student is never stuck with an active emergency banner/loop.
         try {
             $emergencyRequest = ! empty($validated['emergency_request_id'])
-                ? \App\Models\EmergencyRequest::query()
+                ? EmergencyRequest::query()
                     ->where('id', (int) $validated['emergency_request_id'])
                     ->where('student_id', $studentId)
                     ->whereIn('status', ['queued', 'assigned'])
                     ->first()
-                : \App\Models\EmergencyRequest::query()
+                : EmergencyRequest::query()
                     ->where('student_id', $studentId)
                     ->where(function ($query) use ($counselorId) {
                         $query->where('counselor_id', $counselorId)
@@ -422,7 +422,7 @@ class AppointmentController extends Controller
 
             if ($emergencyRequest) {
                 $resolvePayload = ['status' => 'resolved'];
-                if (\Illuminate\Support\Facades\Schema::hasColumn('emergency_requests', 'resolved_at')) {
+                if (Schema::hasColumn('emergency_requests', 'resolved_at')) {
                     $resolvePayload['resolved_at'] = now();
                 }
                 $emergencyRequest->update($resolvePayload);

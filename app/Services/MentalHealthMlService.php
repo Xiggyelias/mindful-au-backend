@@ -9,6 +9,7 @@ use App\Models\CounselingSession;
 use App\Models\Diagnostic;
 use App\Models\StudentMoodLog;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -67,7 +68,7 @@ class MentalHealthMlService
         'doing well', 'thank you', 'thanks', 'feeling better', 'relieved',
         'accomplished', 'proud', 'optimistic', 'healed', 'joyful', 'content',
         'satisfied', 'refreshed', 'rested', 'motivated', 'hope', 'confidence',
-        'self-care', 'feeling good'
+        'self-care', 'feeling good',
     ];
 
     private const CHAT_TOPICS = [
@@ -1450,8 +1451,8 @@ class MentalHealthMlService
 
         try {
             $date = $value instanceof \DateTimeInterface
-                ? \Illuminate\Support\Carbon::instance($value)
-                : \Illuminate\Support\Carbon::parse((string) $value);
+                ? Carbon::instance($value)
+                : Carbon::parse((string) $value);
 
             return max(0, (int) floor($date->diffInDays(now())));
         } catch (\Throwable) {
@@ -1467,8 +1468,8 @@ class MentalHealthMlService
 
         try {
             $date = $value instanceof \DateTimeInterface
-                ? \Illuminate\Support\Carbon::instance($value)
-                : \Illuminate\Support\Carbon::parse((string) $value);
+                ? Carbon::instance($value)
+                : Carbon::parse((string) $value);
 
             return $date->greaterThanOrEqualTo(now()->subDays(max(1, $days)));
         } catch (\Throwable) {

@@ -46,6 +46,7 @@ class AppointmentCallWindow
         }
 
         $notes = strtolower((string) ($appointment->notes ?? ''));
+
         return str_contains($notes, 'emergency') || str_contains($notes, 'crisis');
     }
 
@@ -67,6 +68,7 @@ class AppointmentCallWindow
 
         if ($isEmergency && $closesAt->lt(now())) {
             $baseTime = $appointment->created_at ? Carbon::parse($appointment->created_at) : now();
+
             return $baseTime->copy()->addMinutes($duration + self::JOIN_LATE_GRACE_MINUTES);
         }
 

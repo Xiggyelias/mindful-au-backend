@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\PreCounsellingQuestionnaire;
+
 class DiagnosticScoringService
 {
     private const QUESTION_WEIGHTS = [
@@ -137,7 +139,7 @@ class DiagnosticScoringService
                 }
             }
             if (! $hasMatchingIds) {
-                $fallbackPayload = \App\Support\PreCounsellingQuestionnaire::payload();
+                $fallbackPayload = PreCounsellingQuestionnaire::payload();
                 if (! empty($fallbackPayload['questions']) && is_array($fallbackPayload['questions'])) {
                     $questions = $fallbackPayload['questions'];
                 }

@@ -11,7 +11,6 @@ use App\Services\LiveKitService;
 use App\Services\WebPushService;
 use App\Support\AnalyticsCache;
 use App\Support\AppointmentCallWindow;
-use App\Support\AppointmentCompletion;
 use App\Support\CallCoordinator;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;

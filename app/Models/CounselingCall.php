@@ -99,16 +99,16 @@ class CounselingCall extends Model
                                 ->orWhere('connected_at', '>', now()->subHours(2));
                         });
                 })
-                ->orWhere(function (Builder $pending) {
-                    $pending->where('status', self::STATUS_PENDING)
-                        ->where(function (Builder $notExpired) {
-                            $notExpired->where('expires_at', '>', now())
-                                ->orWhere(function (Builder $legacy) {
-                                    $legacy->whereNull('expires_at')
-                                        ->where('created_at', '>', now()->subSeconds(60));
-                                });
-                        });
-                });
+                    ->orWhere(function (Builder $pending) {
+                        $pending->where('status', self::STATUS_PENDING)
+                            ->where(function (Builder $notExpired) {
+                                $notExpired->where('expires_at', '>', now())
+                                    ->orWhere(function (Builder $legacy) {
+                                        $legacy->whereNull('expires_at')
+                                            ->where('created_at', '>', now()->subSeconds(60));
+                                    });
+                            });
+                    });
             });
     }
 }

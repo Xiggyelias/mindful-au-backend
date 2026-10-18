@@ -27,7 +27,7 @@ class LiveKitServiceTest extends TestCase
     #[Test]
     public function it_normalizes_http_and_https_urls_to_websocket_protocols(): void
     {
-        $service = new LiveKitService();
+        $service = new LiveKitService;
 
         Config::set('services.livekit.url', 'http://livekit.example.com');
         $this->assertSame('ws://livekit.example.com', $service->url());
@@ -42,7 +42,7 @@ class LiveKitServiceTest extends TestCase
     #[Test]
     public function it_mints_a_valid_jwt_join_token(): void
     {
-        $service = new LiveKitService();
+        $service = new LiveKitService;
         $token = $service->mintJoinToken(123, 45, 'student');
 
         $this->assertNotEmpty($token);

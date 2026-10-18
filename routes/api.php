@@ -116,6 +116,9 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/sessions/{id}/panic-escalate', [SessionController::class, 'panicEscalation'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/flag-urgent', [SessionController::class, 'flagUrgentConcern'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/reveal-identity', [SessionController::class, 'revealIdentity'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/spatial-lounge/request', [PeerSupportController::class, 'requestSessionSpatialLounge'])->middleware('throttle:messages-write');
+    Route::get('/sessions/{id}/spatial-lounge/status', [PeerSupportController::class, 'sessionSpatialLoungeStatus'])->middleware('throttle:messages-read');
+    Route::post('/sessions/{id}/spatial-lounge/token', [PeerSupportController::class, 'sessionSpatialLoungeToken'])->middleware('throttle:messages-write');
 
     // Appointments
     Route::get('/counselor-slots', [CounselorSlotController::class, 'index'])->middleware('throttle:messages-read');

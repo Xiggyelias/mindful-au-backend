@@ -329,7 +329,7 @@ class AnalyticsController extends Controller
         $totalAppointments = Appointment::count();
         $physicalCount = Appointment::where(function ($q) {
             $q->where('notes', 'like', '%Physical%')
-              ->orWhere('call_type', 'in_person');
+                ->orWhere('call_type', 'in_person');
         })->count();
         $onlineCount = max(0, $totalAppointments - $physicalCount);
 

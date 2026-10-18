@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Services\TokenSessionService;
 use App\Support\SafeEmail;
+use App\Support\SystemSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\InvalidStateException;
 use Throwable;
 
 class OAuthController extends Controller
@@ -178,7 +180,7 @@ class OAuthController extends Controller
             // resolve to true — identified mode is always the explicit starting point unless
             // the admin has intentionally enabled the anonymous_mode_default system setting.
             if ($isNewProfile && $resolved['role'] === 'student') {
-                $profile->anonymous_mode = \App\Support\SystemSettings::getBool('anonymous_mode_default', false);
+                $profile->anonymous_mode = SystemSettings::getBool('anonymous_mode_default', false);
             }
 
             $profile->save();
@@ -586,7 +588,7 @@ class OAuthController extends Controller
         }
 
         if (
-            $e instanceof \Laravel\Socialite\Two\InvalidStateException
+            $e instanceof InvalidStateException
             || str_contains($message, 'invalidstate')
             || str_contains($message, 'invalid state')
         ) {

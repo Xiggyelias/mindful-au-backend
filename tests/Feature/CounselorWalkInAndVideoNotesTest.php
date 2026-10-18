@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Appointment;
-use App\Models\CounselingSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;

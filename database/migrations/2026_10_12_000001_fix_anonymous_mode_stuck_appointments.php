@@ -42,8 +42,8 @@ return new class extends Migration
 
         foreach ($rows as $row) {
             $updates = [
-                'is_anonymous'  => false,
-                'anonymous_id'  => null,
+                'is_anonymous' => false,
+                'anonymous_id' => null,
             ];
 
             // Restore video format for appointments that were forced to audio by anonymity.

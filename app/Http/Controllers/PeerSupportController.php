@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\CounselingSession;
 use App\Models\Escalation;
+use App\Models\Message;
 use App\Models\PeerAssignment;
 use App\Models\Profile;
 use App\Services\LiveKitService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class PeerSupportController extends Controller
 {
@@ -282,6 +284,137 @@ class PeerSupportController extends Controller
                 'name' => $alias,
                 'role' => $role,
                 'avatar' => $validated['avatar'] ?? 'dino-green',
+            ],
+        ]);
+    }
+
+    /**
+     * Peer Counselor requests a private 1-on-1 Spatial Lounge session with their assigned student.
+     */
+    public function requestSessionSpatialLounge(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+        $session = CounselingSession::with(['student.profile', 'peerCounselor.profile'])->findOrFail($id);
+
+        if ((int) $session->peer_counselor_id !== (int) $user->id || $session->assigned_role !== 'peer_counselor') {
+            return response()->json(['message' => 'Unauthorized. Only the assigned peer counselor can request the spatial lounge.'], 403);
+        }
+
+        if (in_array((string) $session->status, ['completed', 'cancelled'], true)) {
+            return response()->json(['message' => 'Cannot request spatial lounge for closed sessions.'], 422);
+        }
+
+        // Cache the active spatial lounge request for this session
+        Cache::put("spatial_lounge_session_{$session->id}", [
+            'active' => true,
+            'session_id' => (int) $session->id,
+            'requested_by' => (int) $user->id,
+            'requested_at' => now()->toIso8601String(),
+        ], now()->addHours(6));
+
+        // Create an in-chat invitation message
+        $inviteText = '🌿 Heart-to-Heart Spatial Lounge opened. Click "Join Spatial Lounge" to talk in our private 2D audio meadow.';
+        Message::create([
+            'session_id' => $session->id,
+            'case_id' => $session->id,
+            'sender_id' => $user->id,
+            'sender_role' => 'peer_counselor',
+            'content' => $inviteText,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'active' => true,
+            'session_id' => (int) $session->id,
+            'room' => "spatial-session-{$session->id}",
+            'message' => 'Spatial lounge requested successfully.',
+        ]);
+    }
+
+    /**
+     * Get Spatial Lounge active status for a specific assigned session.
+     */
+    public function sessionSpatialLoungeStatus(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+        $session = CounselingSession::findOrFail($id);
+
+        $isPeer = (int) $session->peer_counselor_id === (int) $user->id && $session->assigned_role === 'peer_counselor';
+        $isStudent = (int) $session->student_id === (int) $user->id;
+
+        if (! $isPeer && ! $isStudent) {
+            return response()->json(['message' => 'Unauthorized for this session.'], 403);
+        }
+
+        $loungeState = Cache::get("spatial_lounge_session_{$session->id}");
+
+        return response()->json([
+            'session_id' => (int) $session->id,
+            'active' => ! empty($loungeState['active']),
+            'requested_at' => $loungeState['requested_at'] ?? null,
+            'is_peer_assigned' => $session->assigned_role === 'peer_counselor' && (int) $session->peer_counselor_id > 0,
+            'can_request' => $isPeer && ! in_array((string) $session->status, ['completed', 'cancelled'], true),
+        ]);
+    }
+
+    /**
+     * Mint a token for the private 1-on-1 Spatial Lounge between the assigned peer counselor and student.
+     */
+    public function sessionSpatialLoungeToken(Request $request, string $id, LiveKitService $livekit): JsonResponse
+    {
+        $user = $request->user();
+        $session = CounselingSession::with(['student.profile', 'peerCounselor.profile'])->findOrFail($id);
+
+        $isPeer = (int) $session->peer_counselor_id === (int) $user->id && $session->assigned_role === 'peer_counselor';
+        $isStudent = (int) $session->student_id === (int) $user->id;
+
+        if (! $isPeer && ! $isStudent) {
+            return response()->json(['message' => 'Unauthorized. This spatial lounge is exclusively for the assigned peer counselor and student.'], 403);
+        }
+
+        $roomName = "spatial-session-{$session->id}";
+        $role = $isPeer ? 'peer_counselor' : 'student';
+
+        $peerUser = $session->peerCounselor;
+        $studentUser = $session->student;
+
+        $peerName = $peerUser?->profile?->full_name ?: ($peerUser?->email ? explode('@', $peerUser->email)[0] : 'Peer Counselor');
+        $studentName = $session->is_anonymous
+            ? 'Anonymous Student'
+            : ($studentUser?->profile?->full_name ?: ($studentUser?->email ? explode('@', $studentUser->email)[0] : 'Student'));
+
+        $myName = $isPeer ? $peerName : $studentName;
+        $partnerName = $isPeer ? $studentName : $peerName;
+        $partnerId = $isPeer ? (int) $session->student_id : (int) $session->peer_counselor_id;
+        $partnerRole = $isPeer ? 'student' : 'peer_counselor';
+
+        $token = null;
+        if ($livekit->isConfigured()) {
+            $token = $livekit->mintLoungeToken($roomName, (int) $user->id, $myName, $role, 7200);
+        }
+
+        return response()->json([
+            'success' => true,
+            'mode' => $livekit->isConfigured() ? 'livekit' : 'simulated',
+            'url' => $livekit->isConfigured() ? $livekit->url() : null,
+            'token' => $token,
+            'room' => $roomName,
+            'session_id' => (int) $session->id,
+            'user' => [
+                'id' => (int) $user->id,
+                'name' => $myName,
+                'role' => $role,
+                'avatar' => $isPeer ? 'dino-blue' : 'dino-green',
+                'initial_x' => $isPeer ? 400 : 600,
+                'initial_y' => 320,
+            ],
+            'assigned_partner' => [
+                'id' => $partnerId,
+                'name' => $partnerName,
+                'role' => $partnerRole,
+                'avatar' => $isPeer ? 'dino-green' : 'dino-blue',
+                'initial_x' => $isPeer ? 600 : 400,
+                'initial_y' => 320,
             ],
         ]);
     }

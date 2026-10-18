@@ -111,7 +111,7 @@ return new class extends Migration
                     }
                 }
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Ignore if profiles or appointments schema differs
         }
 

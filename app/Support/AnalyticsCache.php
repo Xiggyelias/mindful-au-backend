@@ -19,7 +19,7 @@ final class AnalyticsCache
     /**
      * @template TValue
      *
-     * @param callable(): TValue $callback
+     * @param  callable(): TValue  $callback
      * @return TValue
      */
     public static function remember(string $key, int $seconds, callable $callback): mixed

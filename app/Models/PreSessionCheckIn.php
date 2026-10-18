@@ -74,11 +74,11 @@ class PreSessionCheckIn extends Model
         ];
 
         if (! empty($this->student_notes)) {
-            $lines[] = "Student Note: \"".trim($this->student_notes)."\"";
+            $lines[] = 'Student Note: "'.trim($this->student_notes).'"';
         }
 
         if ($this->is_crisis) {
-            $lines[] = "⚠️ SAFETY ALERT: Student marked state as elevated crisis.";
+            $lines[] = '⚠️ SAFETY ALERT: Student marked state as elevated crisis.';
         }
 
         return implode("\n", $lines);
