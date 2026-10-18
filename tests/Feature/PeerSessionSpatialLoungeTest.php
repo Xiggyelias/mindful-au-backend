@@ -203,4 +203,52 @@ class PeerSessionSpatialLoungeTest extends TestCase
 
         $response->assertStatus(403);
     }
+
+    #[Test]
+    public function peer_counselor_can_fetch_assigned_students_with_spatial_state(): void
+    {
+        // First check with inactive lounge
+        $response = $this->actingAs($this->peerCounselor)->getJson('/api/peer/assigned-students');
+        $response->assertStatus(200);
+        $response->assertJsonFragment([
+            'session_id' => $this->session->id,
+            'student_id' => $this->student->id,
+            'spatial_lounge_active' => false,
+        ]);
+
+        // Request lounge
+        $this->actingAs($this->peerCounselor)->postJson(
+            "/api/sessions/{$this->session->id}/spatial-lounge/request"
+        );
+
+        // Now lounge is active
+        $activeResponse = $this->actingAs($this->peerCounselor)->getJson('/api/peer/assigned-students');
+        $activeResponse->assertStatus(200);
+        $activeResponse->assertJsonFragment([
+            'session_id' => $this->session->id,
+            'spatial_lounge_active' => true,
+        ]);
+    }
+
+    #[Test]
+    public function student_can_check_active_spatial_lounge_invitation(): void
+    {
+        // Initially no active lounge
+        $response = $this->actingAs($this->student)->getJson('/api/student/active-spatial-lounge');
+        $response->assertStatus(200);
+        $response->assertJson(['active' => false]);
+
+        // Peer requests lounge
+        $this->actingAs($this->peerCounselor)->postJson(
+            "/api/sessions/{$this->session->id}/spatial-lounge/request"
+        );
+
+        // Student now detects active invitation
+        $activeResponse = $this->actingAs($this->student)->getJson('/api/student/active-spatial-lounge');
+        $activeResponse->assertStatus(200);
+        $activeResponse->assertJson([
+            'active' => true,
+            'session_id' => $this->session->id,
+        ]);
+    }
 }

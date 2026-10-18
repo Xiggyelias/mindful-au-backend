@@ -418,4 +418,84 @@ class PeerSupportController extends Controller
             ],
         ]);
     }
+
+    /**
+     * List all students assigned to this peer counselor with active/pending status and spatial lounge state.
+     */
+    public function assignedStudents(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasRole('peer_counselor')) {
+            return response()->json(['message' => 'Unauthorized. Access restricted to peer counselors.'], 403);
+        }
+
+        $sessions = CounselingSession::query()
+            ->where('peer_counselor_id', $user->id)
+            ->where('assigned_role', 'peer_counselor')
+            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->with(['student.profile'])
+            ->latest('updated_at')
+            ->get()
+            ->map(function (CounselingSession $session) {
+                $displayName = $this->resolveStudentLabelForPeer($session);
+                $loungeState = Cache::get("spatial_lounge_session_{$session->id}");
+                $studentProfile = $session->student?->profile;
+
+                return [
+                    'session_id' => (int) $session->id,
+                    'student_id' => (int) $session->student_id,
+                    'student_name' => $displayName,
+                    'is_anonymous' => (bool) $session->is_anonymous,
+                    'status' => $session->status,
+                    'spatial_lounge_active' => ! empty($loungeState['active']),
+                    'requested_at' => $loungeState['requested_at'] ?? null,
+                    'updated_at' => $session->updated_at?->toIso8601String(),
+                    'last_seen_at' => $studentProfile?->last_seen_at?->toIso8601String(),
+                ];
+            });
+
+        return response()->json($sessions);
+    }
+
+    /**
+     * Check if any peer counselor has an active spatial lounge invitation for this student.
+     */
+    public function studentActiveSpatialLounge(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasRole('student')) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        $sessions = CounselingSession::query()
+            ->where('student_id', $user->id)
+            ->where('assigned_role', 'peer_counselor')
+            ->whereNotNull('peer_counselor_id')
+            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->with(['peerCounselor.profile'])
+            ->latest('updated_at')
+            ->get();
+
+        foreach ($sessions as $session) {
+            $loungeState = Cache::get("spatial_lounge_session_{$session->id}");
+            if (! empty($loungeState['active'])) {
+                $peer = $session->peerCounselor;
+                $peerName = $peer?->profile?->full_name ?: ($peer?->email ? explode('@', $peer->email)[0] : 'Peer Counselor');
+
+                return response()->json([
+                    'active' => true,
+                    'session_id' => (int) $session->id,
+                    'peer_name' => $peerName,
+                    'peer_avatar' => 'dino-blue',
+                    'requested_at' => $loungeState['requested_at'] ?? null,
+                ]);
+            }
+        }
+
+        return response()->json([
+            'active' => false,
+            'session_id' => null,
+            'peer_name' => null,
+        ]);
+    }
 }

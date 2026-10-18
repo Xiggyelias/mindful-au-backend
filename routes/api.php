@@ -176,6 +176,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::patch('/counselor/incoming-calls/{counselingCall}', [CounselorIncomingCallController::class, 'update'])->middleware(['counselor', 'throttle:messages-write']);
     Route::get('/student/incoming-calls', [StudentIncomingCallController::class, 'index'])->middleware(['student', 'throttle:messages-read']);
     Route::patch('/student/incoming-calls/{counselingCall}', [StudentIncomingCallController::class, 'update'])->middleware(['student', 'throttle:messages-write']);
+    Route::get('/student/active-spatial-lounge', [PeerSupportController::class, 'studentActiveSpatialLounge'])->middleware(['student', 'throttle:messages-read']);
     Route::get('/counselor/session-reminders', [CounselorSessionReminderController::class, 'index'])->middleware(['counselor', 'throttle:messages-read']);
 
     // Users
@@ -190,6 +191,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
 
     // Peer counselor dashboard
     Route::get('/peer/dashboard', [PeerSupportController::class, 'dashboard'])->middleware('role:peer_counselor');
+    Route::get('/peer/assigned-students', [PeerSupportController::class, 'assignedStudents'])->middleware('role:peer_counselor');
     Route::get('/peer/escalations', [PeerSupportController::class, 'escalations'])->middleware('role:peer_counselor');
     Route::patch('/peer/availability', [PeerSupportController::class, 'setAvailability'])->middleware('role:peer_counselor');
     Route::post('/peer/spatial-lounge/token', [PeerSupportController::class, 'spatialLoungeToken'])->middleware(['role:peer_counselor', 'throttle:messages-write']);
