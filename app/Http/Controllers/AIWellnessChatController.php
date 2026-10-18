@@ -9,11 +9,13 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Services\MentalHealthMlService;
 use App\Services\OpenRouterService;
+use App\Services\PIISanitizerService;
 use App\Services\WebPushService;
 use App\Support\SystemSettings;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -31,10 +33,15 @@ class AIWellnessChatController extends Controller
 
     private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 8;
 
+    private readonly PIISanitizerService $piiSanitizer;
+
     public function __construct(
         private readonly MentalHealthMlService $mentalHealthMlService,
-        private readonly WebPushService $webPush
-    ) {}
+        private readonly WebPushService $webPush,
+        ?PIISanitizerService $piiSanitizer = null
+    ) {
+        $this->piiSanitizer = $piiSanitizer ?? app(PIISanitizerService::class);
+    }
 
     public function chat(Request $request): JsonResponse
     {
@@ -172,16 +179,21 @@ CRITICAL:
                 Log::error('Failed to trigger AI crisis alert: '.$e->getMessage());
             }
         } else {
+            $systemPrompt = $this->piiSanitizer->appendPrivacySystemDirective($systemPrompt);
+
             $messages = [
                 ['role' => 'system', 'content' => $systemPrompt],
                 ...$historyMessages,
                 ['role' => 'user', 'content' => $message],
             ];
 
+            // Sanitize messages before sending to external AI models (masking student names, emails, phones, IDs)
+            $sanitizedMessages = $this->piiSanitizer->sanitizeMessages($messages, $user);
+
             // Try providers in order, then fall back to local deterministic guidance.
             $response = null;
             foreach ($this->availableAiProviders() as $provider) {
-                $candidate = $this->{$provider['method']}($messages);
+                $candidate = $this->{$provider['method']}($sanitizedMessages);
                 if (is_string($candidate) && trim($candidate) !== '') {
                     $response = $candidate;
                     $providerMode = 'external';
@@ -467,6 +479,8 @@ CRITICAL:
             return null;
         }
 
+        $sanitizedMessages = $this->piiSanitizer->sanitizeMessages($messages, Auth::user());
+
         // Cascade: try primary model first, then fallbacks
         $models = array_values(array_unique(array_filter([
             OpenRouterService::configuredChatModel(),
@@ -484,7 +498,7 @@ CRITICAL:
             try {
                 $payload = [
                     'model' => $model,
-                    'messages' => $messages,
+                    'messages' => $sanitizedMessages,
                     'max_tokens' => 1200,
                     'temperature' => 0.85,
                 ];
@@ -561,6 +575,8 @@ CRITICAL:
         if (! $apiKey) {
             return null;
         }
+
+        $messages = $this->piiSanitizer->sanitizeMessages($messages, Auth::user());
 
         $configuredModel = trim((string) config('services.gemini.model', 'gemini-1.5-flash'));
         $candidateModels = array_values(array_unique(array_filter([

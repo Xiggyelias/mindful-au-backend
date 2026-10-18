@@ -16,21 +16,34 @@ class AIDiagnosticService
 
     private const DEFAULT_PROVIDER_CONNECT_TIMEOUT_SECONDS = 5;
 
+    private readonly PIISanitizerService $piiSanitizer;
+
     public function __construct(
-        private readonly MentalHealthMlService $mentalHealthMlService
-    ) {}
+        private readonly MentalHealthMlService $mentalHealthMlService,
+        ?PIISanitizerService $piiSanitizer = null
+    ) {
+        $this->piiSanitizer = $piiSanitizer ?? app(PIISanitizerService::class);
+    }
 
     public function analyzeSession(CounselingSession $session, array $messages): AiDiagnostic
     {
         $conversationText = $this->extractConversationText($messages, (int) $session->student_id);
+
+        // Mask PII using student and counselor records to ensure zero leakage to external AI models
+        $usersToMask = array_values(array_filter([
+            $session->student_id ? User::with('profile')->find($session->student_id) : null,
+            $session->counselor_id ? User::with('profile')->find($session->counselor_id) : null,
+        ]));
+        $sanitizedConversationText = $this->piiSanitizer->sanitizeText($conversationText, $usersToMask);
+
         $promptContext = $this->mentalHealthMlService->buildPromptSafeStudentContext((int) $session->student_id);
         $localAnalysis = $this->analyzeLocally($conversationText);
 
         $analysis = $localAnalysis;
         if ($this->externalDiagnosticsEnabled()) {
-            $analysis = $this->analyzeWithOpenRouter($conversationText, $promptContext)
-                ?? $this->analyzeWithGemini($conversationText, $promptContext)
-                ?? $this->analyzeWithEcoBot($conversationText)
+            $analysis = $this->analyzeWithOpenRouter($sanitizedConversationText, $promptContext)
+                ?? $this->analyzeWithGemini($sanitizedConversationText, $promptContext)
+                ?? $this->analyzeWithEcoBot($sanitizedConversationText)
                 ?? $localAnalysis;
         }
 
@@ -73,9 +86,11 @@ class AIDiagnosticService
         
         Provide mood_score (0-100), stress_level (0-100), burnout_index (0-100), and recommendations.';
 
-        $analysis = $this->analyzeCounselorWellnessWithOpenRouter($prompt)
-            ?? $this->analyzeCounselorWellnessWithGemini($prompt)
-            ?? $this->analyzeCounselorWellnessWithEcoBot($prompt)
+        $sanitizedPrompt = $this->piiSanitizer->sanitizeText($prompt, $counselor);
+
+        $analysis = $this->analyzeCounselorWellnessWithOpenRouter($sanitizedPrompt)
+            ?? $this->analyzeCounselorWellnessWithGemini($sanitizedPrompt)
+            ?? $this->analyzeCounselorWellnessWithEcoBot($sanitizedPrompt)
             ?? $this->analyzeCounselorWellnessLocally($stressIndicators);
 
         if (! $analysis) {

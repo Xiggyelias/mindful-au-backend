@@ -35,8 +35,11 @@ class OpenRouterService
 
     private string $baseUrl;
 
-    public function __construct()
+    private PIISanitizerService $piiSanitizer;
+
+    public function __construct(?PIISanitizerService $piiSanitizer = null)
     {
+        $this->piiSanitizer = $piiSanitizer ?? app(PIISanitizerService::class);
         $this->apiKey = (string) config('services.openrouter.api_key', '');
         $this->baseUrl = $this->normalizeBaseUrl(
             (string) config('services.openrouter.base_url', 'https://openrouter.ai/api/v1')
@@ -73,11 +76,14 @@ class OpenRouterService
             return $this->fallbackResult($messages, $model, $conversationId, 'missing_api_key');
         }
 
+        // Mask Personally Identifiable Information (PII) before transmission to external model
+        $sanitizedMessages = $this->piiSanitizer->sanitizeMessages($messages, Auth::user());
+
         try {
             $response = $this->client->post('chat/completions', [
                 'json' => [
                     'model' => $model,
-                    'messages' => $messages,
+                    'messages' => $sanitizedMessages,
                 ],
             ]);
 
@@ -95,7 +101,7 @@ class OpenRouterService
                 return $this->fallbackResult($messages, $model, $conversationId, 'empty_content');
             }
 
-            // Save to database if user is authenticated
+            // Save to database if user is authenticated (preserving user history on local server)
             if (Auth::check()) {
                 $conversationId = $this->saveConversation($messages, $content, $model, $conversationId);
             }
@@ -134,11 +140,14 @@ class OpenRouterService
             return;
         }
 
+        // Mask Personally Identifiable Information (PII) before transmission to external model
+        $sanitizedMessages = $this->piiSanitizer->sanitizeMessages($messages, Auth::user());
+
         try {
             $response = $this->client->post('chat/completions', [
                 'json' => [
                     'model' => $model,
-                    'messages' => $messages,
+                    'messages' => $sanitizedMessages,
                     'stream' => true,
                 ],
                 'stream' => true,
