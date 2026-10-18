@@ -68,7 +68,7 @@ class LiveKitService
         $roomName = $this->roomName($appointmentId);
         $identity = $role.'-'.$userId;
 
-        $tokenOptions = (new AccessTokenOptions())
+        $tokenOptions = (new AccessTokenOptions)
             ->setIdentity($identity)
             ->setName($identity)
             ->setTtl($ttlSeconds)
@@ -78,7 +78,7 @@ class LiveKitService
                 'role' => $role,
             ]) ?: '{}');
 
-        $videoGrant = (new VideoGrant())
+        $videoGrant = (new VideoGrant)
             ->setRoomJoin()
             ->setRoomName($roomName)
             ->setCanPublish(true)
@@ -94,6 +94,46 @@ class LiveKitService
             'appointment_id' => $appointmentId,
             'room' => $roomName,
             'identity' => $identity,
+            'ttl_seconds' => $ttlSeconds,
+        ]);
+
+        return $token;
+    }
+
+    /**
+     * Mint a join token for an open spatial audio room (e.g. peer heart-to-heart lounge).
+     */
+    public function mintLoungeToken(string $roomName, int $userId, string $name, string $role, int $ttlSeconds = 7200): string
+    {
+        $identity = $role.'-'.$userId;
+
+        $tokenOptions = (new AccessTokenOptions)
+            ->setIdentity($identity)
+            ->setName($name)
+            ->setTtl($ttlSeconds)
+            ->setMetadata(json_encode([
+                'user_id' => $userId,
+                'name' => $name,
+                'role' => $role,
+                'is_spatial' => true,
+            ]) ?: '{}');
+
+        $videoGrant = (new VideoGrant)
+            ->setRoomJoin()
+            ->setRoomName($roomName)
+            ->setCanPublish(true)
+            ->setCanSubscribe(true)
+            ->setCanPublishData(true);
+
+        $token = (new AccessToken($this->apiKey(), $this->apiSecret()))
+            ->init($tokenOptions)
+            ->setGrant($videoGrant)
+            ->toJwt();
+
+        Log::info('[LiveKit] Spatial lounge token minted', [
+            'room' => $roomName,
+            'identity' => $identity,
+            'name' => $name,
             'ttl_seconds' => $ttlSeconds,
         ]);
 

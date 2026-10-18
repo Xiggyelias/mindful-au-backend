@@ -6,6 +6,7 @@ use App\Models\CounselingSession;
 use App\Models\Escalation;
 use App\Models\PeerAssignment;
 use App\Models\Profile;
+use App\Services\LiveKitService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -223,6 +224,65 @@ class PeerSupportController extends Controller
         return response()->json([
             'message' => 'Escalation marked as resolved.',
             'escalation' => $escalation,
+        ]);
+    }
+
+    /**
+     * Mint a token for the Peer Spatial Audio Heart-to-Heart Lounge.
+     */
+    public function spatialLoungeToken(Request $request, LiveKitService $livekit): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $validated = $request->validate([
+            'room' => 'sometimes|string|max:100',
+            'name' => 'sometimes|string|max:100',
+            'avatar' => 'sometimes|string|max:50',
+        ]);
+
+        $roomName = $validated['room'] ?? 'peer-spatial-lounge';
+        $alias = $validated['name'] ?? ($user->profile?->full_name ?: ($user->email ? explode('@', $user->email)[0] : 'Peer '.$user->id));
+        $role = $user->hasRole('peer_counselor') ? 'peer_counselor' : ($user->hasRole('counselor') ? 'counselor' : 'student');
+
+        if (! $livekit->isConfigured()) {
+            return response()->json([
+                'success' => true,
+                'mode' => 'simulated',
+                'url' => null,
+                'token' => null,
+                'room' => $roomName,
+                'user' => [
+                    'id' => (int) $user->id,
+                    'name' => $alias,
+                    'role' => $role,
+                    'avatar' => $validated['avatar'] ?? 'dino-green',
+                ],
+            ]);
+        }
+
+        $token = $livekit->mintLoungeToken(
+            $roomName,
+            (int) $user->id,
+            $alias,
+            $role,
+            7200
+        );
+
+        return response()->json([
+            'success' => true,
+            'mode' => 'livekit',
+            'url' => $livekit->url(),
+            'token' => $token,
+            'room' => $roomName,
+            'user' => [
+                'id' => (int) $user->id,
+                'name' => $alias,
+                'role' => $role,
+                'avatar' => $validated['avatar'] ?? 'dino-green',
+            ],
         ]);
     }
 }
