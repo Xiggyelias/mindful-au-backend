@@ -35,7 +35,15 @@ class LiveKitService
      */
     public function url(): string
     {
-        return trim((string) config('services.livekit.url', ''));
+        $url = trim((string) config('services.livekit.url', ''));
+        if (str_starts_with($url, 'http://')) {
+            return 'ws://'.substr($url, 7);
+        }
+        if (str_starts_with($url, 'https://')) {
+            return 'wss://'.substr($url, 8);
+        }
+
+        return $url;
     }
 
     public function apiKey(): string
