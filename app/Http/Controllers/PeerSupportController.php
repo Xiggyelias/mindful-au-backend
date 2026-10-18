@@ -233,8 +233,8 @@ class PeerSupportController extends Controller
     public function spatialLoungeToken(Request $request, LiveKitService $livekit): JsonResponse
     {
         $user = $request->user();
-        if (! $user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
+        if (! $user || ! $user->hasRole('peer_counselor')) {
+            return response()->json(['message' => 'Unauthorized. Access restricted to peer counselors only.'], 403);
         }
 
         $validated = $request->validate([
@@ -245,7 +245,7 @@ class PeerSupportController extends Controller
 
         $roomName = $validated['room'] ?? 'peer-spatial-lounge';
         $alias = $validated['name'] ?? ($user->profile?->full_name ?: ($user->email ? explode('@', $user->email)[0] : 'Peer '.$user->id));
-        $role = $user->hasRole('peer_counselor') ? 'peer_counselor' : ($user->hasRole('counselor') ? 'counselor' : 'student');
+        $role = 'peer_counselor';
 
         if (! $livekit->isConfigured()) {
             return response()->json([
