@@ -196,7 +196,10 @@ class CounselorLiveHealthCheckService
     {
         $recentSelfCheckIn = CounselorWellnessLog::query()
             ->where('counselor_id', $counselor->id)
-            ->where('check_in_version', self::CHECK_IN_VERSION)
+            ->where(function ($query) {
+                $query->where('check_in_version', self::CHECK_IN_VERSION)
+                    ->orWhereNotNull('check_in_answers');
+            })
             ->latest()
             ->first();
 

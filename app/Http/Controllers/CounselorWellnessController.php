@@ -110,6 +110,18 @@ class CounselorWellnessController extends Controller
             $payload['recommendations'] = $this->buildCheckInRecommendations($scores);
             $payload['check_in_answers'] = $validated['check_in'];
             $payload['check_in_version'] = self::CHECK_IN_VERSION;
+
+            // If a self-validation check-in already exists for today, update it in-place
+            $existingTodayLog = CounselorWellnessLog::where('counselor_id', $user->id)
+                ->whereDate('created_at', now()->toDateString())
+                ->whereNotNull('check_in_answers')
+                ->latest()
+                ->first();
+
+            if ($existingTodayLog) {
+                $existingTodayLog->update($payload);
+                return response()->json($existingTodayLog, 200);
+            }
         } else {
             if (array_key_exists('mood_score', $validated)) {
                 $payload['mood_score'] = $validated['mood_score'];
