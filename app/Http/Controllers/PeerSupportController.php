@@ -57,6 +57,7 @@ class PeerSupportController extends Controller
             ->whereIn('escalation_type', ['urgent_flag', 'panic'])
             ->count();
 
+        $activeSpatialLounge = null;
         $recentSessions = CounselingSession::query()
             ->where('peer_counselor_id', $user->id)
             ->where('assigned_role', 'peer_counselor')
@@ -66,17 +67,48 @@ class PeerSupportController extends Controller
             ->latest('updated_at')
             ->limit(8)
             ->get()
-            ->map(function (CounselingSession $session) {
+            ->map(function (CounselingSession $session) use (&$activeSpatialLounge) {
                 $displayName = $this->resolveStudentLabelForPeer($session);
+                $loungeState = Cache::get("spatial_lounge_session_{$session->id}");
+                $isLoungeActive = ! empty($loungeState['active']);
+
+                if ($isLoungeActive && $activeSpatialLounge === null) {
+                    $activeSpatialLounge = [
+                        'session_id' => (int) $session->id,
+                        'student_name' => $displayName,
+                        'requested_at' => $loungeState['requested_at'] ?? null,
+                    ];
+                }
 
                 return [
                     'id' => $session->id,
                     'student_label' => $displayName,
                     'status' => $session->status,
                     'session_type' => $session->session_type,
+                    'spatial_lounge_active' => $isLoungeActive,
                     'updated_at' => $session->updated_at,
                 ];
             });
+
+        if ($activeSpatialLounge === null) {
+            $otherSessions = CounselingSession::query()
+                ->where('peer_counselor_id', $user->id)
+                ->where('assigned_role', 'peer_counselor')
+                ->whereNotIn('status', ['completed', 'cancelled'])
+                ->with(['student.profile'])
+                ->get();
+            foreach ($otherSessions as $other) {
+                $lState = Cache::get("spatial_lounge_session_{$other->id}");
+                if (! empty($lState['active'])) {
+                    $activeSpatialLounge = [
+                        'session_id' => (int) $other->id,
+                        'student_name' => $this->resolveStudentLabelForPeer($other),
+                        'requested_at' => $lState['requested_at'] ?? null,
+                    ];
+                    break;
+                }
+            }
+        }
 
         return response()->json([
             'availability' => (bool) $profile->peer_available,
@@ -87,6 +119,7 @@ class PeerSupportController extends Controller
                 'urgent_flags' => $urgentFlags,
             ],
             'recent_sessions' => $recentSessions,
+            'active_spatial_lounge' => $activeSpatialLounge,
         ]);
     }
 
@@ -354,6 +387,63 @@ class PeerSupportController extends Controller
             'requested_at' => $loungeState['requested_at'] ?? null,
             'is_peer_assigned' => $session->assigned_role === 'peer_counselor' && (int) $session->peer_counselor_id > 0,
             'can_request' => $isPeer && ! in_array((string) $session->status, ['completed', 'cancelled'], true),
+        ]);
+    }
+
+    /**
+     * Cancel or close an active Spatial Lounge invitation for a session.
+     */
+    public function cancelSessionSpatialLounge(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+        $session = CounselingSession::findOrFail($id);
+
+        $isPeer = (int) $session->peer_counselor_id === (int) $user->id && $session->assigned_role === 'peer_counselor';
+        $isStudent = (int) $session->student_id === (int) $user->id;
+
+        if (! $isPeer && ! $isStudent && ! $user->hasRole('admin')) {
+            return response()->json(['message' => 'Unauthorized for this session.'], 403);
+        }
+
+        Cache::forget("spatial_lounge_session_{$session->id}");
+
+        return response()->json([
+            'success' => true,
+            'active' => false,
+            'session_id' => (int) $session->id,
+            'message' => 'Spatial lounge invitation cancelled successfully.',
+        ]);
+    }
+
+    /**
+     * Cancel all active Spatial Lounge invitations initiated by the peer counselor.
+     */
+    public function cancelAllPeerSpatialLounges(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasRole('peer_counselor')) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        $sessions = CounselingSession::query()
+            ->where('peer_counselor_id', $user->id)
+            ->where('assigned_role', 'peer_counselor')
+            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->get();
+
+        $cleared = 0;
+        foreach ($sessions as $session) {
+            if (Cache::has("spatial_lounge_session_{$session->id}")) {
+                Cache::forget("spatial_lounge_session_{$session->id}");
+                $cleared++;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'active' => false,
+            'cleared_count' => $cleared,
+            'message' => 'All active spatial lounge invitations cancelled.',
         ]);
     }
 

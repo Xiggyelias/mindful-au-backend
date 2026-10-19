@@ -117,6 +117,8 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::post('/sessions/{id}/flag-urgent', [SessionController::class, 'flagUrgentConcern'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/reveal-identity', [SessionController::class, 'revealIdentity'])->middleware('throttle:messages-write');
     Route::post('/sessions/{id}/spatial-lounge/request', [PeerSupportController::class, 'requestSessionSpatialLounge'])->middleware('throttle:messages-write');
+    Route::post('/sessions/{id}/spatial-lounge/cancel', [PeerSupportController::class, 'cancelSessionSpatialLounge'])->middleware('throttle:messages-write');
+    Route::delete('/sessions/{id}/spatial-lounge', [PeerSupportController::class, 'cancelSessionSpatialLounge'])->middleware('throttle:messages-write');
     Route::get('/sessions/{id}/spatial-lounge/status', [PeerSupportController::class, 'sessionSpatialLoungeStatus'])->middleware('throttle:messages-read');
     Route::post('/sessions/{id}/spatial-lounge/token', [PeerSupportController::class, 'sessionSpatialLoungeToken'])->middleware('throttle:messages-write');
 
@@ -195,6 +197,7 @@ Route::middleware(['auth:sanctum', 'track.device_session', 'session.timeout', 'a
     Route::get('/peer/escalations', [PeerSupportController::class, 'escalations'])->middleware('role:peer_counselor');
     Route::patch('/peer/availability', [PeerSupportController::class, 'setAvailability'])->middleware('role:peer_counselor');
     Route::post('/peer/spatial-lounge/token', [PeerSupportController::class, 'spatialLoungeToken'])->middleware(['role:peer_counselor', 'throttle:messages-write']);
+    Route::post('/peer/spatial-lounge/cancel-all', [PeerSupportController::class, 'cancelAllPeerSpatialLounges'])->middleware(['role:peer_counselor', 'throttle:messages-write']);
     Route::get('/escalations', [PeerSupportController::class, 'allEscalations'])->middleware('role:admin,counselor');
     Route::post('/escalations/{id}/resolve', [PeerSupportController::class, 'resolveEscalation'])->middleware('role:admin,counselor');
 

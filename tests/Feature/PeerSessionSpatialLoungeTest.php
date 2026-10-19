@@ -251,4 +251,79 @@ class PeerSessionSpatialLoungeTest extends TestCase
             'session_id' => $this->session->id,
         ]);
     }
+
+    #[Test]
+    public function peer_counselor_can_cancel_spatial_lounge_invitation(): void
+    {
+        // 1. Peer requests lounge
+        $this->actingAs($this->peerCounselor)->postJson(
+            "/api/sessions/{$this->session->id}/spatial-lounge/request"
+        );
+        $this->assertTrue(Cache::has("spatial_lounge_session_{$this->session->id}"));
+
+        // 2. Student checks active lounge -> true
+        $studentActive = $this->actingAs($this->student)->getJson('/api/student/active-spatial-lounge');
+        $studentActive->assertStatus(200);
+        $studentActive->assertJson(['active' => true, 'session_id' => $this->session->id]);
+
+        // 3. Peer cancels the lounge invitation
+        $cancelResponse = $this->actingAs($this->peerCounselor)->postJson(
+            "/api/sessions/{$this->session->id}/spatial-lounge/cancel"
+        );
+        $cancelResponse->assertStatus(200);
+        $cancelResponse->assertJson([
+            'success' => true,
+            'active' => false,
+            'session_id' => $this->session->id,
+        ]);
+
+        $this->assertFalse(Cache::has("spatial_lounge_session_{$this->session->id}"));
+
+        // 4. Student checks active lounge again -> false (cleared from dashboard)
+        $studentAfter = $this->actingAs($this->student)->getJson('/api/student/active-spatial-lounge');
+        $studentAfter->assertStatus(200);
+        $studentAfter->assertJson(['active' => false]);
+
+        // 5. Peer assigned list also reflects inactive
+        $peerStudents = $this->actingAs($this->peerCounselor)->getJson('/api/peer/assigned-students');
+        $peerStudents->assertStatus(200);
+        $peerStudents->assertJsonFragment([
+            'session_id' => $this->session->id,
+            'spatial_lounge_active' => false,
+        ]);
+    }
+
+    #[Test]
+    public function peer_counselor_can_cancel_all_spatial_lounges(): void
+    {
+        $this->actingAs($this->peerCounselor)->postJson(
+            "/api/sessions/{$this->session->id}/spatial-lounge/request"
+        );
+        $this->assertTrue(Cache::has("spatial_lounge_session_{$this->session->id}"));
+
+        $response = $this->actingAs($this->peerCounselor)->postJson('/api/peer/spatial-lounge/cancel-all');
+        $response->assertStatus(200);
+        $response->assertJson([
+            'success' => true,
+            'active' => false,
+        ]);
+
+        $this->assertFalse(Cache::has("spatial_lounge_session_{$this->session->id}"));
+    }
+
+    #[Test]
+    public function student_can_dismiss_spatial_lounge_invitation(): void
+    {
+        $this->actingAs($this->peerCounselor)->postJson(
+            "/api/sessions/{$this->session->id}/spatial-lounge/request"
+        );
+        $this->assertTrue(Cache::has("spatial_lounge_session_{$this->session->id}"));
+
+        $response = $this->actingAs($this->student)->postJson(
+            "/api/sessions/{$this->session->id}/spatial-lounge/cancel"
+        );
+        $response->assertStatus(200);
+        $response->assertJson(['success' => true, 'active' => false]);
+        $this->assertFalse(Cache::has("spatial_lounge_session_{$this->session->id}"));
+    }
 }
